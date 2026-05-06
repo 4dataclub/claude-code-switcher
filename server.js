@@ -95,9 +95,20 @@ function buildRouterConfig(keys, fallback) {
   };
 }
 
+// UI/Friendly-Name → Router-Internal-Name
+const PROVIDER_MAP = { google: 'gemini', openrouter: 'openrouter', anthropic: 'anthropic' };
+
 function writeRouterConfig(config) {
   const switcher = config._switcher || {};
-  const routerCfg = buildRouterConfig(switcher.keys || {}, switcher.fallback || {});
+  const route = switcher.activeRoute
+    || (switcher.fallback_chain && switcher.fallback_chain[0])
+    || switcher.fallback
+    || {};
+  // Map UI-Provider → Router-Internal
+  const mappedRoute = route.provider
+    ? { provider: PROVIDER_MAP[route.provider] || route.provider, model: route.model }
+    : {};
+  const routerCfg = buildRouterConfig(switcher.keys || {}, mappedRoute);
   fs.writeFileSync(ROUTER_CONFIG_PATH, JSON.stringify(routerCfg, null, 2));
 }
 
@@ -215,16 +226,20 @@ app.post('/api/switch', async (req, res) => {
   } else if (provider === 'google') {
     if (!keys.google) return res.status(400).json({ error: 'Google AI Studio API Key fehlt' });
     // Claude Code → Router → Google AI
-    config.env.ANTHROPIC_API_KEY = 'sk-ccr-anything'; // claude-code-router ignoriert den Wert, Header muss aber gesetzt sein
+    // settings.json.model MUSS ein gültiges Anthropic-Modell sein, sonst lehnt
+    // Claude Code beim Start ab. Der Router routet alles via default-Route zum
+    // tatsächlich gewählten Gemini-Modell (siehe writeRouterConfig).
+    config.env.ANTHROPIC_API_KEY = 'sk-ccr-anything';
     config.env.ANTHROPIC_BASE_URL = HOST_ROUTER_URL;
-    config.model = model || 'gemini-2.5-pro';
+    config.model = 'claude-sonnet-4-5-20250929';  // Anthropic-Alias für Validation
+    config._switcher.activeRoute = { provider: 'google', model: model || 'gemini-2.5-pro' };
     routerNeedsRestart = true;
   } else if (provider === 'openrouter') {
     if (!keys.openrouter) return res.status(400).json({ error: 'OpenRouter API Key fehlt' });
-    // Claude Code → Router → OpenRouter
     config.env.ANTHROPIC_API_KEY = 'sk-ccr-anything';
     config.env.ANTHROPIC_BASE_URL = HOST_ROUTER_URL;
-    config.model = model || 'anthropic/claude-sonnet-4.5';
+    config.model = 'claude-sonnet-4-5-20250929';  // Anthropic-Alias für Validation
+    config._switcher.activeRoute = { provider: 'openrouter', model: model || 'anthropic/claude-sonnet-4.5' };
     routerNeedsRestart = true;
   } else {
     return res.status(400).json({ error: `unknown provider: ${provider}` });
