@@ -29,6 +29,48 @@ post_json() {
     -H 'Content-Type: application/json' -d "$data" 2>/dev/null
 }
 
+# Säubert alle 'thinking' content-blocks aus einer Session-JSONL.
+# Hintergrund: Cross-Provider-Switch (z.B. Gemini Pro → Anthropic Opus) führt zu
+# 400 "Invalid signature in thinking block" weil Anthropic die Signaturen prüft.
+strip_thinking_from_session() {
+  local sid="$1"
+  local cwd_dash="${PWD//\//-}"
+  local cwd_full_dash="${cwd_dash//_/-}"
+  for variant in "$cwd_dash" "$cwd_full_dash"; do
+    local jsonl="$HOME/.claude/projects/$variant/$sid.jsonl"
+    if [[ -f "$jsonl" ]]; then
+      python3 - "$jsonl" <<'PYEOF' 2>/dev/null || true
+import json, sys
+path = sys.argv[1]
+out, removed = [], 0
+try:
+    with open(path) as f:
+        for line in f:
+            try:
+                obj = json.loads(line)
+                if isinstance(obj, dict) and isinstance(obj.get('message'), dict):
+                    content = obj['message'].get('content')
+                    if isinstance(content, list):
+                        new = [b for b in content if not (isinstance(b, dict) and b.get('type') == 'thinking')]
+                        if len(new) != len(content):
+                            removed += len(content) - len(new)
+                            obj['message']['content'] = new
+                out.append(json.dumps(obj))
+            except Exception:
+                out.append(line.rstrip('\n'))
+    if removed > 0:
+        with open(path, 'w') as f:
+            for line in out:
+                f.write(line + '\n')
+        sys.stderr.write(f"↪ {removed} thinking-blocks aus Session entfernt (Cross-Provider-Schutz)\n")
+except Exception:
+    pass
+PYEOF
+      return 0
+    fi
+  done
+}
+
 # Findet die zuletzt modifizierte JSONL im **cwd-spezifischen** Projects-Verzeichnis.
 # Claude Code encoded den cwd-Pfad: '/Users/foo/bar' → '-Users-foo-bar'.
 # Wichtig: NICHT im gesamten Tree suchen, sonst kriegen wir UUIDs aus anderen Projekten,
@@ -138,8 +180,11 @@ while true; do
     sid=$(find_latest_session_id)
     if [[ -n "$sid" ]]; then
       RESUME_ID="$sid"
+      # Cross-Provider-Bug: Anthropic lehnt 'Invalid signature in thinking block'
+      # ab wenn Session-History thinking-Blocks von anderen Modellen enthält.
+      # → Beim Resume vorsichtshalber alle thinking-Blocks aus der JSONL strippen.
+      strip_thinking_from_session "$sid"
     else
-      # Fallback: keine cwd-spezifische Session gefunden → continue last via -c
       echo "↪ Keine Session für $PWD gefunden, fallback auf 'claude -c' (continue last)" >&2
       RESUME_ID="__continue__"
     fi
