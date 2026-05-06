@@ -5,13 +5,13 @@ services:
       - "3000:3000"
     volumes:
       - ${HOME:-${USERPROFILE}}/.claude:/root/.claude
-      # Docker-Socket: damit der Switcher den Router-Container bei Key-Änderungen neu starten kann
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - CLAUDE_CONFIG_PATH=/root/.claude/settings.json
       - ROUTER_CONFIG_PATH=/root/.claude/router-config.json
       - ROUTER_CONTAINER=claude-switcher-router-1
-      - ROUTER_BASE_URL=http://router:3456
+      # Switcher → Router via interne Bridge: socat hört auf 3457, leitet zu ccr (127.0.0.1:3456)
+      - ROUTER_BASE_URL=http://router:3457
     restart: unless-stopped
     depends_on:
       - router
@@ -20,36 +20,28 @@ services:
     build: ./router
     container_name: claude-switcher-router-1
     ports:
-      - "3456:3456"
+      # Host:3456 → Container:3457 (socat) → 127.0.0.1:3456 (ccr internal)
+      - "3456:3457"
     volumes:
-      # Router liest seine Config aus dem geteilten ${HOME:-${USERPROFILE}}/.claude/-Volume.
-      # Switcher schreibt sie bei jedem Provider/Key-Change und restartet den Router.
       - ${HOME:-${USERPROFILE}}/.claude:/host-claude:ro
     environment:
       - NON_INTERACTIVE_MODE=true
       - LOG_LEVEL=info
     restart: unless-stopped
-    # Beim Start: Config aus geteiltem Volume nach erwartetem Pfad kopieren, dann ccr starten
-    # `ccr start` daemonisiert sich → wir halten den Container danach via `wait` am Leben
-    # und überwachen den Daemon-Prozess. Bei Daemon-Crash exitet auch der Container → Docker-Restart greift.
+    # 1. Config aus Host-Volume nach ccr-erwartetem Pfad kopieren
+    # 2. ccr starten (daemon, hört auf interner 127.0.0.1:3456)
+    # 3. socat als TCP-Bridge: 0.0.0.0:3457 → 127.0.0.1:3456 (foreground, hält Container am Leben)
     command: >
       sh -c "
-        mkdir -p /root/.claude-code-router &&
-        if [ -f /host-claude/router-config.json ]; then
-          cp /host-claude/router-config.json /root/.claude-code-router/config.json;
-        else
-          echo '{\"Providers\":[],\"Router\":{}}' > /root/.claude-code-router/config.json;
-        fi &&
-        ccr start &&
-        sleep 1 &&
-        DAEMON_PID=$$(pgrep -f 'node.*claude-code-router' | head -1) &&
-        if [ -z \"$$DAEMON_PID\" ]; then echo 'ccr-daemon nicht gefunden'; exit 1; fi &&
-        echo \"Router-Daemon PID: $$DAEMON_PID\" &&
-        while kill -0 $$DAEMON_PID 2>/dev/null; do sleep 10; done &&
-        echo 'Router-Daemon beendet'
+        mkdir -p /root/.claude-code-router;
+        [ -f /host-claude/router-config.json ] && cp /host-claude/router-config.json /root/.claude-code-router/config.json || echo '{\"Providers\":[],\"Router\":{}}' > /root/.claude-code-router/config.json;
+        ccr start &
+        sleep 3;
+        echo '>>> Starte socat-Bridge 0.0.0.0:3457 -> 127.0.0.1:3456';
+        exec socat TCP-LISTEN:3457,fork,reuseaddr TCP:127.0.0.1:3456
       "
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://localhost:3456/health 2>/dev/null || pgrep -f 'node.*claude-code-router' >/dev/null"]
+      test: ["CMD-SHELL", "wget -q -O- --timeout=3 http://127.0.0.1:3457/ >/dev/null 2>&1 || nc -z 127.0.0.1 3457"]
       interval: 30s
       timeout: 5s
       retries: 3
