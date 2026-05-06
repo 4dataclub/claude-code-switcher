@@ -66,7 +66,7 @@ while true; do
         if [[ "$action" == "switch" ]]; then
           notify "Quota erreicht — switche auf Fallback und starte neu"
           touch "$RESTART_FILE"
-          pkill -TERM -P "$PPID" -f "claude" 2>/dev/null || true
+          pkill -TERM -P "$$" -f "claude" 2>/dev/null || true
           break
         elif [[ "$action" == "exhausted" ]]; then
           notify "Alle Provider voll — manuell entscheiden"
@@ -86,7 +86,7 @@ while true; do
         rm -f "$MARKER"
         notify "Switcher fordert Restart — Kontext bleibt erhalten"
         touch "$RESTART_FILE"
-        pkill -TERM -P "$PPID" -f "claude" 2>/dev/null || true
+        pkill -TERM -P "$$" -f "claude" 2>/dev/null || true
         break
       fi
       sleep 5
