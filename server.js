@@ -489,13 +489,22 @@ app.post('/api/recheck-now', async (req, res) => {
   res.json({ success: true });
 });
 
-// ─── Legacy Restart-Signal (bleibt erhalten für Backwards-Compat) ───────────
+// ─── Restart-Signal: schreibt Marker damit Wrapper Claude killt + --resume ──
+// Wrapper pollt ~/.claude/.switcher-restart alle 5s. Provider/Modell werden
+// NICHT geändert — nur Claude wird neu gestartet damit settings.json greift.
 
 app.post('/api/restart', (req, res) => {
   try {
-    const signalPath = path.join(path.dirname(CONFIG_PATH), '.restart-signal');
-    fs.writeFileSync(signalPath, Date.now().toString());
-    res.json({ success: true });
+    const markerPath = path.join(path.dirname(CONFIG_PATH), '.switcher-restart');
+    fs.writeFileSync(markerPath, JSON.stringify({
+      at: Date.now(),
+      reason: 'manual-ui-restart',
+    }));
+    // Legacy-Signal bleibt für Backwards-Compat (alte Wrapper-Versionen)
+    const legacyPath = path.join(path.dirname(CONFIG_PATH), '.restart-signal');
+    fs.writeFileSync(legacyPath, Date.now().toString());
+    broadcast('restart-requested', { source: 'ui' });
+    res.json({ success: true, marker: markerPath });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
