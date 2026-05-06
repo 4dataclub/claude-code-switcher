@@ -259,8 +259,30 @@ app.post('/api/switch', async (req, res) => {
     routerStatus = await restartRouter();
   }
 
+  // Wrapper-Restart-Marker schreiben → claude-auto sieht ihn und startet
+  // claude mit --resume neu, sodass der neue Provider/Modell sofort greift
+  // (sonst läuft das laufende claude mit der ALTEN settings.json-Config weiter).
+  let wrapperNotified = false;
+  try {
+    const markerPath = path.join(path.dirname(CONFIG_PATH), '.switcher-restart');
+    fs.writeFileSync(markerPath, JSON.stringify({
+      at: Date.now(),
+      reason: 'manual-switch',
+      provider, model: config.model || null,
+    }));
+    wrapperNotified = true;
+  } catch (e) {
+    console.warn('Konnte Wrapper-Marker nicht schreiben:', e.message);
+  }
+
   broadcast('switch', { provider, model: config.model || null });
-  res.json({ success: true, provider, model: config.model || null, router: routerStatus });
+  res.json({
+    success: true,
+    provider,
+    model: config.model || null,
+    router: routerStatus,
+    wrapperNotified,
+  });
 });
 
 // ─── Auto-Modus-Config ─────────────────────────────────────────────────────
