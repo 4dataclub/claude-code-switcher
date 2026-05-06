@@ -29,11 +29,27 @@ post_json() {
     -H 'Content-Type: application/json' -d "$data" 2>/dev/null
 }
 
-# Findet die zuletzt modifizierte JSONL im Claude-Projects-Tree → das ist die aktive Session
+# Findet die zuletzt modifizierte JSONL im **cwd-spezifischen** Projects-Verzeichnis.
+# Claude Code encoded den cwd-Pfad: '/Users/foo/bar' → '-Users-foo-bar'.
+# Wichtig: NICHT im gesamten Tree suchen, sonst kriegen wir UUIDs aus anderen Projekten,
+# und `claude --resume <uuid>` schlägt fehl mit "No conversation found".
 find_latest_session_id() {
-  local latest
-  latest=$(ls -t "$HOME/.claude/projects"/*/*.jsonl 2>/dev/null | head -1)
-  [[ -n "$latest" ]] && basename "$latest" .jsonl
+  # Encoding-Varianten probieren — Claude Code's Encoding ist nicht 100% konsistent
+  local cwd_dash="${PWD//\//-}"               # / → -
+  local cwd_full_dash="${cwd_dash//_/-}"      # _ → - (manche Versionen)
+  local dir
+  for variant in "$cwd_dash" "$cwd_full_dash"; do
+    dir="$HOME/.claude/projects/$variant"
+    if [[ -d "$dir" ]]; then
+      local latest
+      latest=$(ls -t "$dir"/*.jsonl 2>/dev/null | head -1)
+      if [[ -n "$latest" ]]; then
+        basename "$latest" .jsonl
+        return 0
+      fi
+    fi
+  done
+  return 1
 }
 
 # Outer Loop: ein Durchlauf pro Claude-Code-Lebenszyklus.
@@ -98,7 +114,10 @@ while true; do
   # stderr wird via process substitution doppelt geschrieben:
   # 1) ans Original-Terminal (sichtbar wie immer)
   # 2) ins Logfile (Watcher liest mit)
-  if [[ -n "$RESUME_ID" ]]; then
+  if [[ "$RESUME_ID" == "__continue__" ]]; then
+    echo "↪ claude -c (continue last session)" >&2
+    "$CLAUDE_BIN" -c 2> >(tee -a "$LOGFILE" >&2)
+  elif [[ -n "$RESUME_ID" ]]; then
     echo "↪ claude --resume $RESUME_ID" >&2
     "$CLAUDE_BIN" --resume "$RESUME_ID" 2> >(tee -a "$LOGFILE" >&2)
   else
@@ -119,12 +138,13 @@ while true; do
     sid=$(find_latest_session_id)
     if [[ -n "$sid" ]]; then
       RESUME_ID="$sid"
-      sleep 2
-      continue
     else
-      echo "⚠ Konnte keine Session zum Resumen finden — beende." >&2
-      exit 1
+      # Fallback: keine cwd-spezifische Session gefunden → continue last via -c
+      echo "↪ Keine Session für $PWD gefunden, fallback auf 'claude -c' (continue last)" >&2
+      RESUME_ID="__continue__"
     fi
+    sleep 2
+    continue
   fi
 
   # Normales Ende
