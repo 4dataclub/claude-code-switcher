@@ -37,8 +37,14 @@ services:
         [ -f /host-claude/router-config.json ] && cp /host-claude/router-config.json /root/.claude-code-router/config.json || echo '{\"Providers\":[],\"Router\":{}}' > /root/.claude-code-router/config.json;
         echo '>>> Starte socat im Hintergrund (verbindet sobald ccr ready)';
         socat TCP-LISTEN:3457,fork,reuseaddr TCP:127.0.0.1:3456 &
-        echo '>>> Starte ccr im Vordergrund (hält Container am Leben)';
-        exec ccr start
+        echo '>>> Starte ccr (daemonisiert sich)';
+        ccr start;
+        sleep 2;
+        DAEMON_PID=$$(pgrep -f 'node.*claude-code-router' | head -1);
+        if [ -z \"$$DAEMON_PID\" ]; then echo 'ERROR: ccr daemon nicht gestartet'; exit 1; fi;
+        echo \">>> ccr-Daemon PID: $$DAEMON_PID — warte bis er stirbt\";
+        while kill -0 $$DAEMON_PID 2>/dev/null; do sleep 5; done;
+        echo '>>> ccr beendet, Container exit'
       "
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O- --timeout=3 http://127.0.0.1:3457/ >/dev/null 2>&1 || nc -z 127.0.0.1 3457"]
