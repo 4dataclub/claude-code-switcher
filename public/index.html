@@ -676,10 +676,17 @@
       });
       const d = await res.json();
       if (d.error) { toast(d.error, 'err'); return; }
+      // Welche Keys wurden tatsächlich gesendet (nicht __UNCHANGED__)?
+      const savedKeys = [];
+      if (anthropicKey  !== '__UNCHANGED__') savedKeys.push('Anthropic');
+      if (googleKey     !== '__UNCHANGED__') savedKeys.push('Google');
+      if (openrouterKey !== '__UNCHANGED__') savedKeys.push('OpenRouter');
       ['anthropicKey', 'googleKey', 'openrouterKey'].forEach(id =>
         document.getElementById(id).value = ''
       );
-      toast('Gespeichert · neu starten um es anzuwenden');
+      const baseMsg = `Provider: ${state.provider}` + (state.model ? ` · ${state.model}` : '');
+      const keyMsg  = savedKeys.length ? ` · Keys: ${savedKeys.join(', ')}` : '';
+      toast(`Gespeichert · ${baseMsg}${keyMsg}`);
       await loadStatus();
     } catch (e) {
       toast('Fehler: ' + e.message, 'err');
