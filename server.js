@@ -205,7 +205,13 @@ app.post('/api/switch', async (req, res) => {
     // OAuth via Claude Desktop, kein Key, kein Proxy
     delete config.env.ANTHROPIC_API_KEY;
     delete config.env.ANTHROPIC_BASE_URL;
-    delete config.model;
+    // Modell explizit setzen wenn vom UI gewählt — sonst nimmt Claude Code Plan-Default
+    // (bei Pro: Sonnet als Default; bei Max kann Opus genutzt werden)
+    if (model) {
+      config.model = model;
+    } else {
+      delete config.model;
+    }
   } else if (provider === 'google') {
     if (!keys.google) return res.status(400).json({ error: 'Google AI Studio API Key fehlt' });
     // Claude Code → Router → Google AI
