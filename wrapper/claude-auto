@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# claude-auto — startet Claude Code mit Quota-Detection und Auto-Failover.
+# Bei 90 %-Warnung → macOS-Notification + Switcher-UI-Banner.
+# Bei 100 %-Quota-Fehler → fragt Switcher (wenn Auto-Modus an) → killt + restart mit --resume.
+#
+# Usage: claude-auto [<claude-args>...]
+
+set -uo pipefail
+
+SWITCHER_URL="${CLAUDE_SWITCHER_URL:-http://localhost:3000}"
+CLAUDE_BIN="${CLAUDE_BIN:-claude}"
+
+# Patterns (anpassbar wenn Claude Code seine Strings ändert)
+WARN_RE='approach.*usage|messages.*remaining|90% of|usage.*nearly|quota.*near'
+ERROR_RE='usage_limit_exceeded|rate_limit_exceeded|quota.*exceeded|HTTP 429|usage limit reached'
+
+notify() {
+  local msg="$1"
+  if command -v osascript >/dev/null 2>&1; then
+    osascript -e "display notification \"${msg//\"/\\\"}\" with title \"Claude Switcher\" sound name \"Pop\"" 2>/dev/null || true
+  fi
+  echo "" >&2
+  echo "▸ Switcher: $msg" >&2
+}
+
+post_json() {
+  local path="$1" data="$2"
+  curl -sS --max-time 5 -X POST "${SWITCHER_URL}${path}" \
+    -H 'Content-Type: application/json' -d "$data" 2>/dev/null
+}
+
+# Findet die zuletzt modifizierte JSONL im Claude-Projects-Tree → das ist die aktive Session
+find_latest_session_id() {
+  local latest
+  latest=$(ls -t "$HOME/.claude/projects"/*/*.jsonl 2>/dev/null | head -1)
+  [[ -n "$latest" ]] && basename "$latest" .jsonl
+}
+
+# Outer Loop: ein Durchlauf pro Claude-Code-Lebenszyklus.
+# Bei Quota-Failover wird ein Marker-File geschrieben → wir resumen mit --resume.
+RESUME_ID=""
+while true; do
+  LOGFILE=$(mktemp -t claude-auto-XXXXXXXX)
+  RESTART_FILE="${LOGFILE}.restart"
+  trap 'rm -f "$LOGFILE" "$RESTART_FILE" 2>/dev/null' EXIT
+
+  # ── Background-Watcher 1: stderr-Parsing ────────────────────────────────
+  (
+    sleep 0.2
+    tail -F "$LOGFILE" 2>/dev/null | while IFS= read -r line; do
+
+      # 90 %-Warnung
+      if echo "$line" | grep -qiE "$WARN_RE"; then
+        notify "Quota bei ~90 % — im Switcher entscheiden"
+        post_json /api/warn \
+          "{\"percent\":90,\"project\":\"$PWD\",\"source\":\"wrapper-stderr\"}" \
+          > /dev/null
+      fi
+
+      # 100 %-Fehler → Switcher fragen
+      if echo "$line" | grep -qiE "$ERROR_RE"; then
+        local_resp=$(post_json /api/quota-error "{\"project\":\"$PWD\"}")
+        action=$(echo "$local_resp" | python3 -c \
+          "import sys,json; print(json.load(sys.stdin).get('action','notify'))" 2>/dev/null)
+
+        if [[ "$action" == "switch" ]]; then
+          notify "Quota erreicht — switche auf Fallback und starte neu"
+          touch "$RESTART_FILE"
+          pkill -TERM -P "$PPID" -f "claude" 2>/dev/null || true
+          break
+        elif [[ "$action" == "exhausted" ]]; then
+          notify "Alle Provider voll — manuell entscheiden"
+        else
+          notify "Quota erreicht — Auto-Modus aus, bleibt bei dir"
+        fi
+      fi
+    done
+  ) &
+  WATCHER_PID=$!
+
+  # ── Background-Watcher 2: Switcher-Restart-Marker (Chain-Promote etc.) ─
+  (
+    MARKER="$HOME/.claude/.switcher-restart"
+    while true; do
+      if [[ -f "$MARKER" ]]; then
+        rm -f "$MARKER"
+        notify "Switcher fordert Restart — Kontext bleibt erhalten"
+        touch "$RESTART_FILE"
+        pkill -TERM -P "$PPID" -f "claude" 2>/dev/null || true
+        break
+      fi
+      sleep 5
+    done
+  ) &
+  MARKER_WATCHER_PID=$!
+
+  # ── Claude im Foreground ────────────────────────────────────────────────
+  # stderr wird via process substitution doppelt geschrieben:
+  # 1) ans Original-Terminal (sichtbar wie immer)
+  # 2) ins Logfile (Watcher liest mit)
+  if [[ -n "$RESUME_ID" ]]; then
+    echo "↪ claude --resume $RESUME_ID" >&2
+    "$CLAUDE_BIN" --resume "$RESUME_ID" 2> >(tee -a "$LOGFILE" >&2)
+  else
+    "$CLAUDE_BIN" "$@" 2> >(tee -a "$LOGFILE" >&2)
+  fi
+  CLAUDE_EXIT=$?
+
+  # Beide Watcher beenden (inkl. tail-Subprozess)
+  for pid in "$WATCHER_PID" "$MARKER_WATCHER_PID"; do
+    pkill -P "$pid" 2>/dev/null || true
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  done
+
+  # Restart angefordert?
+  if [[ -f "$RESTART_FILE" ]]; then
+    rm -f "$RESTART_FILE" "$LOGFILE"
+    sid=$(find_latest_session_id)
+    if [[ -n "$sid" ]]; then
+      RESUME_ID="$sid"
+      sleep 2
+      continue
+    else
+      echo "⚠ Konnte keine Session zum Resumen finden — beende." >&2
+      exit 1
+    fi
+  fi
+
+  # Normales Ende
+  rm -f "$LOGFILE"
+  exit "$CLAUDE_EXIT"
+done

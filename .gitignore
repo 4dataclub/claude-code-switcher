@@ -1,0 +1,39 @@
+# Niemals Keys / Credentials
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+credentials/
+
+# Niemals Switcher-State (enthält API-Keys!)
+settings.json
+router-config.json
+.switcher-restart
+.recheck-suggested
+.restart-signal
+
+# Lokale Logs / Temp
+*.log
+tmp/
+.tmp/
+
+# Docker
+.docker/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node (falls jemand lokal entwickelt)
+node_modules/
+npm-debug.log*
+package-lock.json
