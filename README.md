@@ -6,6 +6,40 @@
 
 *Web-UI auf `http://localhost:3000` — Failover-Chain editierbar, Provider/Modell jederzeit manuell wechselbar.*
 
+### Modell-Auswahl pro Provider
+
+<table>
+<tr>
+<td width="33%">
+
+**Anthropic — Claude-Modelle**
+
+![Anthropic-Modelle](docs/screenshots/03-provider-anthropic.png)
+
+Opus, Sonnet 4.6, Haiku 4.5, Claude 3.5 Sonnet
+
+</td>
+<td width="33%">
+
+**Google AI — Gemini-Modelle**
+
+![Google AI Modelle](docs/screenshots/04-provider-google.png)
+
+Gemini 2.5 Pro/Flash/Flash-Lite, Gemini 3 Pro/Flash (Preview)
+
+</td>
+<td width="33%">
+
+**OpenRouter — Mix**
+
+![OpenRouter Modelle](docs/screenshots/05-provider-openrouter.png)
+
+Claude Sonnet 4.5, Gemini 2.5 Pro/Flash, DeepSeek V3 (Free), Llama 3.3 70B (Free)
+
+</td>
+</tr>
+</table>
+
 ---
 
 ## Inhalt
