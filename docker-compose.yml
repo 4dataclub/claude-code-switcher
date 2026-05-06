@@ -35,16 +35,10 @@ services:
       sh -c "
         mkdir -p /root/.claude-code-router;
         [ -f /host-claude/router-config.json ] && cp /host-claude/router-config.json /root/.claude-code-router/config.json || echo '{\"Providers\":[],\"Router\":{}}' > /root/.claude-code-router/config.json;
-        ccr start &
-        echo '>>> Warte auf ccr (max 30s)';
-        for i in $$(seq 1 30); do
-          if nc -z 127.0.0.1 3456 2>/dev/null; then
-            echo \">>> ccr ready nach $${i}s\"; break;
-          fi;
-          sleep 1;
-        done;
-        echo '>>> Starte socat-Bridge 0.0.0.0:3457 -> 127.0.0.1:3456';
-        exec socat TCP-LISTEN:3457,fork,reuseaddr TCP:127.0.0.1:3456
+        echo '>>> Starte socat im Hintergrund (verbindet sobald ccr ready)';
+        socat TCP-LISTEN:3457,fork,reuseaddr TCP:127.0.0.1:3456 &
+        echo '>>> Starte ccr im Vordergrund (hält Container am Leben)';
+        exec ccr start
       "
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O- --timeout=3 http://127.0.0.1:3457/ >/dev/null 2>&1 || nc -z 127.0.0.1 3457"]
