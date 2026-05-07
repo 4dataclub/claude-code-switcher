@@ -65,7 +65,17 @@ echo ""
 import sys, json
 try:
     d = json.load(sys.stdin)
-    print(f'\n\033[1;33m▼▼▼ SWITCH ▼▼▼  Provider: \033[1;35m{d.get(\"provider\")}\033[0m \033[1;33m/ Modell: \033[1;36m{d.get(\"model\")}\033[0m\n')
+    p = d.get('provider')
+    m = d.get('model')
+    ar = d.get('activeRoute') or {}
+    real_p = ar.get('provider') or p
+    real_m = ar.get('model') or m
+    if p == 'anthropic':
+        print(f'\n\033[1;33m▼▼▼ SWITCH ▼▼▼\033[0m  → \033[1;33mANTHROPIC direkt\033[0m / \033[1;36m{m}\033[0m')
+        print(f'                Anfragen gehen direkt zu api.anthropic.com (nicht durch Router)\n')
+    else:
+        print(f'\n\033[1;33m▼▼▼ SWITCH ▼▼▼\033[0m  → echtes Backend: \033[1;35m{real_p}\033[0m / \033[1;36m{real_m}\033[0m')
+        print(f'                (settings.json model: \033[2m{m}\033[0m — Anthropic-Alias, ignoriere ihn)\n')
 except: pass
 " 2>/dev/null
         ;;

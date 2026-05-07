@@ -277,7 +277,11 @@ app.post('/api/switch', async (req, res) => {
     console.warn('Konnte Wrapper-Marker nicht schreiben:', e.message);
   }
 
-  broadcast('switch', { provider, model: config.model || null });
+  broadcast('switch', {
+    provider,
+    model: config.model || null,
+    activeRoute: config._switcher?.activeRoute || null,
+  });
   res.json({
     success: true,
     provider,
