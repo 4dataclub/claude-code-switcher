@@ -168,11 +168,10 @@ for line in sys.stdin:
             real = url[:40]
             color_c = '37'
 
-        # Modell-Name aus URL
-        if ':generateContent' in url:
-            real_model = url.split('/models/')[-1].replace(':generateContent', '')
-        else:
-            real_model = '?'
+        # Modell-Name aus URL (gemini: /models/X:generateContent oder :streamGenerateContent)
+        import re
+        m = re.search(r'/models/([^:?/]+)', url)
+        real_model = m.group(1) if m else '?'
 
         ok = '✓' if status == 200 else '✗'
         ok_c = '32' if status == 200 else '31'
