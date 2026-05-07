@@ -160,9 +160,9 @@ function deriveProvider(config) {
 }
 
 const DEFAULT_CHAIN = [
-  { provider: 'google',     model: 'gemini-2.5-pro' },
-  { provider: 'google',     model: 'gemini-2.5-flash' },
-  { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
+  { provider: 'google', model: 'gemini-2.5-pro' },
+  { provider: 'google', model: 'gemini-2.5-flash' },
+  { provider: 'google', model: 'gemini-2.5-flash-lite' },
 ];
 
 app.get('/api/status', (req, res) => {
