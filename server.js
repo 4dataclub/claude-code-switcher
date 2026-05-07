@@ -202,13 +202,25 @@ app.post('/api/switch', async (req, res) => {
   if (!config._switcher) config._switcher = { keys: {} };
   if (!config._switcher.keys) config._switcher.keys = {};
 
-  // Keys aktualisieren (ohne __UNCHANGED__-Sentinel)
+  // Keys aktualisieren (ohne __UNCHANGED__-Sentinel) + Format-Validation
+  const KEY_PATTERNS = {
+    anthropic:  /^sk-ant-(api03|oat01)-/,
+    google:     /^AIza[A-Za-z0-9_-]{30,}$/,
+    openrouter: /^sk-or-v1-/,
+  };
   for (const [k, v] of [
     ['anthropic', anthropicKey],
     ['google', googleKey],
     ['openrouter', openrouterKey],
   ]) {
-    if (v && v !== '__UNCHANGED__') config._switcher.keys[k] = v;
+    if (v && v !== '__UNCHANGED__') {
+      if (!KEY_PATTERNS[k].test(v)) {
+        return res.status(400).json({
+          error: `${k}-Key hat falsches Format. Erwartet: ${KEY_PATTERNS[k].source}`,
+        });
+      }
+      config._switcher.keys[k] = v;
+    }
   }
 
   const keys = config._switcher.keys;
