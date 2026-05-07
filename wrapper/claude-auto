@@ -232,11 +232,16 @@ except: print('unknown')
   fi
 
   # ── Claude-Flags ──────────────────────────────────────────────────────
-  # Früher: --bare im non-Anthropic-Modus, um OAuth-Keychain zu ignorieren.
-  # Jetzt: Auto-Logout im Wrapper räumt den Keychain eh schon auf — kein
-  # --bare mehr nötig. Vorteil: CLAUDE.md, hooks, plugins greifen auch im
-  # non-Anthropic-Modus → User kann via Chat switchen, Status checken etc.
+  # non-Anthropic-Modus: --bare nötig (sonst checkt claude loggedIn-Status
+  # und scheitert mit "Please run /login"). Aber --bare deaktiviert CLAUDE.md
+  # auto-discovery → wir geben das Verzeichnis explizit via --add-dir mit,
+  # damit User trotzdem via Chat switchen kann ("wechsel auf X").
   CLAUDE_FLAGS=()
+  if [[ -n "${ANTHROPIC_BASE_URL:-}" ]]; then
+    CLAUDE_FLAGS+=(--bare)
+    [[ -f "$HOME/.claude/CLAUDE.md" ]] && CLAUDE_FLAGS+=(--add-dir "$HOME/.claude")
+    echo "↪ --bare aktiv + --add-dir ~/.claude (CLAUDE.md wird trotzdem gelesen)" >&2
+  fi
 
   # ── Claude im Foreground ────────────────────────────────────────────────
   # ${arr[@]+...} expansion: Workaround für `set -u` mit leerem Bash-Array
