@@ -1,155 +1,160 @@
-#!/usr/bin/env bash
-# Claude Code Switcher — Self-Extracting Setup (macOS / Linux / WSL2)
-# Erzeugt:  ./<TARGET>/   (Switcher-Source-Code, baut Docker-Container)
-# Und:      ~/.claude/hooks/switcher-banner.sh + Hook-Eintrag in settings.json
-# Und:      ~/.claude/CLAUDE.md (Switcher-Anweisungen für claude im Chat)
+# Claude Code Switcher — Self-Extracting Setup (Windows / PowerShell)
+# Erzeugt:  .\<TARGET>\  (Switcher-Source-Code, baut Docker-Container)
+# Und:      $HOME\.claude\hooks\switcher-banner.ps1 + Hook in settings.json
+# Und:      $HOME\.claude\CLAUDE.md (Switcher-Anweisungen)
 #
-# Aufruf:   ./setup.sh                       # entpackt nach ./claude-switcher/
-#           ./setup.sh my-switcher           # eigener Zielordner
-#           ./setup.sh --no-user-config      # nur Source, keine ~/.claude-Änderungen
+# Aufruf:   .\setup.ps1                          # entpackt nach .\claude-switcher\
+#           .\setup.ps1 -Target my-switcher      # eigener Zielordner
+#           .\setup.ps1 -NoUserConfig            # nur Source
 
-set -euo pipefail
+[CmdletBinding()]
+param(
+    [string]$Target = 'claude-switcher',
+    [switch]$NoUserConfig
+)
 
-TARGET="claude-switcher"
-WITH_USER_CONFIG=1
-for arg in "$@"; do
-  case "$arg" in
-    --no-user-config) WITH_USER_CONFIG=0 ;;
-    --*) echo "Unbekannte Option: $arg" >&2; exit 1 ;;
-    *)   TARGET="$arg" ;;
-  esac
-done
+$ErrorActionPreference = 'Stop'
+$ScriptPath = $MyInvocation.MyCommand.Path
 
-[[ -e "$TARGET" && ! -d "$TARGET" ]] && { echo "✗ $TARGET ist kein Verzeichnis." >&2; exit 1; }
-SCRIPT="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-
-mkdir -p "$TARGET"; cd "$TARGET"; mkdir -p public router wrapper docs/screenshots
-
-extract() {
-  local path="$1" marker="$2"
-  mkdir -p "$(dirname "$path")"
-  awk -v m="__BEGIN_${marker}__" -v e="__END_${marker}__" '
-    $0 == m { capture=1; next }
-    $0 == e { capture=0; exit }
-    capture { print }
-  ' "$SCRIPT" | base64 --decode > "$path"
+if (Test-Path $Target -PathType Leaf) {
+    Write-Host "✗ $Target ist eine Datei, kein Verzeichnis." -ForegroundColor Red
+    exit 1
 }
 
-echo "▸ Entpacke Switcher-Source nach $(pwd)/"
-extract "Dockerfile" "Dockerfile"
-extract "package.json" "package_json"
-extract "server.js" "server_js"
-extract "docker-compose.yml" "docker_compose_yml"
-extract "public/index.html" "public_index_html"
-extract "router/Dockerfile" "router_Dockerfile"
-extract "router/config.json" "router_config_json"
-extract "wrapper/claude-auto" "wrapper_claude_auto"
-extract "wrapper/claude-auto.ps1" "wrapper_claude_auto_ps1"
-extract "wrapper/install.sh" "wrapper_install_sh"
-extract "wrapper/install.ps1" "wrapper_install_ps1"
-extract "wrapper/router-watch.sh" "wrapper_router_watch_sh"
-extract "wrapper/router-watch.ps1" "wrapper_router_watch_ps1"
-extract "wrapper/switcher-banner.sh" "wrapper_switcher_banner_sh"
-extract "wrapper/switcher-banner.ps1" "wrapper_switcher_banner_ps1"
-extract "docs/screenshots/01-overview.png"             "docs_screenshots_01_overview"
-extract "docs/screenshots/02-auto-mode.png"            "docs_screenshots_02_auto_mode"
-extract "docs/screenshots/03-provider-anthropic.png"   "docs_screenshots_03_provider_anthropic"
-extract "docs/screenshots/04-provider-google.png"      "docs_screenshots_04_provider_google"
-extract "docs/screenshots/05-provider-openrouter.png"  "docs_screenshots_05_provider_openrouter"
-extract "docs/screenshots/06-90-percent-banner.png"    "docs_screenshots_06_90_percent_banner"
-extract "docs/screenshots/07-status-gemini-active.png" "docs_screenshots_07_status_gemini_active"
-extract "docs/screenshots/08-banner-and-keys.png"      "docs_screenshots_08_banner_and_keys"
-chmod +x wrapper/claude-auto wrapper/install.sh wrapper/router-watch.sh wrapper/switcher-banner.sh 2>/dev/null || true
-echo "  ✓ Source entpackt"
+New-Item -Path $Target -ItemType Directory -Force | Out-Null
+Push-Location $Target
+New-Item -Path 'public','router','wrapper','docs\screenshots' -ItemType Directory -Force | Out-Null
 
-if (( WITH_USER_CONFIG )); then
-  CLAUDE_DIR="${HOME}/.claude"
-  mkdir -p "$CLAUDE_DIR/hooks"
+function Extract-Block {
+    param([string]$Path, [string]$Marker)
+    $dir = Split-Path $Path -Parent
+    if ($dir -and -not (Test-Path $dir)) { New-Item -Path $dir -ItemType Directory -Force | Out-Null }
+    $beg = "__BEGIN_${Marker}__"
+    $end = "__END_${Marker}__"
+    $capture = $false
+    $b64 = New-Object System.Text.StringBuilder
+    foreach ($line in [System.IO.File]::ReadLines($ScriptPath)) {
+        if ($line -eq $beg) { $capture = $true; continue }
+        if ($line -eq $end) { break }
+        if ($capture) { [void]$b64.Append($line) }
+    }
+    [System.IO.File]::WriteAllBytes($Path, [Convert]::FromBase64String($b64.ToString()))
+}
 
-  echo "▸ Installiere Banner-Hook nach $CLAUDE_DIR/hooks/switcher-banner.sh"
-  cp wrapper/switcher-banner.sh "$CLAUDE_DIR/hooks/switcher-banner.sh"
-  chmod +x "$CLAUDE_DIR/hooks/switcher-banner.sh"
+Write-Host "▸ Entpacke Switcher-Source nach $(Get-Location)\" -ForegroundColor Cyan
+Extract-Block 'Dockerfile'                    'Dockerfile'
+Extract-Block 'package.json'                  'package_json'
+Extract-Block 'server.js'                     'server_js'
+Extract-Block 'docker-compose.yml'            'docker_compose_yml'
+Extract-Block 'public\index.html'             'public_index_html'
+Extract-Block 'router\Dockerfile'             'router_Dockerfile'
+Extract-Block 'router\config.json'            'router_config_json'
+Extract-Block 'wrapper\claude-auto'           'wrapper_claude_auto'
+Extract-Block 'wrapper\claude-auto.ps1'       'wrapper_claude_auto_ps1'
+Extract-Block 'wrapper\install.sh'            'wrapper_install_sh'
+Extract-Block 'wrapper\install.ps1'           'wrapper_install_ps1'
+Extract-Block 'wrapper\router-watch.sh'       'wrapper_router_watch_sh'
+Extract-Block 'wrapper\router-watch.ps1'      'wrapper_router_watch_ps1'
+Extract-Block 'wrapper\switcher-banner.sh'    'wrapper_switcher_banner_sh'
+Extract-Block 'wrapper\switcher-banner.ps1'   'wrapper_switcher_banner_ps1'
+Extract-Block 'docs\screenshots\01-overview.png'             'docs_screenshots_01_overview'
+Extract-Block 'docs\screenshots\02-auto-mode.png'            'docs_screenshots_02_auto_mode'
+Extract-Block 'docs\screenshots\03-provider-anthropic.png'   'docs_screenshots_03_provider_anthropic'
+Extract-Block 'docs\screenshots\04-provider-google.png'      'docs_screenshots_04_provider_google'
+Extract-Block 'docs\screenshots\05-provider-openrouter.png'  'docs_screenshots_05_provider_openrouter'
+Extract-Block 'docs\screenshots\06-90-percent-banner.png'    'docs_screenshots_06_90_percent_banner'
+Extract-Block 'docs\screenshots\07-status-gemini-active.png' 'docs_screenshots_07_status_gemini_active'
+Extract-Block 'docs\screenshots\08-banner-and-keys.png'      'docs_screenshots_08_banner_and_keys'
+Write-Host "  ✓ Source entpackt" -ForegroundColor Green
 
-  CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"
-  MARK_BEG="<!-- BEGIN claude-switcher -->"
-  MARK_END="<!-- END claude-switcher -->"
-  TMP_BLOCK=$(mktemp)
-  awk -v m="__BEGIN_claude_md__" -v e="__END_claude_md__" '
-    $0==m{c=1;next} $0==e{exit} c
-  ' "$SCRIPT" | base64 --decode > "$TMP_BLOCK"
+if (-not $NoUserConfig) {
+    $ClaudeDir = Join-Path $HOME '.claude'
+    $HooksDir  = Join-Path $ClaudeDir 'hooks'
+    New-Item -Path $HooksDir -ItemType Directory -Force | Out-Null
 
-  echo "▸ Schreibe Switcher-Anweisungen in $CLAUDE_MD"
-  if [[ -f "$CLAUDE_MD" ]] && grep -qF "$MARK_BEG" "$CLAUDE_MD"; then
-    python3 - "$CLAUDE_MD" "$TMP_BLOCK" "$MARK_BEG" "$MARK_END" <<'PYEOF'
-import sys, re
-md_path, block_path, beg, end = sys.argv[1:5]
-with open(md_path) as f: md = f.read()
-with open(block_path) as f: block = f.read().rstrip() + "\n"
-new_block = f"{beg}\n{block}{end}\n"
-md = re.sub(re.escape(beg) + r".*?" + re.escape(end) + r"\n?", new_block, md, flags=re.DOTALL)
-with open(md_path, "w") as f: f.write(md)
-PYEOF
-    echo "  ✓ Switcher-Block aktualisiert"
-  else
-    {
-      [[ -f "$CLAUDE_MD" ]] && cat "$CLAUDE_MD" && echo
-      echo "$MARK_BEG"; cat "$TMP_BLOCK"; echo "$MARK_END"
-    } > "$CLAUDE_MD.tmp" && mv "$CLAUDE_MD.tmp" "$CLAUDE_MD"
-    echo "  ✓ CLAUDE.md erstellt"
-  fi
-  rm -f "$TMP_BLOCK"
+    $HookDest = Join-Path $HooksDir 'switcher-banner.ps1'
+    Copy-Item 'wrapper\switcher-banner.ps1' $HookDest -Force
+    Write-Host "▸ Banner-Hook installiert: $HookDest" -ForegroundColor Cyan
 
-  echo "▸ Registriere UserPromptSubmit-Hook in $CLAUDE_DIR/settings.json"
-  python3 - "$CLAUDE_DIR/settings.json" "$CLAUDE_DIR/hooks/switcher-banner.sh" <<'PYEOF'
-import json, sys
-from pathlib import Path
-sp, hp = Path(sys.argv[1]), sys.argv[2]
-data = {}
-if sp.exists():
-    try: data = json.loads(sp.read_text())
-    except: data = {}
-data.setdefault("hooks", {})
-existing = data["hooks"].get("UserPromptSubmit", [])
-if not any(any(h.get("command","").endswith("switcher-banner.sh") for h in e.get("hooks",[])) for e in existing):
-    existing.append({"matcher":".*","hooks":[{"type":"command","command":hp,"shell":"bash","async":False}]})
-    data["hooks"]["UserPromptSubmit"] = existing
-    sp.parent.mkdir(parents=True, exist_ok=True)
-    sp.write_text(json.dumps(data, indent=2))
-    print("  ✓ Hook registriert")
-else:
-    print("  ✓ Hook war schon registriert")
-PYEOF
-fi
+    $ClaudeMd = Join-Path $ClaudeDir 'CLAUDE.md'
+    $markBeg  = '<!-- BEGIN claude-switcher -->'
+    $markEnd  = '<!-- END claude-switcher -->'
+    $tmpBlock = New-TemporaryFile
+    Extract-Block $tmpBlock.FullName 'claude_md'
+    $blockContent = [System.IO.File]::ReadAllText($tmpBlock.FullName).TrimEnd() + "`n"
 
-if command -v docker >/dev/null 2>&1; then
-  echo "▸ Baue + starte Docker-Container"
-  if docker compose version >/dev/null 2>&1; then
-    docker compose up -d --build 2>&1 | tail -5
-  elif command -v docker-compose >/dev/null 2>&1; then
-    docker-compose up -d --build 2>&1 | tail -5
-  fi
-else
-  echo "  ⚠ docker nicht installiert"
-fi
+    Write-Host "▸ Schreibe Switcher-Anweisungen in $ClaudeMd" -ForegroundColor Cyan
+    if ((Test-Path $ClaudeMd) -and ((Get-Content $ClaudeMd -Raw) -match [regex]::Escape($markBeg))) {
+        $existing = Get-Content $ClaudeMd -Raw
+        $newBlock = "$markBeg`n$blockContent$markEnd`n"
+        $pattern  = [regex]::Escape($markBeg) + '.*?' + [regex]::Escape($markEnd) + "(`n)?"
+        $updated  = [regex]::Replace($existing, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $newBlock }, 'Singleline')
+        Set-Content -Path $ClaudeMd -Value $updated -NoNewline
+        Write-Host "  ✓ Switcher-Block aktualisiert" -ForegroundColor Green
+    } else {
+        $head = ''
+        if (Test-Path $ClaudeMd) { $head = (Get-Content $ClaudeMd -Raw) + "`n" }
+        $full = "$head$markBeg`n$blockContent$markEnd`n"
+        Set-Content -Path $ClaudeMd -Value $full -NoNewline
+        Write-Host "  ✓ CLAUDE.md erstellt" -ForegroundColor Green
+    }
+    Remove-Item $tmpBlock -Force
 
-# Wrapper-Alias automatisch installieren (Bash/Zsh)
-# Damit ist NUR setup.sh nötig — kein zweiter Schritt mehr für den User.
-echo ""
-echo "▸ Installiere claude-Wrapper-Alias"
-bash "$(pwd)/wrapper/install.sh"
+    $Settings = Join-Path $ClaudeDir 'settings.json'
+    Write-Host "▸ Registriere UserPromptSubmit-Hook in $Settings" -ForegroundColor Cyan
+    $data = @{}
+    if (Test-Path $Settings) {
+        try { $data = Get-Content $Settings -Raw | ConvertFrom-Json -AsHashtable } catch { $data = @{} }
+    }
+    if (-not $data.ContainsKey('hooks')) { $data['hooks'] = @{} }
+    if (-not $data['hooks'].ContainsKey('UserPromptSubmit')) { $data['hooks']['UserPromptSubmit'] = @() }
 
-# Welches Shell-rc-File hat install.sh angefasst?
-RC_FILE="$HOME/.zshrc"
-[[ "${SHELL:-}" == *"bash"* ]] && RC_FILE="$HOME/.bashrc"
+    $already = $false
+    foreach ($entry in $data['hooks']['UserPromptSubmit']) {
+        foreach ($h in $entry.hooks) {
+            if ($h.command -and $h.command -like '*switcher-banner.ps1') { $already = $true; break }
+        }
+    }
+    if (-not $already) {
+        $data['hooks']['UserPromptSubmit'] += @{
+            matcher = '.*'
+            hooks = @(@{
+                type    = 'command'
+                command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$HookDest`""
+                async   = $false
+            })
+        }
+        ($data | ConvertTo-Json -Depth 10) | Set-Content -Path $Settings -NoNewline
+        Write-Host "  ✓ Hook registriert" -ForegroundColor Green
+    } else {
+        Write-Host "  ✓ Hook war schon registriert" -ForegroundColor Green
+    }
+}
 
-echo ""
-echo "✓ Komplett fertig. Eine letzte Aktion:"
-echo "  → Terminal neu öffnen  (oder:  source $RC_FILE )"
-echo ""
-echo "Dann:"
-echo "  claude                  # läuft jetzt durch den Wrapper mit Auto-Failover"
-echo "  http://localhost:3000   # UI zum Provider/Modell wählen"
-echo "  $(pwd)/wrapper/router-watch.sh   # live anschauen welches Modell antwortet"
+# Docker
+$dockerOk = (Get-Command docker -ErrorAction SilentlyContinue) -ne $null
+if ($dockerOk) {
+    Write-Host "▸ Baue + starte Docker-Container" -ForegroundColor Cyan
+    & docker compose up -d --build 2>&1 | Select-Object -Last 5
+} else {
+    Write-Host "  ⚠ docker nicht installiert (Docker Desktop für Windows benötigt)" -ForegroundColor Yellow
+}
+
+# Wrapper-Alias automatisch installieren (PowerShell-Profil)
+# Damit ist NUR setup.ps1 nötig — kein zweiter Schritt mehr für den User.
+Write-Host ""
+Write-Host "▸ Installiere claude-Wrapper-Funktion ins PowerShell-Profil" -ForegroundColor Cyan
+& "$(Get-Location)\wrapper\install.ps1"
+
+Pop-Location
+Write-Host ""
+Write-Host "✓ Komplett fertig. Eine letzte Aktion:" -ForegroundColor Green
+Write-Host "  → PowerShell neu öffnen  (oder:  . `$PROFILE )"
+Write-Host ""
+Write-Host "Dann:"
+Write-Host "  claude                              # läuft jetzt durch den Wrapper"
+Write-Host "  http://localhost:3000               # UI zum Provider/Modell wählen"
+Write-Host "  $Target\wrapper\router-watch.ps1   # live anschauen welches Modell antwortet"
 exit 0
 
 __BEGIN_Dockerfile__

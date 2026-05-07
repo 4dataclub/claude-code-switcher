@@ -186,10 +186,12 @@ function deriveProvider(config) {
   return 'anthropic';
 }
 
+// Default-Failover-Reihenfolge: Anthropic (primary, nicht in chain) → Gemini Pro
+// → Gemini Flash via OpenRouter. So vermeidet man dass beim Google-AI-Studio-
+// Limit alle Stufen ausfallen: OpenRouter ist ein zweites Konto/zweite Quota.
 const DEFAULT_CHAIN = [
-  { provider: 'google', model: 'gemini-2.5-pro' },
-  { provider: 'google', model: 'gemini-2.5-flash' },
-  { provider: 'google', model: 'gemini-2.5-flash-lite' },
+  { provider: 'google',     model: 'gemini-2.5-pro' },
+  { provider: 'openrouter', model: 'google/gemini-2.5-flash' },
 ];
 
 app.get('/api/status', (req, res) => {
@@ -202,6 +204,11 @@ app.get('/api/status', (req, res) => {
   res.json({
     provider: deriveProvider(config),
     model: config.model || null,
+    // activeRoute: das ECHTE Backend bei non-Anthropic (Router).
+    // Bei Anthropic ist es null — da ist `model` das echte Modell.
+    // Bei Google/OpenRouter ist `model` immer der Anthropic-Alias
+    // (claude-sonnet-4-5-20250929) — das echte Modell steht hier.
+    activeRoute: switcher.activeRoute || null,
     mode: switcher.mode || 'manual',
     fallback_chain: chain,
     chain_position: position,
@@ -218,10 +225,108 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// ─── Whoami: Plain-Text ein-Zeilen-Antwort fürs Modell ─────────────────────
+// Claude Code halluziniert beim Lesen vom JSON-Status, weil activeRoute oft
+// hinter "+38 lines (expand)" versteckt ist. Hier kommt eine vorformulierte,
+// nicht zu missdeutende Antwort heraus.
+const PRETTY_NAMES = {
+  'claude-opus-4-7':           'Claude Opus 4.7',
+  'claude-sonnet-4-6':         'Claude Sonnet 4.6',
+  'claude-sonnet-4-5-20250929':'Claude Sonnet 4.5',
+  'claude-haiku-4-5-20251001': 'Claude Haiku 4.5',
+  'claude-3-5-sonnet-20241022':'Claude 3.5 Sonnet',
+  'gemini-2.5-pro':            'Gemini 2.5 Pro',
+  'gemini-2.5-flash':          'Gemini 2.5 Flash',
+  'gemini-2.5-flash-lite':     'Gemini 2.5 Flash Lite',
+  'gemini-3-pro-preview':      'Gemini 3 Pro (Preview)',
+  'gemini-3-flash-preview':    'Gemini 3 Flash (Preview)',
+};
+function prettyName(id) { return PRETTY_NAMES[id] || id; }
+
+// Voller Key für UI-Eye-Toggle. Nur localhost — der Switcher läuft lokal,
+// hier ist's akzeptabel.
+app.get('/api/key/:provider', (req, res) => {
+  const { provider } = req.params;
+  if (!['anthropic', 'google', 'openrouter'].includes(provider)) {
+    return res.status(400).json({ error: 'unknown provider' });
+  }
+  const config = readConfig();
+  const key = (config._switcher?.keys || {})[provider] || '';
+  res.json({ provider, key });
+});
+
+// Banner: Text-Snippets die der UserPromptSubmit-Hook in den Chat-Kontext
+// einblendet (Quota-Warnung bei 90% oder 100%). Manueller Modus → keine
+// Auto-Switches; Banner sagt dem User Bescheid + schlägt Fallback vor.
+// Nur wenn Event < 5 Minuten her ist, sonst leerer Body.
+app.get('/api/banner', (req, res) => {
+  const config = readConfig();
+  const s = config._switcher || {};
+  const now = Date.now();
+  const FRESH_MS = 5 * 60 * 1000;
+  const lines = [];
+
+  if (s.lastWarn && (now - s.lastWarn.at) < FRESH_MS) {
+    const next = (s.fallback_chain || [])[s.chain_position || 0];
+    const nextName = next ? prettyName(next.model) : 'Gemini Pro';
+    const pct = s.lastWarn.percent;
+    if (pct >= 100) {
+      lines.push(
+        `[SWITCHER-EVENT] Anthropic-Quota voll (100%). Im UI auf ${nextName} wechseln oder im Chat sagen "wechsel auf gemini pro". ` +
+        `Sage dem User: "⚠ Anthropic-Quota erreicht — switch auf ${nextName} empfohlen. Sag 'wechsel auf gemini pro' damit ich umstelle."`
+      );
+    } else {
+      lines.push(
+        `[SWITCHER-EVENT] Anthropic-Quota bei ${pct}%. Manueller Modus: User entscheidet. ` +
+        `Sage dem User: "⚠ Anthropic-Quota bei ${pct}% — bei 100% empfehle ich Wechsel auf ${nextName}. Sag dann 'wechsel auf gemini pro'."`
+      );
+    }
+    // einmalig melden — danach löschen, sonst spammt's bei jedem Prompt
+    s.lastWarn = null;
+    try { writeConfig(config); } catch {}
+  }
+
+  res.type('text/plain; charset=utf-8').send(lines.join('\n'));
+});
+
+app.get('/api/whoami', (req, res) => {
+  const config = readConfig();
+  const switcher = config._switcher || {};
+  const provider = deriveProvider(config);
+  const ar = switcher.activeRoute;
+
+  res.type('text/plain; charset=utf-8');
+  if (ar && (provider === 'google' || provider === 'openrouter')) {
+    if (provider === 'google') {
+      res.send(`${prettyName(ar.model)} via Google AI Studio (Router) — entwickelt von Google`);
+    } else {
+      // OpenRouter: model = "vendor/name"
+      const vendor = (ar.model || '').split('/')[0] || 'unknown';
+      const builder = vendor === 'anthropic' ? 'Anthropic'
+                    : vendor === 'google'    ? 'Google'
+                    : vendor === 'meta-llama'? 'Meta'
+                    : vendor === 'openai'    ? 'OpenAI'
+                    : vendor === 'deepseek'  ? 'DeepSeek'
+                    : vendor;
+      res.send(`${ar.model} via OpenRouter — entwickelt von ${builder}`);
+    }
+  } else {
+    // Anthropic direkt
+    res.send(`${prettyName(config.model || 'claude-sonnet-4-5-20250929')} (Anthropic direkt) — entwickelt von Anthropic`);
+  }
+});
+
 // ─── Switch ────────────────────────────────────────────────────────────────
 
 app.post('/api/switch', async (req, res) => {
   const { provider, model, anthropicKey, googleKey, openrouterKey } = req.body;
+  // Diagnose-Log: zeigt welche Keys (Länge + Präfix) ankamen.
+  // Hilft "wird nicht gespeichert"-Probleme schnell zu lokalisieren.
+  const sketch = (k) =>
+    !k ? '∅' : k === '__UNCHANGED__' ? '__UNCHANGED__'
+        : `${k.slice(0,8)}…(len=${k.length})`;
+  console.log(`[switch] provider=${provider} model=${model || '∅'} ` +
+              `anthropic=${sketch(anthropicKey)} google=${sketch(googleKey)} openrouter=${sketch(openrouterKey)}`);
   if (!provider) return res.status(400).json({ error: 'provider required' });
 
   const config = readConfig();
@@ -233,7 +338,9 @@ app.post('/api/switch', async (req, res) => {
   const KEY_PATTERNS = {
     anthropic:  /^sk-ant-(api03|oat01)-/,
     google:     /^AIza[A-Za-z0-9_-]{30,}$/,
-    openrouter: /^sk-or-v1-/,
+    // OpenRouter: aktuell `sk-or-v1-…`; v2 etc. zulassen indem wir nur das
+    // Vendor-Präfix prüfen. Mindestlänge 20 als grobe Plausibilität.
+    openrouter: /^sk-or-[A-Za-z0-9_-]{15,}$/,
   };
   for (const [k, v] of [
     ['anthropic', anthropicKey],
@@ -264,6 +371,9 @@ app.post('/api/switch', async (req, res) => {
     } else {
       delete config.model;
     }
+    // activeRoute zurücksetzen — sonst liest /api/status einen veralteten
+    // Google/OpenRouter-Eintrag und Claude antwortet das falsche Backend.
+    delete config._switcher.activeRoute;
   } else if (provider === 'google') {
     if (!keys.google) return res.status(400).json({ error: 'Google AI Studio API Key fehlt' });
     // Validiere model — sonst landet ein Anthropic-Alias in activeRoute und
@@ -423,6 +533,15 @@ app.post('/api/quota-error', async (req, res) => {
   broadcast('quota-error', { project, sessionId, mode: s.mode });
 
   if (s.mode !== 'auto') {
+    // Manueller Modus: lastWarn auf 100% setzen, damit /api/banner dem
+    // User im Chat sagt dass die Quota voll ist und er manuell switchen soll.
+    s.lastWarn = {
+      percent: 100,
+      project: project || null,
+      source: 'wrapper-quota-error',
+      at: Date.now(),
+    };
+    try { writeConfig(config); } catch {}
     return res.json({ action: 'notify', reason: 'auto-mode disabled' });
   }
 
@@ -467,10 +586,18 @@ app.post('/api/quota-error', async (req, res) => {
     if (!newConfig._switcher) newConfig._switcher = { keys: {} };
     newConfig.env.ANTHROPIC_API_KEY = 'sk-ccr-anything';
     newConfig.env.ANTHROPIC_BASE_URL = HOST_ROUTER_URL;
-    newConfig.model = target.model;
+    // Anthropic-Alias für Claude Code Validation; echtes Modell in activeRoute
+    newConfig.model = 'claude-sonnet-4-5-20250929';
     newConfig._switcher.provider = target.provider;
+    newConfig._switcher.activeRoute = { provider: target.provider, model: target.model };
     newConfig._switcher.chain_position = pos + 1; // nächstes Mal die übernächste
     newConfig._switcher.lastFailoverAt = Date.now();
+    newConfig._switcher.lastAutoSwitch = {
+      at: Date.now(),
+      from: { provider: currentProvider, model: config.model || null },
+      to: target,
+      reason: 'quota',
+    };
     writeConfig(newConfig);
     writeRouterConfig(newConfig);
     await restartRouter();

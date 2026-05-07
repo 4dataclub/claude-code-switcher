@@ -139,79 +139,117 @@ Du tippst weiterhin nur `claude`. Im Hintergrund läuft ein „unsichtbarer Assi
 ## Quick Start
 
 **Voraussetzungen:**
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (macOS, Windows oder Linux)
+- Docker — siehe Plattform-Hinweise unten
 - Anthropic Pro/Max Account (für die kostenlose Hauptstufe)
-- Google AI Studio API-Key mit Billing aktiv ([aistudio.google.com/apikey](https://aistudio.google.com/apikey))
+- Google AI Studio API-Key ([aistudio.google.com/apikey](https://aistudio.google.com/apikey))
 - OpenRouter API-Key (auch für die `:free`-Modelle nötig — [openrouter.ai/keys](https://openrouter.ai/keys))
 - Claude Code installiert ([claude.com/claude-code](https://claude.com/claude-code))
 
-**Drei-Schritte-Setup:**
+**Ein einziges Setup-Skript** — entpackt Source, baut Container, installiert Hook + CLAUDE.md-Block, setzt den `claude`-Alias. Komplett, eine Aktion.
 
 ```bash
-git clone git@github.com:4dataclub/claude-code-switcher.git
-cd claude-code-switcher
-docker compose up -d --build
-# UI öffnen, Keys eintragen → Wrapper installieren → fertig
-```
-
-Oder ohne git, **nur zwei Files**:
-
-```bash
+# macOS / Linux / WSL2
 curl -O https://raw.githubusercontent.com/4dataclub/claude-code-switcher/main/setup.sh
-curl -O https://raw.githubusercontent.com/4dataclub/claude-code-switcher/main/README.md
-bash setup.sh
-cd claude-switcher
-docker compose up -d --build
+chmod +x setup.sh && ./setup.sh
+# Terminal neu öffnen → claude funktioniert
 ```
-
----
-
-## Setup macOS / Linux
-
-```bash
-# 1. Klonen + hochfahren
-git clone git@github.com:4dataclub/claude-code-switcher.git
-cd claude-code-switcher
-docker compose up -d --build
-
-# 2. UI öffnen, alle 3 Keys eintragen, Modus auf "Auto" stellen
-open http://localhost:3000
-
-# 3. Wrapper installieren (setzt Alias `claude` → claude-auto in deiner ~/.zshrc)
-cd wrapper && ./install.sh
-
-# 4. Terminal neu öffnen, dann:
-claude
-```
-
----
-
-## Setup Windows (PowerShell)
 
 ```powershell
-# 1. Klonen (z.B. unter $env:USERPROFILE\Code\)
-cd $env:USERPROFILE\Code
-git clone git@github.com:4dataclub/claude-code-switcher.git
-cd claude-code-switcher
-
-# 2. Docker hochfahren (Docker Desktop muss mit WSL2-Backend laufen)
-docker compose up -d --build
-
-# 3. UI öffnen
-Start-Process "http://localhost:3000"
-
-# 4. Wrapper installieren (setzt Funktion `claude` → claude-auto.ps1 im Profil)
-cd wrapper
-.\install.ps1
-
-# 5. Optional für hübsche Notifications:
-Install-Module -Name BurntToast -Scope CurrentUser -Force
-
-# 6. PowerShell neu öffnen, dann:
-claude
+# Windows native (PowerShell)
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/4dataclub/claude-code-switcher/main/setup.ps1 -OutFile setup.ps1
+.\setup.ps1
+# PowerShell neu öffnen → claude funktioniert
 ```
 
-Falls du `bash setup.sh` auf Windows direkt nutzen willst → [Git for Windows](https://git-scm.com/download/win) installieren (bringt Git Bash mit) oder WSL2 nutzen.
+Was das Skript automatisch macht:
+1. Entpackt alle Source-Files nach `./claude-switcher/` (inkl. 8 Doku-Screenshots)
+2. Schreibt `~/.claude/CLAUDE.md`-Block (für Chat-Switching: „wechsel auf gemini pro")
+3. Legt `~/.claude/hooks/switcher-banner.sh` (oder `.ps1`) an
+4. Registriert den `UserPromptSubmit`-Hook in `~/.claude/settings.json`
+5. Baut + startet den Docker-Container
+6. **Setzt den `claude`-Alias** in `~/.zshrc`/`~/.bashrc` bzw. `$PROFILE`
+
+Danach nur noch: Terminal neu öffnen + API-Keys auf [http://localhost:3000](http://localhost:3000) eintragen → fertig.
+
+---
+
+## Setup macOS
+
+**Docker installieren:**
+```bash
+# Variante 1: Docker Desktop von docker.com
+# Variante 2: per Homebrew
+brew install --cask docker
+```
+
+Dann:
+```bash
+curl -O https://raw.githubusercontent.com/4dataclub/claude-code-switcher/main/setup.sh
+chmod +x setup.sh && ./setup.sh
+# Terminal neu öffnen → claude funktioniert
+```
+
+---
+
+## Setup Linux (Ubuntu/Debian/Fedora/Arch)
+
+Linux braucht keinen Docker Desktop — die schlankere **Docker Engine** reicht völlig:
+
+```bash
+# Ubuntu / Debian
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose-plugin
+sudo usermod -aG docker "$USER"   # damit du ohne sudo arbeitest
+newgrp docker                     # Gruppe sofort aktivieren ohne Logout
+
+# Fedora
+sudo dnf install -y docker docker-compose-plugin
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER" && newgrp docker
+
+# Arch
+sudo pacman -S --noconfirm docker docker-compose
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER" && newgrp docker
+```
+
+Dann:
+```bash
+curl -O https://raw.githubusercontent.com/4dataclub/claude-code-switcher/main/setup.sh
+chmod +x setup.sh && ./setup.sh
+# Terminal neu öffnen → claude funktioniert
+```
+
+> Alle Bash-Hooks, der Watcher (`router-watch.sh`), der Wrapper (`claude-auto`) und die `settings.json`-Mergung sind plattformidentisch zu macOS — Linux ist hier der „Standard-Pfad".
+
+---
+
+## Setup Windows
+
+**Variante A — Native PowerShell** (Docker Desktop):
+```powershell
+# Docker Desktop von docker.com installieren (WSL2-Backend default)
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/4dataclub/claude-code-switcher/main/setup.ps1 -OutFile setup.ps1
+.\setup.ps1
+# PowerShell neu öffnen → claude funktioniert
+
+# Optional für hübsche Notifications
+Install-Module -Name BurntToast -Scope CurrentUser -Force
+```
+
+`setup.ps1` legt unter Windows analog zu setup.sh die `~\.claude\hooks\switcher-banner.ps1` und `settings.json` mit `powershell.exe`-Hook-Eintrag an, und setzt die `claude`-Funktion im PowerShell-Profil — alles in einem Aufruf.
+
+**Variante B — WSL2** (Linux IN Windows, einfacher zu warten):
+```powershell
+wsl --install                          # einmalig, dann Reboot
+# in WSL-Ubuntu-Shell:
+sudo apt-get install -y docker.io docker-compose-plugin
+sudo usermod -aG docker "$USER" && newgrp docker
+curl -O https://raw.githubusercontent.com/4dataclub/claude-code-switcher/main/setup.sh
+./setup.sh
+```
+
+WSL2 läuft *in* Windows — kein zweites Gerät, kein Cloud-VM. Innerhalb WSL ist alles identisch zu Linux.
 
 ---
 

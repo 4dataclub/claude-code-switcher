@@ -6,6 +6,8 @@
 # Usage: claude-auto [<claude-args>...]
 
 set -uo pipefail
+# Job-Status-Reports ('Terminated: 15' beim Killen der Background-Watcher) abschalten
+set +m
 
 SWITCHER_URL="${CLAUDE_SWITCHER_URL:-http://localhost:3000}"
 # CLAUDE_BIN: das ECHTE claude binary, nicht der Alias zu uns selbst
@@ -24,6 +26,26 @@ if [[ $# -ge 1 ]]; then
       ;;
   esac
 fi
+
+# Zombie-Wrapper aufräumen: ein abgebrochenes Terminal hinterlässt manchmal
+# claude-auto-Bash-Prozesse die nicht mehr in einem TTY hängen aber weiter
+# Marker-Watcher laufen lassen — die fressen dann UI-Switch-Marker bevor unser
+# echter Wrapper sie sieht. Nur Zombies (ohne running claude-binary darunter)
+# werden gekillt; aktive Sessions in anderen Terminals bleiben unberührt.
+MY_WRAPPER_PID=$$
+for stale_pid in $(pgrep -f "bash.*claude-auto" 2>/dev/null); do
+  [[ "$stale_pid" == "$MY_WRAPPER_PID" ]] && continue
+  # Lebt es überhaupt + hat es einen claude-Subprozess?
+  # Wir matchen auf das volle CLAUDE_BIN-Pfad, sodass sowohl `claude` als auch
+  # `claude --bare ...` erfasst werden.
+  if kill -0 "$stale_pid" 2>/dev/null && \
+     ! pgrep -P "$stale_pid" -f "$CLAUDE_BIN" >/dev/null 2>&1; then
+    kill -KILL "$stale_pid" 2>/dev/null || true
+  fi
+done
+# Verwaiste tail-Subprozesse von Zombies einsammeln
+pkill -KILL -f "tail -F /var/folders/.*/claude-auto-" 2>/dev/null || true
+pkill -KILL -f "tail -F /tmp/claude-auto-" 2>/dev/null || true
 
 # Patterns (anpassbar wenn Claude Code seine Strings ändert)
 WARN_RE='approach.*usage|messages.*remaining|90% of|usage.*nearly|quota.*near'
@@ -113,6 +135,18 @@ find_latest_session_id() {
 # Bei Quota-Failover wird ein Marker-File geschrieben → wir resumen mit --resume.
 RESUME_ID=""
 while true; do
+  # Wenn beim Loop-Start schon ein Restart-Marker liegt (UI-Switch kam genau
+  # zwischen claude-Exit und neuem Loop-Start, BEVOR der Marker-Watcher der
+  # neuen Iteration startet), verarbeiten wir ihn sofort: settings.json neu
+  # lesen indem wir die nächste Iteration mit Resume starten.
+  if [[ -f "$HOME/.claude/.switcher-restart" ]]; then
+    rm -f "$HOME/.claude/.switcher-restart"
+    sid=$(find_latest_session_id)
+    [[ -n "$sid" ]] && { RESUME_ID="$sid"; strip_thinking_from_session "$sid"; } \
+                     || RESUME_ID="__continue__"
+    echo "↪ Stale Switch-Marker beim Wrapper-Start konsumiert → settings.json wird neu gelesen" >&2
+  fi
+
   LOGFILE=$(mktemp -t claude-auto-XXXXXXXX)
   RESTART_FILE="${LOGFILE}.restart"
   trap 'rm -f "$LOGFILE" "$RESTART_FILE" 2>/dev/null' EXIT
@@ -150,8 +184,13 @@ while true; do
     done
   ) &
   WATCHER_PID=$!
+  disown "$WATCHER_PID" 2>/dev/null || true
 
   # ── Background-Watcher 2: Switcher-Restart-Marker (Chain-Promote etc.) ─
+  # Polling alle 0.3 s (war 1 s) — sonst kommt eine Antwort durch das
+  # alte Backend bevor der Watcher den Marker bemerkt.
+  # SIGKILL statt SIGTERM, damit claude garantiert sofort beendet
+  # (interactive bun-binary fängt SIGTERM gelegentlich ab).
   (
     MARKER="$HOME/.claude/.switcher-restart"
     while true; do
@@ -159,13 +198,14 @@ while true; do
         rm -f "$MARKER"
         notify "Switcher fordert Restart — Kontext bleibt erhalten"
         touch "$RESTART_FILE"
-        pkill -TERM -P "$$" -f "claude" 2>/dev/null || true
+        pkill -KILL -P "$$" -f "claude" 2>/dev/null || true
         break
       fi
-      sleep 1
+      sleep 0.3
     done
   ) &
   MARKER_WATCHER_PID=$!
+  disown "$MARKER_WATCHER_PID" 2>/dev/null || true
 
   # ── Env-Variablen aus settings.json laden ─────────────────────────────────
   # Vereinfachte Strategie:
@@ -243,6 +283,18 @@ except: print('unknown')
     echo "↪ --bare aktiv + --add-dir ~/.claude (CLAUDE.md wird trotzdem gelesen)" >&2
   fi
 
+  # ── Banner: aktives Backend ───────────────────────────────────────────────
+  # User sieht beim Start sofort welches Modell aktiv ist — auch nach Auto-Switch
+  # ohne dass er extra "wer bist du?" eingeben muss.
+  WHOAMI=$(curl -sS --max-time 2 "$SWITCHER_URL/api/whoami" 2>/dev/null)
+  if [[ -n "$WHOAMI" ]]; then
+    if [[ -t 2 ]]; then
+      printf '\033[1;36m▶ Aktives Backend:\033[0m \033[1m%s\033[0m\n' "$WHOAMI" >&2
+    else
+      echo "▶ Aktives Backend: $WHOAMI" >&2
+    fi
+  fi
+
   # ── Claude im Foreground ────────────────────────────────────────────────
   # ${arr[@]+...} expansion: Workaround für `set -u` mit leerem Bash-Array
   if [[ "$RESUME_ID" == "__continue__" ]]; then
@@ -256,12 +308,16 @@ except: print('unknown')
   fi
   CLAUDE_EXIT=$?
 
-  # Beide Watcher beenden (inkl. tail-Subprozess)
-  for pid in "$WATCHER_PID" "$MARKER_WATCHER_PID"; do
-    pkill -P "$pid" 2>/dev/null || true
-    kill "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
-  done
+  # Beide Watcher beenden (inkl. tail-Subprozess).
+  # SIGKILL statt SIGTERM, damit Bash kein 'Terminated: 15' beim Wrapper-Exit zeigt.
+  # 2>/dev/null zusätzlich für den Fall dass `set +m` nicht greift (z.B. unter zsh-Aufruf).
+  {
+    for pid in "$WATCHER_PID" "$MARKER_WATCHER_PID"; do
+      pkill -KILL -P "$pid" 2>/dev/null || true
+      kill -KILL "$pid" 2>/dev/null || true
+    done
+    wait 2>/dev/null || true
+  } 2>/dev/null
 
   # Restart angefordert?
   if [[ -f "$RESTART_FILE" ]]; then

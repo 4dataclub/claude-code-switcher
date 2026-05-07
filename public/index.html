@@ -381,8 +381,7 @@
 
   const DEFAULT_CHAIN = [
     { provider: 'google',     model: 'gemini-2.5-pro' },
-    { provider: 'google',     model: 'gemini-2.5-flash' },
-    { provider: 'openrouter', model: 'deepseek/deepseek-chat-v3:free' },
+    { provider: 'openrouter', model: 'google/gemini-2.5-flash' },
   ];
 
   let state = {
@@ -442,11 +441,30 @@
     document.getElementById('keysArrow').classList.toggle('open');
   }
 
-  function toggleVis(id, el) {
+  async function toggleVis(id, el) {
     const inp = document.getElementById(id);
     const show = inp.type === 'password';
     inp.type = show ? 'text' : 'password';
     el.textContent = show ? '🙈' : '👁';
+
+    // Wenn der User „aufdeckt" und das Feld leer ist (Key ist serverseitig
+    // gespeichert, im Browser aber nicht sichtbar) → vom Server holen.
+    // Beim Wieder-Verstecken den geholten Inhalt nicht im Browser-DOM lassen
+    // damit nicht aus Versehen mitgeschickt → erst beim Submit ist er nötig.
+    const provider = id.replace(/Key$/, '');
+    if (show && !inp.value) {
+      try {
+        const r = await fetch('/api/key/' + provider);
+        const d = await r.json();
+        if (d.key) {
+          inp.value = d.key;
+          inp.dataset.fromServer = '1';
+        }
+      } catch {}
+    } else if (!show && inp.dataset.fromServer === '1') {
+      inp.value = '';
+      delete inp.dataset.fromServer;
+    }
   }
 
   function toast(msg, type = 'ok') {
@@ -454,7 +472,8 @@
     document.getElementById('toastMsg').textContent = msg;
     document.getElementById('toastIcon').textContent = type === 'ok' ? '✅' : '❌';
     el.className = `toast ${type} show`;
-    setTimeout(() => el.classList.remove('show'), 3500);
+    // Errors stehen länger damit man die Format-Meldung lesen kann
+    setTimeout(() => el.classList.remove('show'), type === 'err' ? 9000 : 3500);
   }
 
   // ─── Modus ─────────────────────────────────────────────────────────────
@@ -621,14 +640,17 @@
       state.mode = d.mode || 'manual';
       state.fallback_chain = (d.fallback_chain && d.fallback_chain.length) ? d.fallback_chain : [...DEFAULT_CHAIN];
       state.chain_position = d.chain_position || 0;
-      state.model = d.model || modelsFor(state.provider)[0].id;
+      // Bei non-Anthropic ist d.model der Anthropic-Alias — das echte Modell
+      // steht in d.activeRoute.model. Anthropic-Pfad: d.model ist das Wahre.
+      const realModel = (d.activeRoute && d.activeRoute.model) || d.model;
+      state.model = realModel || modelsFor(state.provider)[0].id;
 
       document.getElementById('statusDot').classList.add('active');
       document.getElementById('statusProvider').textContent =
         d.provider === 'google' ? 'Google AI Studio'
         : d.provider === 'openrouter' ? 'OpenRouter'
         : 'Anthropic';
-      document.getElementById('statusModel').textContent = d.model ? '· ' + d.model : '';
+      document.getElementById('statusModel').textContent = realModel ? '· ' + realModel : '';
       document.getElementById('modePill').textContent = state.mode === 'auto' ? 'Auto-Failover' : 'Manuell';
       document.getElementById('modePill').classList.toggle('auto', state.mode === 'auto');
 
@@ -647,7 +669,7 @@
       updateChainPositionLabel();
 
       selectProvider(d.provider);
-      if (d.model) selectModel(d.model);
+      if (realModel) selectModel(realModel);
 
       // Letzte Warnung anzeigen falls < 5 Min alt
       if (d.lastWarn && (Date.now() - d.lastWarn.at) < 5 * 60 * 1000) {
