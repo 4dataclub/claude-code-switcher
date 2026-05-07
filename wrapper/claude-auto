@@ -153,24 +153,43 @@ while true; do
   MARKER_WATCHER_PID=$!
 
   # ── Env-Variablen aus settings.json laden ─────────────────────────────────
-  # WICHTIG: Claude Desktop setzt ANTHROPIC_CODE_PROVIDER_MANAGED_BY_HOST=1 was
-  # settings.json's env-Block (BASE_URL, API_KEY) ignoriert → claude redet
-  # immer mit Anthropic-OAuth, egal was im UI gewählt ist.
-  # Fix: Wenn settings.json einen ANTHROPIC_BASE_URL hat (= non-Anthropic-
-  # Provider gewählt), exportieren wir den explizit in unsere Shell und
-  # entfernen das host-managed Flag — dann respektiert claude unsere Wahl.
+  # WICHTIG: Claude Code's claude.ai-OAuth (Pro/Max) hat Vorrang vor env-Vars.
+  # Wenn eingeloggt UND non-Anthropic-Modus gewählt → wir müssen logout machen
+  # damit der Router-Pfad (BASE_URL) überhaupt greift.
   if command -v python3 >/dev/null 2>&1 && [[ -f "$HOME/.claude/settings.json" ]]; then
     BASE_URL_FROM_SETTINGS=$(python3 -c "import json,sys; d=json.load(open('$HOME/.claude/settings.json')); print(d.get('env',{}).get('ANTHROPIC_BASE_URL',''))" 2>/dev/null)
     API_KEY_FROM_SETTINGS=$(python3 -c "import json,sys; d=json.load(open('$HOME/.claude/settings.json')); print(d.get('env',{}).get('ANTHROPIC_API_KEY',''))" 2>/dev/null)
+
+    # Auth-Status checken (loggedIn?)
+    AUTH_LOGGED_IN=$("$CLAUDE_BIN" auth status 2>/dev/null | python3 -c "
+import json, sys
+try: print('true' if json.load(sys.stdin).get('loggedIn') else 'false')
+except: print('unknown')
+" 2>/dev/null)
+
     if [[ -n "$BASE_URL_FROM_SETTINGS" ]]; then
-      echo "↪ Override env: ANTHROPIC_BASE_URL=$BASE_URL_FROM_SETTINGS (host-managed deaktiviert)" >&2
+      # Non-Anthropic-Modus (Gemini/OpenRouter via Router)
+      if [[ "$AUTH_LOGGED_IN" == "true" ]]; then
+        echo "↪ Auto-Logout: settings.json zeigt non-Anthropic-Provider, aber claude ist via OAuth eingeloggt." >&2
+        echo "  (Sonst würde claude OAuth nutzen und den Router ignorieren.)" >&2
+        "$CLAUDE_BIN" auth logout 2>&1 | head -2 | sed 's/^/  /' >&2
+        notify "Auto-Logout für non-Anthropic-Modus durchgeführt"
+      fi
+      echo "↪ Override env: ANTHROPIC_BASE_URL=$BASE_URL_FROM_SETTINGS" >&2
       export ANTHROPIC_BASE_URL="$BASE_URL_FROM_SETTINGS"
       export ANTHROPIC_API_KEY="$API_KEY_FROM_SETTINGS"
       unset ANTHROPIC_CODE_PROVIDER_MANAGED_BY_HOST
     else
-      # Anthropic-Modus: explizit clearen damit OAuth greift
+      # Anthropic-Modus: env clearen damit OAuth greift
       unset ANTHROPIC_BASE_URL
       unset ANTHROPIC_API_KEY
+      if [[ "$AUTH_LOGGED_IN" == "false" ]]; then
+        echo "" >&2
+        echo "⚠ Anthropic-Modus aktiv, aber du bist nicht via claude.ai eingeloggt." >&2
+        echo "  Für Pro/Max-Quota: einmal 'claude auth login' ausführen, dann claude neu starten." >&2
+        echo "" >&2
+        notify "Login nötig: claude auth login"
+      fi
     fi
   fi
 
