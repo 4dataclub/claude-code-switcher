@@ -83,7 +83,7 @@ function buildRouterConfig(keys, fallback) {
       : '';
 
   return {
-    LOG: false,
+    LOG: true,
     HOST: '0.0.0.0',
     PORT: 3456,
     API_TIMEOUT_MS: 600000,
