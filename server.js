@@ -266,21 +266,24 @@ app.post('/api/switch', async (req, res) => {
     }
   } else if (provider === 'google') {
     if (!keys.google) return res.status(400).json({ error: 'Google AI Studio API Key fehlt' });
-    // Claude Code → Router → Google AI
-    // settings.json.model MUSS ein gültiges Anthropic-Modell sein, sonst lehnt
-    // Claude Code beim Start ab. Der Router routet alles via default-Route zum
-    // tatsächlich gewählten Gemini-Modell (siehe writeRouterConfig).
+    // Validiere model — sonst landet ein Anthropic-Alias in activeRoute und
+    // der Router versucht das an Google AI zu senden → 404
+    const VALID_GOOGLE = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite',
+                          'gemini-3-pro-preview', 'gemini-3-flash-preview'];
+    const safeModel = VALID_GOOGLE.includes(model) ? model : 'gemini-2.5-pro';
     config.env.ANTHROPIC_API_KEY = 'sk-ccr-anything';
     config.env.ANTHROPIC_BASE_URL = HOST_ROUTER_URL;
     config.model = 'claude-sonnet-4-5-20250929';  // Anthropic-Alias für Validation
-    config._switcher.activeRoute = { provider: 'google', model: model || 'gemini-2.5-pro' };
+    config._switcher.activeRoute = { provider: 'google', model: safeModel };
     routerNeedsRestart = true;
   } else if (provider === 'openrouter') {
     if (!keys.openrouter) return res.status(400).json({ error: 'OpenRouter API Key fehlt' });
+    // OpenRouter erlaubt viele Modelle — Format-Check: muss "vendor/model" sein
+    const safeModel = (model && model.includes('/')) ? model : 'anthropic/claude-sonnet-4.5';
     config.env.ANTHROPIC_API_KEY = 'sk-ccr-anything';
     config.env.ANTHROPIC_BASE_URL = HOST_ROUTER_URL;
     config.model = 'claude-sonnet-4-5-20250929';  // Anthropic-Alias für Validation
-    config._switcher.activeRoute = { provider: 'openrouter', model: model || 'anthropic/claude-sonnet-4.5' };
+    config._switcher.activeRoute = { provider: 'openrouter', model: safeModel };
     routerNeedsRestart = true;
   } else {
     return res.status(400).json({ error: `unknown provider: ${provider}` });

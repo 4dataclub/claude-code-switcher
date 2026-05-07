@@ -61,7 +61,7 @@ echo ""
       "event: switch")
         read -r data_line
         json="${data_line#data: }"
-        echo "$json" | python3 -c "
+        echo "$json" | python3 -u -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
@@ -71,11 +71,10 @@ try:
     real_p = ar.get('provider') or p
     real_m = ar.get('model') or m
     if p == 'anthropic':
-        print(f'\n\033[1;33m▼▼▼ SWITCH ▼▼▼\033[0m  → \033[1;33mANTHROPIC direkt\033[0m / \033[1;36m{m}\033[0m')
-        print(f'                Anfragen gehen direkt zu api.anthropic.com (nicht durch Router)\n')
+        out = f'\n\033[1;33m▼▼▼ SWITCH ▼▼▼\033[0m  → \033[1;33mANTHROPIC direkt\033[0m / \033[1;36m{m}\033[0m  (kein Router)\n'
     else:
-        print(f'\n\033[1;33m▼▼▼ SWITCH ▼▼▼\033[0m  → echtes Backend: \033[1;35m{real_p}\033[0m / \033[1;36m{real_m}\033[0m')
-        print(f'                (settings.json model: \033[2m{m}\033[0m — Anthropic-Alias, ignoriere ihn)\n')
+        out = f'\n\033[1;33m▼▼▼ SWITCH ▼▼▼\033[0m  → echtes Backend: \033[1;35m{real_p}\033[0m / \033[1;36m{real_m}\033[0m\n'
+    sys.stdout.write(out); sys.stdout.flush()
 except: pass
 " 2>/dev/null
         ;;
