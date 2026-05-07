@@ -177,31 +177,56 @@ while true; do
     API_KEY_FROM_SETTINGS=$(python3 -c "import json,sys; d=json.load(open('$HOME/.claude/settings.json')); print(d.get('env',{}).get('ANTHROPIC_API_KEY',''))" 2>/dev/null)
 
     if [[ -n "$BASE_URL_FROM_SETTINGS" ]]; then
-      # Router-Modus (Gemini, OpenRouter, oder Anthropic-via-OpenRouter)
-      # Kein Auto-Logout — wir verlassen uns auf --bare flag damit Keychain
-      # ignoriert wird. OAuth bleibt für Anthropic-OAuth-Modus erhalten.
+      # Non-Anthropic-Modus → Router
+      # Auto-Logout: --bare allein reicht nicht zuverlässig, OAuth-Keychain
+      # überschreibt sonst BASE_URL → claude redet trotzdem zu Anthropic.
+      AUTH_LOGGED_IN=$("$CLAUDE_BIN" auth status 2>/dev/null | python3 -c "
+import json,sys
+try: print('true' if json.load(sys.stdin).get('loggedIn') else 'false')
+except: print('unknown')
+" 2>/dev/null)
+      if [[ "$AUTH_LOGGED_IN" == "true" ]]; then
+        echo "↪ Auto-Logout (Keychain leeren — sonst überschreibt OAuth den Router)" >&2
+        "$CLAUDE_BIN" auth logout 2>&1 | head -1 | sed 's/^/  /' >&2
+      fi
       echo "↪ Provider via Router: $BASE_URL_FROM_SETTINGS" >&2
       export ANTHROPIC_BASE_URL="$BASE_URL_FROM_SETTINGS"
       export ANTHROPIC_API_KEY="$API_KEY_FROM_SETTINGS"
       unset ANTHROPIC_CODE_PROVIDER_MANAGED_BY_HOST
       unset CLAUDE_CODE_OAUTH_TOKEN
     else
-      # Anthropic-Modus → OAuth nutzen
+      # Anthropic-Modus → OAuth oder Long-Token (wenn vorhanden)
       unset ANTHROPIC_BASE_URL
       unset ANTHROPIC_API_KEY
-      unset CLAUDE_CODE_OAUTH_TOKEN
-      AUTH_LOGGED_IN=$("$CLAUDE_BIN" auth status 2>/dev/null | python3 -c "
+
+      # Optional: Long-lived Token aus settings.json _switcher.keys.anthropic
+      ANTHROPIC_LONG_TOKEN=$(python3 -c "
+import json,sys
+try:
+    d = json.load(open('$HOME/.claude/settings.json'))
+    k = d.get('_switcher', {}).get('keys', {}).get('anthropic', '')
+    print(k if k.startswith('sk-ant-oat01-') else '')
+except: print('')
+" 2>/dev/null)
+
+      if [[ -n "$ANTHROPIC_LONG_TOKEN" ]]; then
+        echo "↪ Anthropic via Long-Token (CLAUDE_CODE_OAUTH_TOKEN aus settings.json)" >&2
+        export CLAUDE_CODE_OAUTH_TOKEN="$ANTHROPIC_LONG_TOKEN"
+      else
+        unset CLAUDE_CODE_OAUTH_TOKEN
+        AUTH_LOGGED_IN=$("$CLAUDE_BIN" auth status 2>/dev/null | python3 -c "
 import json, sys
 try: print('true' if json.load(sys.stdin).get('loggedIn') else 'false')
 except: print('unknown')
 " 2>/dev/null)
-      if [[ "$AUTH_LOGGED_IN" == "false" ]]; then
-        echo "" >&2
-        echo "⚠ Anthropic-Modus aktiv, aber nicht eingeloggt." >&2
-        echo "  Bitte einmal: claude auth login" >&2
-        echo "  Danach: claude (im Wrapper)" >&2
-        echo "" >&2
-        notify "Login nötig: claude auth login"
+        if [[ "$AUTH_LOGGED_IN" == "false" ]]; then
+          echo "" >&2
+          echo "⚠ Anthropic-Modus aktiv, aber nicht eingeloggt + kein Long-Token gespeichert." >&2
+          echo "  Bitte einmal:  claude auth login" >&2
+          echo "  Optional:      claude setup-token  → Token im UI hinterlegen" >&2
+          echo "" >&2
+          notify "Login nötig: claude auth login"
+        fi
       fi
     fi
   fi
