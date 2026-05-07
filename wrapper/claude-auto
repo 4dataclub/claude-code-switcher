@@ -162,7 +162,7 @@ while true; do
         pkill -TERM -P "$$" -f "claude" 2>/dev/null || true
         break
       fi
-      sleep 5
+      sleep 1
     done
   ) &
   MARKER_WATCHER_PID=$!
