@@ -8,7 +8,22 @@
 set -uo pipefail
 
 SWITCHER_URL="${CLAUDE_SWITCHER_URL:-http://localhost:3000}"
-CLAUDE_BIN="${CLAUDE_BIN:-claude}"
+# CLAUDE_BIN: das ECHTE claude binary, nicht der Alias zu uns selbst
+CLAUDE_BIN="${CLAUDE_BIN:-/Users/data/.local/bin/claude}"
+# Falls der Default-Pfad nicht existiert, fallback auf 'command claude' suchen
+if [[ ! -x "$CLAUDE_BIN" ]]; then
+  CLAUDE_BIN=$(command -v claude 2>/dev/null || echo "claude")
+fi
+
+# Subcommands die direkt durchgereicht werden (kein Wrapper-Verhalten)
+# 'auth' für login/logout/status — sonst würde der Wrapper sich selbst aufrufen
+if [[ $# -ge 1 ]]; then
+  case "$1" in
+    auth|setup-token|--help|-h|--version|-v|version|help|update)
+      exec "$CLAUDE_BIN" "$@"
+      ;;
+  esac
+fi
 
 # Patterns (anpassbar wenn Claude Code seine Strings ändert)
 WARN_RE='approach.*usage|messages.*remaining|90% of|usage.*nearly|quota.*near'
@@ -206,14 +221,15 @@ except: print('unknown')
   fi
 
   # ── Claude im Foreground ────────────────────────────────────────────────
+  # ${arr[@]+...} expansion: Workaround für `set -u` mit leerem Bash-Array
   if [[ "$RESUME_ID" == "__continue__" ]]; then
     echo "↪ claude ${CLAUDE_FLAGS[*]:-} -c (continue last session)" >&2
-    "$CLAUDE_BIN" "${CLAUDE_FLAGS[@]}" -c 2> >(tee -a "$LOGFILE" >&2)
+    "$CLAUDE_BIN" ${CLAUDE_FLAGS[@]+"${CLAUDE_FLAGS[@]}"} -c 2> >(tee -a "$LOGFILE" >&2)
   elif [[ -n "$RESUME_ID" ]]; then
     echo "↪ claude ${CLAUDE_FLAGS[*]:-} --resume $RESUME_ID" >&2
-    "$CLAUDE_BIN" "${CLAUDE_FLAGS[@]}" --resume "$RESUME_ID" 2> >(tee -a "$LOGFILE" >&2)
+    "$CLAUDE_BIN" ${CLAUDE_FLAGS[@]+"${CLAUDE_FLAGS[@]}"} --resume "$RESUME_ID" 2> >(tee -a "$LOGFILE" >&2)
   else
-    "$CLAUDE_BIN" "${CLAUDE_FLAGS[@]}" "$@" 2> >(tee -a "$LOGFILE" >&2)
+    "$CLAUDE_BIN" ${CLAUDE_FLAGS[@]+"${CLAUDE_FLAGS[@]}"} ${@+"$@"} 2> >(tee -a "$LOGFILE" >&2)
   fi
   CLAUDE_EXIT=$?
 
