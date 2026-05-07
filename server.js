@@ -65,8 +65,10 @@ function buildRouterConfig(keys, fallback) {
         'anthropic/claude-sonnet-4.5',
         'google/gemini-2.5-flash',
         'google/gemini-2.5-pro',
-        'deepseek/deepseek-chat-v3:free',
         'meta-llama/llama-3.3-70b-instruct:free',
+        'openai/gpt-oss-120b:free',
+        'nvidia/nemotron-nano-9b-v2:free',
+        'deepseek/deepseek-chat-v3.1',
       ],
       transformer: { use: ['openrouter'] },
     });
@@ -160,7 +162,7 @@ function deriveProvider(config) {
 const DEFAULT_CHAIN = [
   { provider: 'google',     model: 'gemini-2.5-pro' },
   { provider: 'google',     model: 'gemini-2.5-flash' },
-  { provider: 'openrouter', model: 'deepseek/deepseek-chat-v3:free' },
+  { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
 ];
 
 app.get('/api/status', (req, res) => {
