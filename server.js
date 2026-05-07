@@ -118,7 +118,34 @@ async function restartRouter() {
   try {
     const container = docker.getContainer(ROUTER_CONTAINER);
     await container.restart({ t: 2 });
-    return { ok: true };
+
+    // Warten bis Router-HTTP antwortet (max 30s).
+    // TCP-Connect zu socat klappt sofort — aber ccr (3456 intern) ist noch
+    // nicht ready. Daher: echter HTTP-GET damit wir wissen dass ccr da ist.
+    const http = require('http');
+    const isReady = () => new Promise((resolve) => {
+      const req = http.get({ host: 'router', port: 3457, path: '/', timeout: 1500 }, (res) => {
+        res.resume();
+        resolve(res.statusCode === 200);
+      });
+      req.once('error', () => resolve(false));
+      req.once('timeout', () => { req.destroy(); resolve(false); });
+    });
+    let firstReadyAt = -1;
+    for (let i = 0; i < 30; i++) {
+      if (await isReady()) {
+        if (firstReadyAt < 0) firstReadyAt = i;
+        // Extra-Puffer: 2s nach erstem 200, weil ccr Routes
+        // (besonders gemini-pro) länger brauchen bis sie funktional sind
+        if (i >= firstReadyAt + 2) {
+          return { ok: true, readyAfterMs: i * 1000 };
+        }
+      } else {
+        firstReadyAt = -1; // reset wenn flaky
+      }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    return { ok: false, error: 'Router nicht bereit nach 30s' };
   } catch (e) {
     return { ok: false, error: e.message };
   }
