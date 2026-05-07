@@ -9,10 +9,12 @@
 
 $ErrorActionPreference = 'Stop'
 
-$SrcDir   = $PSScriptRoot
-$Src      = Join-Path $SrcDir "claude-auto.ps1"
-$DestDir  = Join-Path $env:LOCALAPPDATA "claude-switcher"
-$Dest     = Join-Path $DestDir "claude-auto.ps1"
+$SrcDir          = $PSScriptRoot
+$Src             = Join-Path $SrcDir "claude-auto.ps1"
+$RouterWatchSrc  = Join-Path $SrcDir "router-watch.ps1"
+$DestDir         = Join-Path $env:LOCALAPPDATA "claude-switcher"
+$Dest            = Join-Path $DestDir "claude-auto.ps1"
+$RouterWatchDest = Join-Path $DestDir "router-watch.ps1"
 
 if (-not (Test-Path $Src)) {
     Write-Host "✗ Source nicht gefunden: $Src" -ForegroundColor Red
@@ -23,6 +25,12 @@ if (-not (Test-Path $Src)) {
 New-Item -Path $DestDir -ItemType Directory -Force | Out-Null
 Copy-Item -Path $Src -Destination $Dest -Force
 Write-Host "✓ claude-auto.ps1 installiert nach $Dest" -ForegroundColor Green
+
+# 1b. router-watch kopieren
+if (Test-Path $RouterWatchSrc) {
+    Copy-Item -Path $RouterWatchSrc -Destination $RouterWatchDest -Force
+    Write-Host "✓ router-watch.ps1 installiert nach $RouterWatchDest" -ForegroundColor Green
+}
 
 # 2. PowerShell-Profil-Funktion einrichten
 $ProfileFile = $PROFILE.CurrentUserAllHosts
@@ -47,6 +55,9 @@ function claude {
 }
 function claude-real {
     & "$env:LOCALAPPDATA\Programs\claude\claude.exe" @args  # echter claude, falls direkt gewünscht
+}
+function router-watch {
+    & "$RouterWatchDest" @args
 }
 # === /claude-switcher ===
 "@
