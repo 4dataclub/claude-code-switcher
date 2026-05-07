@@ -231,17 +231,12 @@ except: print('unknown')
     fi
   fi
 
-  # ── Claude-Flags abhängig vom Modus ──────────────────────────────────────
-  # Bei non-Anthropic-Provider: --bare nutzen, weil Claude Code sonst trotz
-  # gesetztem ANTHROPIC_BASE_URL den OAuth-Keychain liest und zu Anthropic
-  # routet (statt zum Router). --bare = "OAuth and keychain are never read".
-  # Trade-off: deaktiviert hooks, CLAUDE.md auto-discovery, plugin-sync —
-  # für reine Coding-Sessions auf Gemini/OpenRouter akzeptabel.
+  # ── Claude-Flags ──────────────────────────────────────────────────────
+  # Früher: --bare im non-Anthropic-Modus, um OAuth-Keychain zu ignorieren.
+  # Jetzt: Auto-Logout im Wrapper räumt den Keychain eh schon auf — kein
+  # --bare mehr nötig. Vorteil: CLAUDE.md, hooks, plugins greifen auch im
+  # non-Anthropic-Modus → User kann via Chat switchen, Status checken etc.
   CLAUDE_FLAGS=()
-  if [[ -n "${ANTHROPIC_BASE_URL:-}" ]]; then
-    CLAUDE_FLAGS+=(--bare)
-    echo "↪ --bare aktiv (OAuth/Keychain übersprungen — non-Anthropic-Modus)" >&2
-  fi
 
   # ── Claude im Foreground ────────────────────────────────────────────────
   # ${arr[@]+...} expansion: Workaround für `set -u` mit leerem Bash-Array
