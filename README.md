@@ -16,7 +16,7 @@
 
 ![Anthropic-Modelle](docs/screenshots/03-provider-anthropic.png)
 
-Opus, Sonnet 4.6, Haiku 4.5, Claude 3.5 Sonnet
+Opus 4.7, Sonnet 4.6, Haiku 4.5
 
 </td>
 <td width="33%">
@@ -34,7 +34,7 @@ Gemini 2.5 Pro/Flash/Flash-Lite, Gemini 3 Pro/Flash (Preview)
 
 ![OpenRouter Modelle](docs/screenshots/05-provider-openrouter.png)
 
-Claude Sonnet 4.5, Gemini 2.5 Pro/Flash, DeepSeek V3 (Free), Llama 3.3 70B (Free)
+Claude Sonnet 4.5, Gemini 2.5 Pro/Flash, DeepSeek Chat v3.1, Llama 3.3 70B (Free), GPT-OSS 120B (Free), Nemotron Nano 9B (Free)
 
 </td>
 </tr>
@@ -393,6 +393,7 @@ Claude Code persistiert jede Session als JSONL-Datei in `~/.claude/projects/<enc
 | Endpoint | Methode | Zweck |
 |---|---|---|
 | `/api/status` | GET | aktueller Provider, Modell, Modus, Chain-Position, Keys (masked) |
+| `/api/whoami` | GET | Plain-Text-Identität: aktuelles Modell + Provider + Hersteller |
 | `/api/switch` | POST | manueller Provider/Modell-Switch |
 | `/api/auto` | GET/POST | Auto-Modus an/aus, Chain editieren |
 | `/api/quota-error` | POST | Wrapper meldet 429 → Server rückt Chain vor |
