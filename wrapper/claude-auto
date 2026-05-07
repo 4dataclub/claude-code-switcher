@@ -185,11 +185,22 @@ print(k if k.startswith('sk-ant-oat01-') else '')
 
     if [[ -n "$BASE_URL_FROM_SETTINGS" ]]; then
       # Non-Anthropic-Modus → Router
+      # WICHTIG: Auch Keychain muss geleert werden, sonst nutzt Claude Code
+      # den OAuth-Token aus dem macOS-Keychain trotz --bare und env-Vars.
+      AUTH_LOGGED_IN=$("$CLAUDE_BIN" auth status 2>/dev/null | python3 -c "
+import json,sys
+try: print('true' if json.load(sys.stdin).get('loggedIn') else 'false')
+except: print('unknown')
+" 2>/dev/null)
+      if [[ "$AUTH_LOGGED_IN" == "true" ]]; then
+        echo "↪ Auto-Logout (Keychain leeren — sonst überschreibt OAuth den Router)" >&2
+        "$CLAUDE_BIN" auth logout 2>&1 | head -1 | sed 's/^/  /' >&2
+      fi
       echo "↪ Provider via Router: $BASE_URL_FROM_SETTINGS" >&2
       export ANTHROPIC_BASE_URL="$BASE_URL_FROM_SETTINGS"
       export ANTHROPIC_API_KEY="$API_KEY_FROM_SETTINGS"
       unset ANTHROPIC_CODE_PROVIDER_MANAGED_BY_HOST
-      unset CLAUDE_CODE_OAUTH_TOKEN  # OAuth-Token nicht versehentlich nutzen
+      unset CLAUDE_CODE_OAUTH_TOKEN
     elif [[ -n "$ANTHROPIC_LONG_TOKEN" ]]; then
       # Anthropic-Modus mit Long-Token (sk-ant-oat01-…)
       # Wichtig: das ist ein OAuth-TOKEN, kein API-Key — muss via
