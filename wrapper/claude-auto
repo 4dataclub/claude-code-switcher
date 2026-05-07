@@ -168,25 +168,16 @@ while true; do
   MARKER_WATCHER_PID=$!
 
   # ── Env-Variablen aus settings.json laden ─────────────────────────────────
-  # Strategie: Wenn ein Anthropic-Long-Lived-Token (sk-ant-oat01-…) gespeichert
-  # ist, nutzen wir den IMMER. Damit braucht's keinen Login/Logout-Wechsel
-  # mehr — Switching zwischen Providern ist reine env-var-Manipulation.
-  ANTHROPIC_LONG_TOKEN=""
+  # Vereinfachte Strategie:
+  # - non-Anthropic (Router): Auto-Logout damit OAuth den Router nicht überschreibt
+  # - Anthropic-Modus: OAuth aktiv halten (claude auth login einmalig vom User)
+  # Long-Token-Trick aufgegeben: claude auth logout invalidiert ihn jedes Mal.
   if command -v python3 >/dev/null 2>&1 && [[ -f "$HOME/.claude/settings.json" ]]; then
     BASE_URL_FROM_SETTINGS=$(python3 -c "import json,sys; d=json.load(open('$HOME/.claude/settings.json')); print(d.get('env',{}).get('ANTHROPIC_BASE_URL',''))" 2>/dev/null)
     API_KEY_FROM_SETTINGS=$(python3 -c "import json,sys; d=json.load(open('$HOME/.claude/settings.json')); print(d.get('env',{}).get('ANTHROPIC_API_KEY',''))" 2>/dev/null)
-    # Anthropic-Long-Token (sk-ant-oat01-…) aus _switcher.keys.anthropic
-    ANTHROPIC_LONG_TOKEN=$(python3 -c "
-import json,sys
-d = json.load(open('$HOME/.claude/settings.json'))
-k = d.get('_switcher', {}).get('keys', {}).get('anthropic', '')
-print(k if k.startswith('sk-ant-oat01-') else '')
-" 2>/dev/null)
 
     if [[ -n "$BASE_URL_FROM_SETTINGS" ]]; then
       # Non-Anthropic-Modus → Router
-      # WICHTIG: Auch Keychain muss geleert werden, sonst nutzt Claude Code
-      # den OAuth-Token aus dem macOS-Keychain trotz --bare und env-Vars.
       AUTH_LOGGED_IN=$("$CLAUDE_BIN" auth status 2>/dev/null | python3 -c "
 import json,sys
 try: print('true' if json.load(sys.stdin).get('loggedIn') else 'false')
@@ -201,19 +192,11 @@ except: print('unknown')
       export ANTHROPIC_API_KEY="$API_KEY_FROM_SETTINGS"
       unset ANTHROPIC_CODE_PROVIDER_MANAGED_BY_HOST
       unset CLAUDE_CODE_OAUTH_TOKEN
-    elif [[ -n "$ANTHROPIC_LONG_TOKEN" ]]; then
-      # Anthropic-Modus mit Long-Token (sk-ant-oat01-…)
-      # Wichtig: das ist ein OAuth-TOKEN, kein API-Key — muss via
-      # CLAUDE_CODE_OAUTH_TOKEN env-var gesetzt werden, nicht ANTHROPIC_API_KEY.
-      echo "↪ Anthropic via Long-Lived-OAuth-Token (kein Browser-Login nötig)" >&2
-      unset ANTHROPIC_BASE_URL
-      unset ANTHROPIC_API_KEY
-      export CLAUDE_CODE_OAUTH_TOKEN="$ANTHROPIC_LONG_TOKEN"
-      unset ANTHROPIC_CODE_PROVIDER_MANAGED_BY_HOST
     else
-      # Anthropic-Modus ohne Token → fallback auf claude.ai-OAuth
+      # Anthropic-Modus → OAuth nutzen
       unset ANTHROPIC_BASE_URL
       unset ANTHROPIC_API_KEY
+      unset CLAUDE_CODE_OAUTH_TOKEN
       AUTH_LOGGED_IN=$("$CLAUDE_BIN" auth status 2>/dev/null | python3 -c "
 import json, sys
 try: print('true' if json.load(sys.stdin).get('loggedIn') else 'false')
@@ -221,10 +204,11 @@ except: print('unknown')
 " 2>/dev/null)
       if [[ "$AUTH_LOGGED_IN" == "false" ]]; then
         echo "" >&2
-        echo "⚠ Kein Anthropic-Token in settings.json + nicht eingeloggt." >&2
-        echo "  Lösung: 'claude auth login' + 'claude setup-token' → Token im UI eintragen." >&2
+        echo "⚠ Anthropic-Modus aktiv, aber nicht eingeloggt." >&2
+        echo "  Bitte einmal: claude auth login" >&2
+        echo "  Danach: claude (im Wrapper)" >&2
         echo "" >&2
-        notify "Anthropic-Token nötig: setup-token im UI eintragen"
+        notify "Login nötig: claude auth login"
       fi
     fi
   fi
