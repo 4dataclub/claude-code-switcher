@@ -174,15 +174,27 @@ while true; do
     fi
   fi
 
+  # ── Claude-Flags abhängig vom Modus ──────────────────────────────────────
+  # Bei non-Anthropic-Provider: --bare nutzen, weil Claude Code sonst trotz
+  # gesetztem ANTHROPIC_BASE_URL den OAuth-Keychain liest und zu Anthropic
+  # routet (statt zum Router). --bare = "OAuth and keychain are never read".
+  # Trade-off: deaktiviert hooks, CLAUDE.md auto-discovery, plugin-sync —
+  # für reine Coding-Sessions auf Gemini/OpenRouter akzeptabel.
+  CLAUDE_FLAGS=()
+  if [[ -n "${ANTHROPIC_BASE_URL:-}" ]]; then
+    CLAUDE_FLAGS+=(--bare)
+    echo "↪ --bare aktiv (OAuth/Keychain übersprungen — non-Anthropic-Modus)" >&2
+  fi
+
   # ── Claude im Foreground ────────────────────────────────────────────────
   if [[ "$RESUME_ID" == "__continue__" ]]; then
-    echo "↪ claude -c (continue last session)" >&2
-    "$CLAUDE_BIN" -c 2> >(tee -a "$LOGFILE" >&2)
+    echo "↪ claude ${CLAUDE_FLAGS[*]:-} -c (continue last session)" >&2
+    "$CLAUDE_BIN" "${CLAUDE_FLAGS[@]}" -c 2> >(tee -a "$LOGFILE" >&2)
   elif [[ -n "$RESUME_ID" ]]; then
-    echo "↪ claude --resume $RESUME_ID" >&2
-    "$CLAUDE_BIN" --resume "$RESUME_ID" 2> >(tee -a "$LOGFILE" >&2)
+    echo "↪ claude ${CLAUDE_FLAGS[*]:-} --resume $RESUME_ID" >&2
+    "$CLAUDE_BIN" "${CLAUDE_FLAGS[@]}" --resume "$RESUME_ID" 2> >(tee -a "$LOGFILE" >&2)
   else
-    "$CLAUDE_BIN" "$@" 2> >(tee -a "$LOGFILE" >&2)
+    "$CLAUDE_BIN" "${CLAUDE_FLAGS[@]}" "$@" 2> >(tee -a "$LOGFILE" >&2)
   fi
   CLAUDE_EXIT=$?
 
