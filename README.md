@@ -470,6 +470,34 @@ MIT — siehe [LICENSE](LICENSE) (sofern vorhanden) oder Standard-MIT-Klausel: f
 
 ---
 
+## Entwicklung — Setup-Bundles bauen
+
+Die User-Datei `setup.sh` (Bash, macOS/Linux) und `setup.ps1` (PowerShell, Windows) sind **selbst-extrahierende Bundles** — sie enthalten alle Source-Files (Dockerfile, server.js, wrapper/*, Doku-Screenshots, CLAUDE.md-Block) als Base64-Payload.
+
+**Single Source of Truth:** die echten Source-Files liegen im Repo (`server.js`, `wrapper/`, `docs/screenshots/`, …). Die Bundles sind generiert.
+
+**Nach Source-Änderung Bundles regenerieren:**
+
+```bash
+bash scripts/build-setup.sh
+git add setup.sh setup.ps1
+git commit -m "build: regenerate setup bundles"
+git push
+```
+
+`build-setup.sh` baut beide Bundles aus:
+
+- `scripts/setup-header.sh.tpl` — Bash-Header
+- `scripts/setup-header.ps1.tpl` — PowerShell-Header
+- `scripts/templates/CLAUDE.md.tpl` — der CLAUDE.md-Block der ins User-Setup geschrieben wird
+- alle Source-Files via Manifest in `build-setup.sh`
+
+→ Wenn du eine neue Datei zum Setup hinzufügen willst: ins MANIFEST in `scripts/build-setup.sh` eintragen + entsprechend im Bash-Header (`extract`-Aufruf) und PS-Header (Decode-Block) ergänzen.
+
+**Wichtig:** Frisch-Installs vom GitHub ziehen IMMER aus den Bundles. Wenn Source und Bundles auseinanderlaufen, läuft der frische Install mit altem Stand. Drum: nach Source-Edit immer Bundles neu bauen (oder einen Pre-Push-Hook setzen, siehe Issues).
+
+---
+
 ## Mitarbeit
 
 Issues + Pull Requests willkommen. Vor allem für:
@@ -478,3 +506,4 @@ Issues + Pull Requests willkommen. Vor allem für:
 - Provider-Konfigurationen für weitere Anbieter
 - Sauberer OAuth-Pass-through-Proxy für exakte Pre-Quota-Detection
 - UI-Übersetzungen
+- Pre-Push Git-Hook der `bash scripts/build-setup.sh` automatisch laufen lässt
