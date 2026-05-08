@@ -13,7 +13,7 @@
 
 set -uo pipefail
 
-SWITCHER_URL="${CLAUDE_SWITCHER_URL:-http://localhost:3000}"
+SWITCHER_URL="${CLAUDE_SWITCHER_URL:-http://localhost:2000}"
 ROUTER_CONTAINER="${ROUTER_CONTAINER:-claude-switcher-router-1}"
 
 # ANSI-Farben (auto-disable bei not-tty)

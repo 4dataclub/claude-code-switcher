@@ -9,7 +9,7 @@ set -uo pipefail
 # Job-Status-Reports ('Terminated: 15' beim Killen der Background-Watcher) abschalten
 set +m
 
-SWITCHER_URL="${CLAUDE_SWITCHER_URL:-http://localhost:3000}"
+SWITCHER_URL="${CLAUDE_SWITCHER_URL:-http://localhost:2000}"
 # CLAUDE_BIN: das ECHTE claude binary, nicht der Alias zu uns selbst
 CLAUDE_BIN="${CLAUDE_BIN:-/Users/data/.local/bin/claude}"
 # Falls der Default-Pfad nicht existiert, fallback auf 'command claude' suchen

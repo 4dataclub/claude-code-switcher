@@ -4,7 +4,7 @@
 
 ![Switcher UI Übersicht](docs/screenshots/01-overview.png)
 
-*Web-UI auf `http://localhost:3000` — Failover-Chain editierbar, Provider/Modell jederzeit manuell wechselbar.*
+*Web-UI auf `http://localhost:2000` — Failover-Chain editierbar, Provider/Modell jederzeit manuell wechselbar.*
 
 ### Modell-Auswahl pro Provider
 
@@ -169,7 +169,7 @@ Was das Skript automatisch macht:
 5. Baut + startet den Docker-Container
 6. **Setzt den `claude`-Alias** in `~/.zshrc`/`~/.bashrc` bzw. `$PROFILE`
 
-Danach nur noch: Terminal neu öffnen + API-Keys auf [http://localhost:3000](http://localhost:3000) eintragen → fertig.
+Danach nur noch: Terminal neu öffnen + API-Keys auf [http://localhost:2000](http://localhost:2000) eintragen → fertig.
 
 ---
 
@@ -255,7 +255,7 @@ WSL2 läuft *in* Windows — kein zweites Gerät, kein Cloud-VM. Innerhalb WSL i
 
 ## UI bedienen
 
-`http://localhost:3000` zeigt:
+`http://localhost:2000` zeigt:
 
 1. **Status-Zeile** oben: aktueller Provider, Modell, Modus, Position in der Failover-Chain.
 2. **Modus-Toggle**: Manuell ↔ Auto-Failover.
@@ -361,11 +361,11 @@ Den API-Tier-Status checkst du in [console.cloud.google.com/billing](https://con
 │   • Background-Watcher 2: pollt ~/.claude/.switcher-restart Marker  │
 │   • Restart-Logik: kill claude → claude --resume <session>          │
 └────────┬────────────────────────────────────────────────────────────┘
-         │ HTTP zu localhost:3000
+         │ HTTP zu localhost:2000
          ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│ Switcher-Server (Docker-Container, Express auf :3000)               │
-│   • UI: http://localhost:3000                                       │
+│ Switcher-Server (Docker-Container, Express auf :2000)               │
+│   • UI: http://localhost:2000                                       │
 │   • API: /api/switch /api/auto /api/quota-error /api/warn …        │
 │   • State: ~/.claude/settings.json (._switcher block)               │
 │   • Background-Timer: alle 30 min Auto-Promote-Check                │
@@ -420,14 +420,14 @@ Claude Code persistiert jede Session als JSONL-Datei in `~/.claude/projects/<enc
 
 **„Provider zeigt OpenRouter/DeepSeek statt Anthropic"** — manuell im UI auf Anthropic klicken + Anwenden, oder:
 ```bash
-curl -X POST http://localhost:3000/api/chain-promote
+curl -X POST http://localhost:2000/api/chain-promote
 ```
 
 **Router-Container restartet ständig** — `docker compose down && docker compose up -d --build`. Sollte mit dem aktuellen `command:` im `docker-compose.yml` stabil sein (Daemon-Watching via `pgrep`).
 
 **„Quota erreicht" ohne dass etwas switcht** — Auto-Modus muss im UI aktiv sein. Status checken:
 ```bash
-curl http://localhost:3000/api/status
+curl http://localhost:2000/api/status
 ```
 
 **Windows-Notifications kommen nicht** — `Install-Module BurntToast -Scope CurrentUser` ausführen, oder im Konsolen-Output nach `▸ Switcher:`-Meldungen Ausschau halten.

@@ -4,7 +4,7 @@
 
 $ErrorActionPreference = 'Continue'
 
-$SwitcherUrl     = if ($env:CLAUDE_SWITCHER_URL) { $env:CLAUDE_SWITCHER_URL } else { 'http://localhost:3000' }
+$SwitcherUrl     = if ($env:CLAUDE_SWITCHER_URL) { $env:CLAUDE_SWITCHER_URL } else { 'http://localhost:2000' }
 $RouterContainer = if ($env:ROUTER_CONTAINER)   { $env:ROUTER_CONTAINER }   else { 'claude-switcher-router-1' }
 
 Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor White

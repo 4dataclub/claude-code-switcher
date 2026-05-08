@@ -2,7 +2,7 @@ services:
   claude-switcher:
     build: .
     ports:
-      - "3000:3000"
+      - "2000:2000"
     volumes:
       - ${HOME:-${USERPROFILE}}/.claude:/root/.claude
       - /var/run/docker.sock:/var/run/docker.sock

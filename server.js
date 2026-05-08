@@ -4,7 +4,7 @@ const path = require('path');
 const Docker = require('dockerode');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 2000;
 const CONFIG_PATH = process.env.CLAUDE_CONFIG_PATH || path.join('/root', '.claude', 'settings.json');
 const ROUTER_CONFIG_PATH = process.env.ROUTER_CONFIG_PATH || path.join('/root', '.claude', 'router-config.json');
 const ROUTER_CONTAINER = process.env.ROUTER_CONTAINER || 'claude-switcher-router-1';

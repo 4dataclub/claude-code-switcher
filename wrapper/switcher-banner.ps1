@@ -8,7 +8,7 @@
 # Bei leerem Banner: kein Output → kein Context-Eintrag.
 
 $ErrorActionPreference = 'SilentlyContinue'
-$switcherUrl = if ($env:CLAUDE_SWITCHER_URL) { $env:CLAUDE_SWITCHER_URL } else { 'http://localhost:3000' }
+$switcherUrl = if ($env:CLAUDE_SWITCHER_URL) { $env:CLAUDE_SWITCHER_URL } else { 'http://localhost:2000' }
 
 try {
     $banner = Invoke-RestMethod -Uri "$switcherUrl/api/banner" -TimeoutSec 1 -ErrorAction Stop

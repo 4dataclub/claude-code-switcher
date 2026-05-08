@@ -15,7 +15,7 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
-$SwitcherUrl = if ($env:CLAUDE_SWITCHER_URL) { $env:CLAUDE_SWITCHER_URL } else { "http://localhost:3000" }
+$SwitcherUrl = if ($env:CLAUDE_SWITCHER_URL) { $env:CLAUDE_SWITCHER_URL } else { "http://localhost:2000" }
 $ClaudeBin   = if ($env:CLAUDE_BIN)          { $env:CLAUDE_BIN }          else { "claude" }
 
 $WarnRe  = 'approach.*usage|messages.*remaining|90% of|usage.*nearly|quota.*near'

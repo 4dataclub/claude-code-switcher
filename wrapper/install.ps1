@@ -87,5 +87,5 @@ Write-Host ""
 Write-Host "Setup fertig. Bitte PowerShell neu öffnen (oder: . `$PROFILE)." -ForegroundColor Green
 Write-Host ""
 Write-Host "Test:" -ForegroundColor Cyan
-Write-Host "  curl http://localhost:3000/api/status   # → Switcher muss laufen" -ForegroundColor White
+Write-Host "  curl http://localhost:2000/api/status   # → Switcher muss laufen" -ForegroundColor White
 Write-Host "  claude                                  # → ruft jetzt claude-auto.ps1" -ForegroundColor White

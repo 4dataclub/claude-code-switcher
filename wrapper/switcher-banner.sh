@@ -8,7 +8,7 @@
 #                              "additionalContext": "..." } }
 # Bei leerem Banner: kein Output → kein Context-Eintrag.
 
-SWITCHER_URL="${CLAUDE_SWITCHER_URL:-http://localhost:3000}"
+SWITCHER_URL="${CLAUDE_SWITCHER_URL:-http://localhost:2000}"
 BANNER=$(curl -sS --max-time 1 "$SWITCHER_URL/api/banner" 2>/dev/null)
 
 if [[ -n "$BANNER" ]]; then
