@@ -12,6 +12,13 @@ const ROUTER_BASE_URL = process.env.ROUTER_BASE_URL || 'http://router:3456';
 // Wenn der Wrapper auf dem Host läuft, muss er den Router unter localhost ansprechen.
 const HOST_ROUTER_URL = 'http://localhost:3456';
 
+// llm-cascade-Sidecar (geteilte Cascade-Basis fuer Switcher + Lernplattform).
+// Im Compose: http://llm-cascade:8090; Konfig+State liegen in der Switcher-Postgres.
+const LLM_CASCADE_URL = process.env.LLM_CASCADE_URL || 'http://llm-cascade:8090';
+// Mapping: Switcher-UI-Provider -> llm-cascade-Provider-Strings.
+const SWITCHER_TO_CASCADE_PROVIDER = { google: 'gemini', anthropic: 'anthropic', openrouter: 'openrouter' };
+const CASCADE_TO_SWITCHER_PROVIDER = { gemini: 'google', anthropic: 'anthropic', openrouter: 'openrouter' };
+
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 
 app.use(express.json());
@@ -150,6 +157,68 @@ async function restartRouter() {
     return { ok: false, error: e.message };
   }
 }
+
+// ─── llm-cascade HTTP-Client ────────────────────────────────────────────────
+
+function cascadeGet(pathSuffix, timeoutMs = 2000) {
+  const http = require('http');
+  return new Promise((resolve, reject) => {
+    const url = new URL(LLM_CASCADE_URL + pathSuffix);
+    const req = http.get({ host: url.hostname, port: url.port || 80, path: url.pathname }, (res) => {
+      let data = '';
+      res.on('data', (c) => (data += c));
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, body: JSON.parse(data) }); }
+        catch { resolve({ status: res.statusCode, body: null, raw: data }); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(timeoutMs, () => { req.destroy(); reject(new Error('cascade timeout')); });
+  });
+}
+
+/** Modell-Liste aus llm-cascade (Source of truth). Cache 30s. */
+let cascadeModelsCache = { at: 0, data: null };
+async function getCascadeModelsCached() {
+  const now = Date.now();
+  if (cascadeModelsCache.data && now - cascadeModelsCache.at < 30_000) return cascadeModelsCache.data;
+  const { body } = await cascadeGet('/api/models');
+  cascadeModelsCache = { at: now, data: body || [] };
+  return cascadeModelsCache.data;
+}
+
+/** GET /api/cascade-models — UI ruft das auf, statt hardcoded Listen.
+ *  Gruppiert nach Switcher-Provider, filtert disabled/autoDisabled raus. */
+app.get('/api/cascade-models', async (req, res) => {
+  try {
+    const models = await getCascadeModelsCached();
+    const grouped = { anthropic: [], google: [], openrouter: [] };
+    for (const m of models || []) {
+      if (!m.enabled || m.autoDisabled) continue;
+      const sw = CASCADE_TO_SWITCHER_PROVIDER[m.provider];
+      if (!sw) continue;
+      grouped[sw].push({
+        id:            m.modelId,
+        name:          m.displayName || m.modelId,
+        free:          false,
+        keyConfigured: !!m.keyConfigured,
+      });
+    }
+    res.json({ source: 'llm-cascade', url: LLM_CASCADE_URL, grouped });
+  } catch (e) {
+    res.status(503).json({ error: 'llm-cascade unreachable', detail: e.message, url: LLM_CASCADE_URL });
+  }
+});
+
+/** GET /api/cascade-health — quick reachability check. */
+app.get('/api/cascade-health', async (req, res) => {
+  try {
+    const { status } = await cascadeGet('/api/health/keys');
+    res.json({ ok: status === 200, url: LLM_CASCADE_URL });
+  } catch (e) {
+    res.status(503).json({ ok: false, error: e.message, url: LLM_CASCADE_URL });
+  }
+});
 
 // ─── SSE für UI-Live-Updates ────────────────────────────────────────────────
 
