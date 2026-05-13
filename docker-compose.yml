@@ -12,9 +12,39 @@ services:
       - ROUTER_CONTAINER=claude-switcher-router-1
       # Switcher → Router via interne Bridge: socat hört auf 3457, leitet zu ccr (127.0.0.1:3456)
       - ROUTER_BASE_URL=http://router:3457
+      # llm-cascade Sidecar als geteilte Quelle fuer Modell-Liste + Cascade-Decisions.
+      # Eigene DB pro Instanz (siehe llm_cascade_db unten) — keine state-Sharing mit anderen
+      # Konsumenten wie EduPro. Konfig + Settings leben in unserer eigenen Postgres.
+      - LLM_CASCADE_URL=http://llm-cascade:8090
     restart: unless-stopped
     depends_on:
       - router
+      - llm-cascade
+
+  llm-cascade:
+    image: 4dataclub/llm-cascade:latest
+    container_name: claude-switcher-llm-cascade-1
+    ports:
+      # 127.0.0.1-bound damit nur lokale Tools dran kommen, kein Public-Expose noetig.
+      - "127.0.0.1:8091:8090"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/switcher
+      SPRING_DATASOURCE_USERNAME: switcher
+      SPRING_DATASOURCE_PASSWORD: switcher
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    container_name: claude-switcher-db-1
+    environment:
+      POSTGRES_DB: switcher
+      POSTGRES_USER: switcher
+      POSTGRES_PASSWORD: switcher
+    volumes:
+      - switcher_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
 
   router:
     build: ./router
@@ -60,3 +90,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+volumes:
+  switcher_pgdata:
