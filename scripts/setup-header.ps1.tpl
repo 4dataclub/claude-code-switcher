@@ -23,14 +23,17 @@ if (Test-Path $Target -PathType Leaf) {
 
 New-Item -Path $Target -ItemType Directory -Force | Out-Null
 Push-Location $Target
-New-Item -Path 'public','router','wrapper','docs\screenshots' -ItemType Directory -Force | Out-Null
+
+function Path-To-Marker { param([string]$P) ($P -replace '[/.\-\\]', '_') }
 
 function Extract-Block {
-    param([string]$Path, [string]$Marker)
+    param([string]$Path)
+    $marker = Path-To-Marker $Path
+    $unixPath = $Path -replace '\\', '/'
     $dir = Split-Path $Path -Parent
     if ($dir -and -not (Test-Path $dir)) { New-Item -Path $dir -ItemType Directory -Force | Out-Null }
-    $beg = "__BEGIN_${Marker}__"
-    $end = "__END_${Marker}__"
+    $beg = "__BEGIN_${marker}__"
+    $end = "__END_${marker}__"
     $capture = $false
     $b64 = New-Object System.Text.StringBuilder
     foreach ($line in [System.IO.File]::ReadLines($ScriptPath)) {
@@ -42,30 +45,19 @@ function Extract-Block {
 }
 
 Write-Host "▸ Entpacke Switcher-Source nach $(Get-Location)\" -ForegroundColor Cyan
-Extract-Block 'Dockerfile'                    'Dockerfile'
-Extract-Block 'package.json'                  'package_json'
-Extract-Block 'server.js'                     'server_js'
-Extract-Block 'docker-compose.yml'            'docker_compose_yml'
-Extract-Block 'public\index.html'             'public_index_html'
-Extract-Block 'router\Dockerfile'             'router_Dockerfile'
-Extract-Block 'router\config.json'            'router_config_json'
-Extract-Block 'wrapper\claude-auto'           'wrapper_claude_auto'
-Extract-Block 'wrapper\claude-auto.ps1'       'wrapper_claude_auto_ps1'
-Extract-Block 'wrapper\install.sh'            'wrapper_install_sh'
-Extract-Block 'wrapper\install.ps1'           'wrapper_install_ps1'
-Extract-Block 'wrapper\router-watch.sh'       'wrapper_router_watch_sh'
-Extract-Block 'wrapper\router-watch.ps1'      'wrapper_router_watch_ps1'
-Extract-Block 'wrapper\switcher-banner.sh'    'wrapper_switcher_banner_sh'
-Extract-Block 'wrapper\switcher-banner.ps1'   'wrapper_switcher_banner_ps1'
-Extract-Block 'docs\screenshots\01-overview.png'             'docs_screenshots_01_overview'
-Extract-Block 'docs\screenshots\02-auto-mode.png'            'docs_screenshots_02_auto_mode'
-Extract-Block 'docs\screenshots\03-provider-anthropic.png'   'docs_screenshots_03_provider_anthropic'
-Extract-Block 'docs\screenshots\04-provider-google.png'      'docs_screenshots_04_provider_google'
-Extract-Block 'docs\screenshots\05-provider-openrouter.png'  'docs_screenshots_05_provider_openrouter'
-Extract-Block 'docs\screenshots\06-90-percent-banner.png'    'docs_screenshots_06_90_percent_banner'
-Extract-Block 'docs\screenshots\07-status-gemini-active.png' 'docs_screenshots_07_status_gemini_active'
-Extract-Block 'docs\screenshots\08-banner-and-keys.png'      'docs_screenshots_08_banner_and_keys'
-Write-Host "  ✓ Source entpackt" -ForegroundColor Green
+# Manifest aus dem Bundle ziehen, dann jeden Eintrag extrahieren.
+$capture = $false
+$manifest = New-Object System.Collections.ArrayList
+foreach ($line in [System.IO.File]::ReadLines($ScriptPath)) {
+    if ($line -eq '__BEGIN_manifest__') { $capture = $true; continue }
+    if ($line -eq '__END_manifest__') { break }
+    if ($capture -and $line.Trim().Length -gt 0) { [void]$manifest.Add($line) }
+}
+foreach ($p in $manifest) {
+    $winPath = $p -replace '/', '\'
+    Extract-Block $winPath
+}
+Write-Host "  ✓ Source entpackt ($($manifest.Count) Files)" -ForegroundColor Green
 
 if (-not $NoUserConfig) {
     $ClaudeDir = Join-Path $HOME '.claude'
