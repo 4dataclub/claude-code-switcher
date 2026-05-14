@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnDestroy, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   ModelsTableComponent,
@@ -104,6 +104,10 @@ import { ModePanelComponent } from './components/mode-panel.component';
       <footer class="ftr">
         Wrapper: <code>cd wrapper && ./install.sh</code> · dann <code>claude-auto</code> statt <code>claude</code>.
       </footer>
+
+      <div *ngIf="toast() as t" class="toast" [class.toast-err]="t.type === 'err'">
+        {{ t.msg }}
+      </div>
     </main>
   `,
   styles: [`
@@ -125,9 +129,18 @@ import { ModePanelComponent } from './components/mode-panel.component';
     .ftr { color: #666; font-size: 0.75rem; text-align: center; padding: 1rem 0; }
     code { background: #1f1f1f; padding: 0.1rem 0.3rem; border-radius: 0.25rem; font-size: 0.7rem; }
     .error { color: #f87171; font-size: 0.85rem; margin-top: 0.5rem; }
+    .toast {
+      position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+      padding: 0.7rem 1.2rem; background: #064e3b; color: #d1fae5;
+      border-radius: 0.6rem; font-size: 0.85rem; font-weight: 700;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 100;
+      animation: toastIn 0.2s ease-out;
+    }
+    .toast.toast-err { background: #7f1d1d; color: #fee2e2; }
+    @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 0.5rem); } to { opacity: 1; transform: translate(-50%, 0); } }
   `],
 })
-export class AppComponent {
+export class AppComponent implements OnDestroy {
   private readonly api = inject(SwitcherApiService);
 
   readonly status = signal<SwitcherStatus | null>(null);
@@ -135,6 +148,10 @@ export class AppComponent {
   readonly recheck = signal<{ hoursAgo: number } | null>(null);
   readonly error = signal<string | null>(null);
   readonly restarting = signal(false);
+  readonly toast = signal<{ msg: string; type: 'ok' | 'err' } | null>(null);
+
+  /** EventSource für SSE-Live-Updates. Wird in ngOnInit aufgemacht + ngOnDestroy geschlossen. */
+  private es: EventSource | null = null;
 
   activeModel(): string | null {
     const s = this.status();
@@ -143,6 +160,82 @@ export class AppComponent {
 
   ngOnInit(): void {
     this.reload();
+    this.startSse();
+  }
+
+  ngOnDestroy(): void {
+    this.es?.close();
+    this.es = null;
+  }
+
+  /**
+   * SSE-Stream `/api/events` abonnieren. Bei Events:
+   * - `warn` → Quota-Banner anzeigen
+   * - `recheck-due` → Cooldown-Recheck-Banner anzeigen
+   * - `auto-switched`, `chain-promoted`, `auto-promoted`, `switch`,
+   *   `auto-config`, `chain-exhausted`, `quota-error` → Toast + reload
+   * - Library-Events (`model-toggled`, `model-tested`, etc.) → kein Toast,
+   *   nur reload (die Library-Components haben eigenen State)
+   */
+  private startSse(): void {
+    if (typeof EventSource === 'undefined') return;
+    try {
+      this.es = new EventSource(this.api.eventsUrl());
+    } catch {
+      return;
+    }
+
+    const reloadOn = (event: string) => this.es?.addEventListener(event, () => this.reload());
+    const toastReloadOn = (event: string, msg: (data: any) => string, type: 'ok' | 'err' = 'ok') => {
+      this.es?.addEventListener(event, (e: MessageEvent) => {
+        try {
+          const data = e.data ? JSON.parse(e.data) : {};
+          this.showToast(msg(data), type);
+        } catch {
+          this.showToast(msg({}), type);
+        }
+        this.reload();
+      });
+    };
+
+    this.es.addEventListener('warn', (e: MessageEvent) => {
+      try {
+        const d = JSON.parse(e.data);
+        this.warn.set({ percent: d.percent, project: d.project });
+      } catch {}
+    });
+
+    this.es.addEventListener('recheck-due', (e: MessageEvent) => {
+      try {
+        const d = JSON.parse(e.data);
+        this.recheck.set({ hoursAgo: d.sinceFailoverHours ?? 0 });
+      } catch {
+        this.recheck.set({ hoursAgo: 0 });
+      }
+    });
+
+    toastReloadOn('quota-error', (d) => `Quota erreicht in „${d.project ?? 'Projekt'}" (Modus: ${d.mode})`, 'err');
+    toastReloadOn('auto-switched', (d) =>
+      `Auto-Switch → ${d.to?.provider}/${d.to?.model} (Stufe ${(d.position ?? 0) + 1}/${d.total})`);
+    toastReloadOn('chain-exhausted', () => 'Alle Provider der Chain ausgeschöpft', 'err');
+    toastReloadOn('chain-promoted', () => 'Zurück auf Anthropic — Wrapper holt sich Restart-Marker');
+    toastReloadOn('auto-promoted', (d) => `Auto-Promote → Anthropic (Cooldown ${d.hoursSinceFailover ?? '?'} h abgelaufen)`);
+
+    reloadOn('switch');
+    reloadOn('auto-config');
+    reloadOn('model-toggled');
+    reloadOn('model-tested');
+    reloadOn('model-created');
+    reloadOn('model-deleted');
+    reloadOn('models-reordered');
+    reloadOn('model-reenabled');
+    reloadOn('setting-updated');
+    reloadOn('cooldown-override');
+  }
+
+  private showToast(msg: string, type: 'ok' | 'err' = 'ok'): void {
+    this.toast.set({ msg, type });
+    setTimeout(() => this.toast.set(null), 4000);
   }
 
   reload(): void {
