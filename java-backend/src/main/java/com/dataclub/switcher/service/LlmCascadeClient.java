@@ -38,5 +38,19 @@ public class LlmCascadeClient {
         }
     }
 
+    /** Modell-Patch (enabled-Toggle etc.) — proxy zu llm-cascade PUT /api/models/{id}. */
+    public boolean patchModel(long id, Map<String, Object> patch) {
+        try {
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            org.springframework.http.HttpEntity<Map<String, Object>> req =
+                new org.springframework.http.HttpEntity<>(patch, headers);
+            rest.exchange(cascadeUrl + "/api/models/" + id, org.springframework.http.HttpMethod.PUT, req, String.class);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public String url() { return cascadeUrl; }
 }
