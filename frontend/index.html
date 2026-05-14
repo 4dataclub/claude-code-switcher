@@ -518,39 +518,97 @@
     } catch (e) { console.error('cooldown-override failed', e); }
   }
 
-  // ─── Cascade-Modelle (enable/disable + re-enable) ───────────────────────
+  // ─── Cascade-Modelle (gruppiert nach Provider, Master-Toggle pro Provider) ──
   async function loadCascadeModelsList() {
     try {
       const r = await fetch('/api/cascade-models').then(r => r.json());
       const wrap = document.getElementById('cascadeModelsList');
       if (!wrap) return;
-      const rows = [];
-      for (const [prov, models] of Object.entries(r.grouped || {})) {
-        for (const m of models) {
-          rows.push(renderCascadeModelRow(prov, m));
-        }
+      const activeProv  = state.provider || (state.activeRoute && state.activeRoute.provider) || null;
+      const activeModel = state.activeRoute ? state.activeRoute.model : (state.model || null);
+      const blocks = [];
+      const providers = Object.entries(r.grouped || {});
+      for (const [prov, models] of providers) {
+        if (!models || !models.length) continue;
+        blocks.push(renderProviderGroup(prov, models, activeProv, activeModel));
       }
-      wrap.innerHTML = rows.length
-        ? rows.join('')
-        : '<div style="color:#666; font-size:0.8rem; padding:6px;">Keine Modelle in llm-cascade konfiguriert. Lege welche an: <code>POST /api/models</code> auf der Cascade.</div>';
+      wrap.innerHTML = blocks.length
+        ? blocks.join('')
+        : '<div style="color:#666; font-size:0.8rem; padding:6px;">Keine Modelle in llm-cascade konfiguriert. Lege welche an via <code>POST /api/models</code> auf der Cascade.</div>';
     } catch (e) { console.error('cascade-models load failed', e); }
   }
 
-  function renderCascadeModelRow(provider, m) {
-    const enabled = m.enabled && !m.autoDisabled;
-    const auto    = m.autoDisabled;
-    const dot     = enabled ? '🟢' : auto ? '🚫' : '⚪';
-    const label   = `${dot} <strong>${escapeHtml(m.name)}</strong> <span style="color:#666; font-size:0.75rem;">${provider} · ${escapeHtml(m.id)}</span>`;
-    const action  = auto
+  function renderProviderGroup(provider, models, activeProv, activeModel) {
+    const anyEnabled  = models.some(m => m.enabled && !m.autoDisabled);
+    const allDisabled = !anyEnabled;
+    const masterAction = allDisabled
+      ? `<button class="banner-btn primary" style="font-size:0.7rem; padding:3px 9px;" onclick="toggleProvider('${provider}', true)">Alle aktivieren</button>`
+      : `<button class="banner-btn"         style="font-size:0.7rem; padding:3px 9px;" onclick="toggleProvider('${provider}', false)">Alle deaktivieren</button>`;
+    const header = `<div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:#0e0e0e; border:1px solid #2a2a2a; border-radius:6px 6px 0 0; margin-top:8px;">
+      <strong style="text-transform:capitalize;">${escapeHtml(provider)}</strong>
+      <span style="color:#666; font-size:0.72rem;">${models.length} Modell${models.length===1?'':'e'}</span>
+      <span style="flex:1;"></span>
+      ${masterAction}
+    </div>`;
+    const rows = models.map(m => renderCascadeModelRow(provider, m, activeProv, activeModel)).join('');
+    return header + rows;
+  }
+
+  function renderCascadeModelRow(provider, m, activeProv, activeModel) {
+    const enabled  = m.enabled && !m.autoDisabled;
+    const auto     = m.autoDisabled;
+    const isActive = provider === activeProv && (m.id === activeModel);
+    const dot      = isActive ? '✓' : enabled ? '🟢' : auto ? '🚫' : '⚪';
+    const label    = `${dot} <strong>${escapeHtml(m.name)}</strong> <span style="color:#666; font-size:0.75rem;">${escapeHtml(m.id)}</span>`;
+    const toggleBtn = auto
       ? `<button class="banner-btn primary" style="font-size:0.7rem; padding:3px 9px;" onclick="reEnableCascadeModel(${m.dbId})">Re-enable</button>`
       : enabled
         ? `<button class="banner-btn" style="font-size:0.7rem; padding:3px 9px;" onclick="toggleCascadeModel(${m.dbId}, false)">Deaktivieren</button>`
         : `<button class="banner-btn primary" style="font-size:0.7rem; padding:3px 9px;" onclick="toggleCascadeModel(${m.dbId}, true)">Aktivieren</button>`;
+    const useBtn = enabled && !isActive
+      ? `<button class="banner-btn primary" style="font-size:0.7rem; padding:3px 9px; background:#22c55e; border-color:#22c55e; color:#000;" onclick="useCascadeModel('${provider}', '${escapeHtml(m.id)}')">Als aktiv</button>`
+      : '';
+    const activeBadge = isActive
+      ? '<span style="color:#22c55e; font-size:0.7rem; font-weight:700; padding:2px 6px; border:1px solid #22c55e; border-radius:4px;">AKTIV</span>'
+      : '';
     const reason = auto ? `<div style="color:#f59e0b; font-size:0.68rem; margin-top:2px;">auto-disabled: ${escapeHtml(m.autoDisabledReason||'')}</div>` : '';
-    return `<div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:#161616; border:1px solid #222; border-radius:6px;">
+    return `<div style="display:flex; align-items:center; gap:6px; padding:6px 8px; background:#161616; border:1px solid #222; border-top:none;">
       <div style="flex:1;">${label}${reason}</div>
-      ${action}
+      ${activeBadge}
+      ${useBtn}
+      ${toggleBtn}
     </div>`;
+  }
+
+  /** Provider-Master-Toggle: enabled/disabled ALL Modelle dieses Providers. */
+  async function toggleProvider(provider, enabled) {
+    try {
+      const r = await fetch('/api/cascade-models').then(r => r.json());
+      const models = (r.grouped || {})[provider] || [];
+      await Promise.all(models.map(m =>
+        fetch(`/api/cascade-models/${m.dbId}/toggle`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled })
+        })
+      ));
+      loadCascadeModelsList();
+    } catch (e) { console.error('provider toggle failed', e); }
+  }
+
+  /** „Als aktiv" auf einer Modell-Zeile → ruft /api/switch wie wenn man oben einen Provider gewaehlt haette. */
+  async function useCascadeModel(provider, modelId) {
+    try {
+      // Provider-Mapping: cascade-Namen sind anders als UI-Namen
+      const uiProvider = provider === 'gemini' ? 'google' : provider; // anthropic + openrouter passen direkt
+      const body = { provider: uiProvider, model: modelId };
+      const r = await fetch('/api/switch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }).then(r => r.json());
+      if (r && r.success === false) alert('Switch fehlgeschlagen: ' + (r.error||'unbekannt'));
+      await loadStatus();
+      loadCascadeModelsList();
+    } catch (e) { console.error('useCascadeModel failed', e); alert('Switch failed: '+e.message); }
   }
 
   function escapeHtml(s) {
