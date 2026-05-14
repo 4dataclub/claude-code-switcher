@@ -570,6 +570,58 @@ public class ApiController {
         return Map.of("ok", ok, "id", id);
     }
 
+    // ─── Cascade-Models CRUD (proxy zu llm-cascade) ──────────────────────────
+
+    @PostMapping("/cascade-models")
+    public JsonNode createCascadeModel(@RequestBody Map<String, Object> body) {
+        JsonNode r = cascade.createModel(body);
+        sse.broadcast("model-created", Map.of("ok", r.path("ok").asBoolean(false)));
+        return r;
+    }
+
+    @DeleteMapping("/cascade-models/{id}")
+    public Map<String, Object> deleteCascadeModel(@PathVariable long id) {
+        boolean ok = cascade.deleteModel(id);
+        sse.broadcast("model-deleted", Map.of("id", id, "ok", ok));
+        return Map.of("ok", ok, "id", id);
+    }
+
+    @PostMapping("/cascade-models/{id}/test")
+    public JsonNode testCascadeModel(@PathVariable long id) {
+        JsonNode r = cascade.testModel(id);
+        sse.broadcast("model-tested", Map.of("id", id, "ok", r.path("ok").asBoolean(false)));
+        return r;
+    }
+
+    public static class ReorderRequest { public java.util.List<Long> orderedIds; }
+
+    @PostMapping("/cascade-models/reorder")
+    public Map<String, Object> reorderCascadeModels(@RequestBody ReorderRequest req) {
+        boolean ok = req != null && req.orderedIds != null && cascade.reorderModels(req.orderedIds);
+        sse.broadcast("models-reordered", Map.of("ok", ok));
+        return Map.of("ok", ok);
+    }
+
+    // ─── Generic settingKey-basierte Keys (proxy zu llm-cascade /api/settings) ──
+
+    /** Listet alle Settings aus llm-cascade (Werte maskiert wo sensitive). */
+    @GetMapping("/cascade-settings")
+    public JsonNode cascadeSettings() {
+        return cascade.getSettings();
+    }
+
+    public static class CascadeSettingRequest { public String value; }
+
+    /** Setzt ein Setting in llm-cascade. Leerer Wert = Override entfernen. */
+    @PostMapping("/cascade-settings/{key}")
+    public Map<String, Object> setCascadeSetting(@PathVariable String key,
+                                                 @RequestBody CascadeSettingRequest req) {
+        String v = req == null ? "" : (req.value == null ? "" : req.value);
+        boolean ok = cascade.setSetting(key, v);
+        sse.broadcast("setting-updated", Map.of("key", key, "ok", ok));
+        return Map.of("ok", ok, "key", key);
+    }
+
     @GetMapping("/cascade-models")
     public Map<String, Object> cascadeModels() {
         JsonNode models = cascade.getModels();
