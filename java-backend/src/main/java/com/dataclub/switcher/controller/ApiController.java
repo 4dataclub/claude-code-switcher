@@ -1,9 +1,11 @@
 package com.dataclub.switcher.controller;
 
+import com.dataclub.switcher.model.AiModelConfig;
 import com.dataclub.switcher.service.ConfigService;
 import com.dataclub.switcher.service.LlmCascadeClient;
 import com.dataclub.switcher.service.RouterService;
 import com.dataclub.switcher.service.SseService;
+import com.dataclub.switcher.service.SwitcherModelService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -46,6 +48,8 @@ public class ApiController {
     @Autowired private RouterService router;
     @Autowired private SseService sse;
     @Autowired private LlmCascadeClient cascade;
+    /** Lokaler Modell-Context (Phase K, 2026-05-14) — ersetzt HTTP-Proxy zur Cascade fuer CRUD. */
+    @Autowired private SwitcherModelService modelSvc;
 
     private static final String HOST_ROUTER_URL = "http://localhost:3456";
     private static final long FRESH_BANNER_MS = 5L * 60_000L;
@@ -558,34 +562,44 @@ public class ApiController {
     public Map<String, Object> toggleCascadeModel(@PathVariable long id, @RequestBody ModelPatchRequest req) {
         if (req == null || req.enabled == null)
             return Map.of("ok", false, "error", "enabled required");
-        boolean ok = cascade.patchModel(id, Map.of("enabled", req.enabled));
+        boolean ok = modelSvc.patchModel(id, Map.of("enabled", req.enabled)).isPresent();
         sse.broadcast("model-toggled", Map.of("id", id, "enabled", req.enabled, "ok", ok));
         return Map.of("ok", ok, "id", id, "enabled", req.enabled);
     }
 
     @PostMapping("/cascade-models/{id}/re-enable")
     public Map<String, Object> reEnableCascadeModel(@PathVariable long id) {
-        boolean ok = cascade.patchModel(id, Map.of("autoDisabled", Boolean.FALSE, "enabled", Boolean.TRUE));
+        boolean ok = modelSvc.patchModel(id,
+            Map.of("autoDisabled", Boolean.FALSE, "enabled", Boolean.TRUE)).isPresent();
         sse.broadcast("model-reenabled", Map.of("id", id, "ok", ok));
         return Map.of("ok", ok, "id", id);
     }
 
-    // ─── Cascade-Models CRUD (proxy zu llm-cascade) ──────────────────────────
+    // ─── Cascade-Models CRUD — lokale DB (Phase K) ───────────────────────────
 
     @PostMapping("/cascade-models")
-    public JsonNode createCascadeModel(@RequestBody Map<String, Object> body) {
-        JsonNode r = cascade.createModel(body);
-        sse.broadcast("model-created", Map.of("ok", r.path("ok").asBoolean(false)));
-        return r;
+    public Map<String, Object> createCascadeModel(@RequestBody Map<String, Object> body) {
+        AiModelConfig created = modelSvc.createModel(body);
+        sse.broadcast("model-created", Map.of("ok", true, "id", created.getId()));
+        return Map.of(
+            "ok", true,
+            "id", created.getId(),
+            "provider", created.getProvider(),
+            "modelId", created.getModelId()
+        );
     }
 
     @DeleteMapping("/cascade-models/{id}")
     public Map<String, Object> deleteCascadeModel(@PathVariable long id) {
-        boolean ok = cascade.deleteModel(id);
+        boolean ok = modelSvc.deleteModel(id);
         sse.broadcast("model-deleted", Map.of("id", id, "ok", ok));
         return Map.of("ok", ok, "id", id);
     }
 
+    /**
+     * Connectivity-Test bleibt Proxy zur llm-cascade — die hat die Provider-SDKs.
+     * Die DB-IDs sind identisch (selbe Tabelle, beide Konsumenten lesen sie).
+     */
     @PostMapping("/cascade-models/{id}/test")
     public JsonNode testCascadeModel(@PathVariable long id) {
         JsonNode r = cascade.testModel(id);
@@ -597,56 +611,54 @@ public class ApiController {
 
     @PostMapping("/cascade-models/reorder")
     public Map<String, Object> reorderCascadeModels(@RequestBody ReorderRequest req) {
-        boolean ok = req != null && req.orderedIds != null && cascade.reorderModels(req.orderedIds);
+        boolean ok = req != null && req.orderedIds != null && modelSvc.reorderModels(req.orderedIds);
         sse.broadcast("models-reordered", Map.of("ok", ok));
         return Map.of("ok", ok);
     }
 
-    // ─── Generic settingKey-basierte Keys (proxy zu llm-cascade /api/settings) ──
+    // ─── Generic settingKey-basierte Keys — lokale DB (Phase K) ──────────────
 
-    /** Listet alle Settings aus llm-cascade (Werte maskiert wo sensitive). */
+    /** Listet alle Settings (Werte maskiert wo sensitive). */
     @GetMapping("/cascade-settings")
-    public JsonNode cascadeSettings() {
-        return cascade.getSettings();
+    public List<Map<String, Object>> cascadeSettings() {
+        return modelSvc.listSettings();
     }
 
     public static class CascadeSettingRequest { public String value; }
 
-    /** Setzt ein Setting in llm-cascade. Leerer Wert = Override entfernen. */
+    /** Setzt ein Setting. Leerer Wert = Override entfernen. */
     @PostMapping("/cascade-settings/{key}")
     public Map<String, Object> setCascadeSetting(@PathVariable String key,
                                                  @RequestBody CascadeSettingRequest req) {
         String v = req == null ? "" : (req.value == null ? "" : req.value);
-        boolean ok = cascade.setSetting(key, v);
+        boolean ok = modelSvc.setSetting(key, v);
         sse.broadcast("setting-updated", Map.of("key", key, "ok", ok));
         return Map.of("ok", ok, "key", key);
     }
 
     @GetMapping("/cascade-models")
     public Map<String, Object> cascadeModels() {
-        JsonNode models = cascade.getModels();
+        List<AiModelConfig> models = modelSvc.listModels();
         Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
         grouped.put("anthropic", new ArrayList<>());
         grouped.put("google", new ArrayList<>());
         grouped.put("openrouter", new ArrayList<>());
-        if (models.isArray()) {
-            for (JsonNode m : models) {
-                String swProv = CASCADE_TO_SWITCHER.get(m.path("provider").asText());
-                if (swProv == null) continue;
-                Map<String, Object> entry = new LinkedHashMap<>();
-                // dbId fuer Toggle-Endpoints; modelId ist der LLM-Modell-Name
-                entry.put("dbId", m.path("id").asLong());
-                entry.put("id", m.path("modelId").asText());
-                entry.put("name", m.path("displayName").asText(m.path("modelId").asText()));
-                entry.put("free", false);
-                entry.put("keyConfigured", m.path("keyConfigured").asBoolean(false));
-                entry.put("enabled", m.path("enabled").asBoolean(true));
-                entry.put("autoDisabled", m.path("autoDisabled").asBoolean(false));
-                entry.put("autoDisabledReason", m.path("autoDisabledReason").asText(null));
-                grouped.get(swProv).add(entry);
-            }
+        for (AiModelConfig m : models) {
+            String swProv = CASCADE_TO_SWITCHER.get(m.getProvider());
+            if (swProv == null) continue;
+            Map<String, Object> entry = new LinkedHashMap<>();
+            // dbId fuer Toggle-Endpoints; modelId ist der LLM-Modell-Name
+            entry.put("dbId", m.getId());
+            entry.put("id", m.getModelId());
+            entry.put("name", m.getDisplayName() != null ? m.getDisplayName() : m.getModelId());
+            entry.put("free", false);
+            entry.put("keyConfigured", modelSvc.modelHasKey(m));
+            entry.put("enabled", Boolean.TRUE.equals(m.getEnabled()));
+            entry.put("autoDisabled", Boolean.TRUE.equals(m.getAutoDisabled()));
+            entry.put("autoDisabledReason", m.getAutoDisabledReason());
+            grouped.get(swProv).add(entry);
         }
-        return Map.of("source", "llm-cascade", "url", cascade.url(), "grouped", grouped);
+        return Map.of("source", "switcher-db", "url", cascade.url(), "grouped", grouped);
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
