@@ -38,6 +38,78 @@ public class LlmCascadeClient {
         }
     }
 
+    /** Settings-Liste (mit maskierten Werten). Proxy zu GET /api/settings. */
+    public JsonNode getSettings() {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/settings", String.class);
+            return json == null ? mapper.createArrayNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createArrayNode();
+        }
+    }
+
+    /** Setting-Wert setzen. Proxy zu POST /api/settings/{key} mit {value}. */
+    public boolean setSetting(String key, String value) {
+        try {
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            org.springframework.http.HttpEntity<Map<String, Object>> req =
+                new org.springframework.http.HttpEntity<>(Map.of("value", value == null ? "" : value), headers);
+            rest.postForObject(cascadeUrl + "/api/settings/" + key, req, String.class);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Neues Modell anlegen — POST /api/models. */
+    public JsonNode createModel(Map<String, Object> body) {
+        try {
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            org.springframework.http.HttpEntity<Map<String, Object>> req =
+                new org.springframework.http.HttpEntity<>(body, headers);
+            String json = rest.postForObject(cascadeUrl + "/api/models", req, String.class);
+            return json == null ? mapper.createObjectNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createObjectNode().put("ok", false).put("error", e.getMessage());
+        }
+    }
+
+    /** Modell loeschen — DELETE /api/models/{id}. */
+    public boolean deleteModel(long id) {
+        try {
+            rest.delete(cascadeUrl + "/api/models/" + id);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Modell testen — POST /api/models/{id}/test. */
+    public JsonNode testModel(long id) {
+        try {
+            String json = rest.postForObject(cascadeUrl + "/api/models/" + id + "/test", null, String.class);
+            return json == null ? mapper.createObjectNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createObjectNode().put("ok", false).put("error", e.getMessage());
+        }
+    }
+
+    /** Reorder — POST /api/models/reorder mit {orderedIds: [...]}. */
+    public boolean reorderModels(java.util.List<Long> orderedIds) {
+        try {
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            org.springframework.http.HttpEntity<Map<String, Object>> req =
+                new org.springframework.http.HttpEntity<>(Map.of("orderedIds", orderedIds), headers);
+            rest.postForObject(cascadeUrl + "/api/models/reorder", req, String.class);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     /** Modell-Patch (enabled-Toggle etc.) — proxy zu llm-cascade PUT /api/models/{id}. */
     public boolean patchModel(long id, Map<String, Object> patch) {
         try {
