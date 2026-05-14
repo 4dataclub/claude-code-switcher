@@ -661,6 +661,83 @@ public class ApiController {
         return Map.of("source", "switcher-db", "url", cascade.url(), "grouped", grouped);
     }
 
+    // ─── @dataclub/ki-models-ui Library-Endpoints (Phase L.4, 2026-05-14) ────
+    // Die Library erwartet einen einheitlichen Vertrag (siehe README dort).
+    // Die existierenden `/cascade-*`-Endpoints bleiben unverändert (Vanilla-
+    // Frontend nutzt sie noch) — neu kommen `/ai-models`, `/api-keys`,
+    // `/cascade-config` hinzu, die das Library-Format respektieren.
+
+    /** Flaches AiModel[]-Array (Library-Vertrag) statt grouped Object. */
+    @GetMapping("/ai-models")
+    public List<Map<String, Object>> listAiModels() {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (AiModelConfig m : modelSvc.listModels()) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("id", m.getId());
+            entry.put("provider", m.getProvider());
+            entry.put("modelId", m.getModelId());
+            entry.put("displayName", m.getDisplayName());
+            entry.put("apiKeySettingKey", m.getApiKeySettingKey());
+            entry.put("enabled", Boolean.TRUE.equals(m.getEnabled()));
+            entry.put("orderIdx", m.getOrderIdx());
+            entry.put("cooldown503OverrideSec", m.getCooldown503OverrideSec());
+            entry.put("autoDisabled", Boolean.TRUE.equals(m.getAutoDisabled()));
+            entry.put("autoDisabledReason", m.getAutoDisabledReason());
+            entry.put("autoDisabledAt", m.getAutoDisabledAt());
+            entry.put("keyConfigured", modelSvc.modelHasKey(m));
+            entry.put("cooldownRemainingSec", 0);
+            out.add(entry);
+        }
+        return out;
+    }
+
+    @PostMapping("/ai-models")
+    public Map<String, Object> aiModelsCreate(@RequestBody Map<String, Object> body) {
+        return createCascadeModel(body);
+    }
+
+    @DeleteMapping("/ai-models/{id}")
+    public Map<String, Object> aiModelsDelete(@PathVariable long id) {
+        return deleteCascadeModel(id);
+    }
+
+    @PostMapping("/ai-models/{id}/test")
+    public JsonNode aiModelsTest(@PathVariable long id) {
+        return testCascadeModel(id);
+    }
+
+    @PostMapping("/ai-models/{id}/toggle")
+    public Map<String, Object> aiModelsToggle(@PathVariable long id, @RequestBody ModelPatchRequest req) {
+        return toggleCascadeModel(id, req);
+    }
+
+    @PostMapping("/ai-models/reorder")
+    public Map<String, Object> aiModelsReorder(@RequestBody ReorderRequest req) {
+        return reorderCascadeModels(req);
+    }
+
+    /** Library-konformer Pfad — delegiert zu /cascade-settings. */
+    @GetMapping("/api-keys")
+    public List<Map<String, Object>> apiKeys() {
+        return cascadeSettings();
+    }
+
+    @PostMapping("/api-keys/setting/{key}")
+    public Map<String, Object> apiKeysSetSetting(@PathVariable String key, @RequestBody CascadeSettingRequest req) {
+        return setCascadeSetting(key, req);
+    }
+
+    /** Library-konformer Pfad — delegiert zu /cascade-cooldown-override. */
+    @GetMapping("/cascade-config")
+    public Map<String, Object> cascadeConfigGet() {
+        return getCooldownOverride();
+    }
+
+    @PutMapping("/cascade-config")
+    public Map<String, Object> cascadeConfigSet(@RequestBody CooldownOverrideRequest req) {
+        return setCooldownOverride(req);
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     private static String mask(String k) {
