@@ -2,7 +2,10 @@ services:
   switcher-backend:
     build: ./java-backend
     container_name: claude-switcher-backend-1
-    ports: ["127.0.0.1:2000:2000"]
+    # Kein host-Port-Mapping — Backend nur im Docker-Netz erreichbar.
+    # Wrapper + Browser gehen ueber http://localhost:2000 (nginx-frontend),
+    # nginx proxy't /api/* transparent an switcher-backend:2000 weiter.
+    expose: ["2000"]
     volumes:
       - ${HOME:-${USERPROFILE}}/.claude:/root/.claude
       - /var/run/docker.sock:/var/run/docker.sock
@@ -24,7 +27,10 @@ services:
   switcher-frontend:
     build: ./frontend
     container_name: claude-switcher-frontend-1
-    ports: ["2001:80"]
+    # Einziger oeffentlicher Port: 2000 — wie im alten Node-Setup. Wrapper +
+    # README + Installer erwarten http://localhost:2000. nginx serv't die UI
+    # auf / und proxy't /api/* an switcher-backend:2000 (Docker-Netz).
+    ports: ["2000:80"]
     depends_on:
       - switcher-backend
     restart: unless-stopped

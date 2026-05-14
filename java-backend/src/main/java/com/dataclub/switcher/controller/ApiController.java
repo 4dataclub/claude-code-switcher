@@ -504,6 +504,72 @@ public class ApiController {
         return Map.of("ok", cascade.isHealthy(), "url", cascade.url());
     }
 
+    // ─── Cascade-Cooldown-Override (Tri-State, analog EduPro PR #37) ─────────
+
+    @GetMapping("/cascade-cooldown-override")
+    public Map<String, Object> getCooldownOverride() {
+        ObjectNode sw = configs.getSwitcher();
+        JsonNode v = sw.get("cascadeCooldownOverride");
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (v == null || v.isNull()) {
+            out.put("cooldownOverride", null);
+            out.put("effective", "default");
+            out.put("effectiveCooldown", true);
+        } else if (v.asBoolean(true)) {
+            out.put("cooldownOverride", Boolean.TRUE);
+            out.put("effective", "explicit_on");
+            out.put("effectiveCooldown", true);
+        } else {
+            out.put("cooldownOverride", Boolean.FALSE);
+            out.put("effective", "explicit_off");
+            out.put("effectiveCooldown", false);
+        }
+        return out;
+    }
+
+    public static class CooldownOverrideRequest { public Boolean cooldownOverride; }
+
+    @PostMapping("/cascade-cooldown-override")
+    public synchronized Map<String, Object> setCooldownOverride(@RequestBody CooldownOverrideRequest req) {
+        ObjectNode cfg = configs.readConfig();
+        ObjectNode sw = cfg.has("_switcher") && cfg.get("_switcher").isObject()
+            ? (ObjectNode) cfg.get("_switcher") : configs.mapper().createObjectNode();
+        if (req == null || req.cooldownOverride == null) {
+            sw.putNull("cascadeCooldownOverride");
+        } else {
+            sw.put("cascadeCooldownOverride", req.cooldownOverride);
+        }
+        cfg.set("_switcher", sw);
+        configs.writeConfig(cfg);
+        sse.broadcast("cooldown-override", Map.of("value", req == null || req.cooldownOverride == null ? "default"
+            : req.cooldownOverride ? "explicit_on" : "explicit_off"));
+        return getCooldownOverride();
+    }
+
+    // ─── Cascade-Model enable/disable (proxy zu llm-cascade PUT /api/models/{id}) ──
+
+    public static class ModelPatchRequest {
+        public Boolean enabled;
+        public Boolean autoDisabled;
+        public Integer cooldown503OverrideSec;
+    }
+
+    @PostMapping("/cascade-models/{id}/toggle")
+    public Map<String, Object> toggleCascadeModel(@PathVariable long id, @RequestBody ModelPatchRequest req) {
+        if (req == null || req.enabled == null)
+            return Map.of("ok", false, "error", "enabled required");
+        boolean ok = cascade.patchModel(id, Map.of("enabled", req.enabled));
+        sse.broadcast("model-toggled", Map.of("id", id, "enabled", req.enabled, "ok", ok));
+        return Map.of("ok", ok, "id", id, "enabled", req.enabled);
+    }
+
+    @PostMapping("/cascade-models/{id}/re-enable")
+    public Map<String, Object> reEnableCascadeModel(@PathVariable long id) {
+        boolean ok = cascade.patchModel(id, Map.of("autoDisabled", Boolean.FALSE, "enabled", Boolean.TRUE));
+        sse.broadcast("model-reenabled", Map.of("id", id, "ok", ok));
+        return Map.of("ok", ok, "id", id);
+    }
+
     @GetMapping("/cascade-models")
     public Map<String, Object> cascadeModels() {
         JsonNode models = cascade.getModels();
@@ -513,15 +579,18 @@ public class ApiController {
         grouped.put("openrouter", new ArrayList<>());
         if (models.isArray()) {
             for (JsonNode m : models) {
-                if (!m.path("enabled").asBoolean(true)) continue;
-                if (m.path("autoDisabled").asBoolean(false)) continue;
                 String swProv = CASCADE_TO_SWITCHER.get(m.path("provider").asText());
                 if (swProv == null) continue;
                 Map<String, Object> entry = new LinkedHashMap<>();
+                // dbId fuer Toggle-Endpoints; modelId ist der LLM-Modell-Name
+                entry.put("dbId", m.path("id").asLong());
                 entry.put("id", m.path("modelId").asText());
                 entry.put("name", m.path("displayName").asText(m.path("modelId").asText()));
                 entry.put("free", false);
                 entry.put("keyConfigured", m.path("keyConfigured").asBoolean(false));
+                entry.put("enabled", m.path("enabled").asBoolean(true));
+                entry.put("autoDisabled", m.path("autoDisabled").asBoolean(false));
+                entry.put("autoDisabledReason", m.path("autoDisabledReason").asText(null));
                 grouped.get(swProv).add(entry);
             }
         }
