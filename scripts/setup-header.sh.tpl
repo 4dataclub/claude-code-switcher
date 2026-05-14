@@ -23,10 +23,14 @@ done
 [[ -e "$TARGET" && ! -d "$TARGET" ]] && { echo "✗ $TARGET ist kein Verzeichnis." >&2; exit 1; }
 SCRIPT="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 
-mkdir -p "$TARGET"; cd "$TARGET"; mkdir -p public router wrapper docs/screenshots
+mkdir -p "$TARGET"; cd "$TARGET"
+
+# Marker-Name aus Pfad: a/b/c.txt → a_b_c_txt
+path_to_marker() { echo "$1" | tr '/.-' '___'; }
 
 extract() {
-  local path="$1" marker="$2"
+  local path="$1" marker
+  marker=$(path_to_marker "$path")
   mkdir -p "$(dirname "$path")"
   awk -v m="__BEGIN_${marker}__" -v e="__END_${marker}__" '
     $0 == m { capture=1; next }
@@ -36,31 +40,14 @@ extract() {
 }
 
 echo "▸ Entpacke Switcher-Source nach $(pwd)/"
-extract "Dockerfile" "Dockerfile"
-extract "package.json" "package_json"
-extract "server.js" "server_js"
-extract "docker-compose.yml" "docker_compose_yml"
-extract "public/index.html" "public_index_html"
-extract "router/Dockerfile" "router_Dockerfile"
-extract "router/config.json" "router_config_json"
-extract "wrapper/claude-auto" "wrapper_claude_auto"
-extract "wrapper/claude-auto.ps1" "wrapper_claude_auto_ps1"
-extract "wrapper/install.sh" "wrapper_install_sh"
-extract "wrapper/install.ps1" "wrapper_install_ps1"
-extract "wrapper/router-watch.sh" "wrapper_router_watch_sh"
-extract "wrapper/router-watch.ps1" "wrapper_router_watch_ps1"
-extract "wrapper/switcher-banner.sh" "wrapper_switcher_banner_sh"
-extract "wrapper/switcher-banner.ps1" "wrapper_switcher_banner_ps1"
-extract "docs/screenshots/01-overview.png"             "docs_screenshots_01_overview"
-extract "docs/screenshots/02-auto-mode.png"            "docs_screenshots_02_auto_mode"
-extract "docs/screenshots/03-provider-anthropic.png"   "docs_screenshots_03_provider_anthropic"
-extract "docs/screenshots/04-provider-google.png"      "docs_screenshots_04_provider_google"
-extract "docs/screenshots/05-provider-openrouter.png"  "docs_screenshots_05_provider_openrouter"
-extract "docs/screenshots/06-90-percent-banner.png"    "docs_screenshots_06_90_percent_banner"
-extract "docs/screenshots/07-status-gemini-active.png" "docs_screenshots_07_status_gemini_active"
-extract "docs/screenshots/08-banner-and-keys.png"      "docs_screenshots_08_banner_and_keys"
+# Manifest aus dem Bundle ziehen, dann jeden Eintrag extrahieren.
+MANIFEST=$(awk '/^__BEGIN_manifest__$/{c=1;next} /^__END_manifest__$/{exit} c' "$SCRIPT")
+while IFS= read -r path; do
+  [[ -z "$path" ]] && continue
+  extract "$path"
+done <<< "$MANIFEST"
 chmod +x wrapper/claude-auto wrapper/install.sh wrapper/router-watch.sh wrapper/switcher-banner.sh 2>/dev/null || true
-echo "  ✓ Source entpackt"
+echo "  ✓ Source entpackt ($(echo "$MANIFEST" | grep -c '^.' || true) Files)"
 
 if (( WITH_USER_CONFIG )); then
   CLAUDE_DIR="${HOME}/.claude"
