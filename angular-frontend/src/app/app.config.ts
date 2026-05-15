@@ -1,6 +1,6 @@
 import { ApplicationConfig } from '@angular/core';
 import { provideHttpClient } from '@angular/common/http';
-import { KI_MODELS_API_BASE } from '@dataclub/ki-models-ui';
+import { KI_MODELS_API_BASE } from '@4dataclub/ki-models-ui';
 
 export const appConfig: ApplicationConfig = {
   providers: [
