@@ -5,7 +5,7 @@ import {
   AddModelFormComponent,
   CascadeCooldownComponent,
   ApiKeysSectionComponent,
-} from '@dataclub/ki-models-ui';
+} from '@4dataclub/ki-models-ui';
 import { SwitcherApiService, SwitcherStatus, ChainEntry } from './services/switcher-api.service';
 import { StatusBarComponent } from './components/status-bar.component';
 import { BannerComponent } from './components/banner.component';
