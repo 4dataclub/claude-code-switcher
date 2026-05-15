@@ -11,6 +11,20 @@ Stand: 2026-05-15
 
 ---
 
+## 🟢 Phase N — Ollama als Provider (Single-Host) — PLAN FREIGEGEBEN
+
+> Plan-File: `~/.claude/plans/ich-werde-dir-fragen-lucky-pearl.md` (freigegeben 2026-05-16).
+> Switcher-Anteile aus Phase N. Komplette Liste in Brain-TODOS.
+
+| # | Task | Datei(en) | Aufwand |
+|---|---|---|---|
+| N.2 | Optional: Ollama-Service auch im Switcher-`docker-compose.yml` (analog llm-cascade-Repo, `profiles: ["local-llm"]`). Sinnvoll wenn Switcher als 2. Konsument lokales Modell-Routing braucht. | `docker-compose.yml` | 30min |
+| N.7 | Switcher-Frontend (heute Vanilla-HTML) bekommt im Add-Model-Form ebenfalls die Standort-Dropdown-Option — sobald Phase L.4 Switcher auf Angular migriert, kommt es automatisch über die ki-models-ui-Library | später (an Phase L.4 gekoppelt) | n/a |
+
+**Hinweis:** llm-cascade ist das Hauptarbeitsfeld für Phase N (Ollama-Bean + Container + Seed). Switcher ist nur sekundärer Konsument.
+
+---
+
 ## 💡 Idee 2026-05-15 — Ollama als 4. Provider (80/20-Routing)
 
 > User-Diktat: „80% Routine lokal, 20% Hard-Tasks an Claude über Provider-Wahl."
