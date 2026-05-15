@@ -4,43 +4,39 @@ import { SwitcherStatus } from '../services/switcher-api.service';
 
 /**
  * Header-Status-Bar. Zeigt aktiver Provider, Modell, Modus-Pille.
+ *
+ * Look-and-Feel: Tailwind, hell auf weißem Card-BG (slate-50/slate-900 dark) —
+ * passt zu EduPro-Style.
  */
 @Component({
   selector: 'sw-status-bar',
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="status-bar">
-      <div class="dot" [class.active]="!!status?.provider"></div>
-      <span class="label">Aktiv:</span>
-      <span class="provider">{{ providerLabel() }}</span>
-      <span class="model" *ngIf="modelText()">· {{ modelText() }}</span>
-      <span class="mode-pill" [class.auto]="status?.mode === 'auto'">
+    <div class="flex items-center gap-3 rounded-2xl bg-white dark:bg-slate-900 px-4 py-3 ring-1 ring-slate-200 dark:ring-slate-800 text-sm">
+      <span
+        class="inline-block w-2.5 h-2.5 rounded-full"
+        [class.bg-emerald-500]="!!status?.provider"
+        [class.bg-slate-400]="!status?.provider"
+      ></span>
+      <span class="text-slate-500 dark:text-slate-400">Aktiv:</span>
+      <span class="font-bold text-slate-900 dark:text-slate-100">{{ providerLabel() }}</span>
+      <span *ngIf="modelText()" class="font-mono text-xs text-slate-500 dark:text-slate-400">· {{ modelText() }}</span>
+      <span
+        class="ml-auto px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-widest"
+        [class.bg-sky-100]="status?.mode === 'auto'"
+        [class.text-sky-700]="status?.mode === 'auto'"
+        [class.dark:bg-sky-900]="status?.mode === 'auto'"
+        [class.dark:text-sky-200]="status?.mode === 'auto'"
+        [class.bg-slate-100]="status?.mode !== 'auto'"
+        [class.text-slate-600]="status?.mode !== 'auto'"
+        [class.dark:bg-slate-800]="status?.mode !== 'auto'"
+        [class.dark:text-slate-400]="status?.mode !== 'auto'"
+      >
         {{ status?.mode === 'auto' ? 'Auto-Failover' : 'Manuell' }}
       </span>
     </div>
   `,
-  styles: [`
-    .status-bar {
-      display: flex; align-items: center; gap: 0.6rem;
-      padding: 0.75rem 1rem; background: #161616; border: 1px solid #2a2a2a;
-      border-radius: 0.75rem; margin-bottom: 1rem;
-      font-size: 0.85rem;
-    }
-    .dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: #444; }
-    .dot.active { background: #10b981; box-shadow: 0 0 0.4rem #10b98155; }
-    .label { color: #888; }
-    .provider { color: #e5e5e5; font-weight: 700; }
-    .model { color: #9ca3af; font-family: ui-monospace, monospace; font-size: 0.75rem; }
-    .mode-pill {
-      margin-left: auto;
-      padding: 0.2rem 0.6rem; border-radius: 999px;
-      font-size: 0.625rem; font-weight: 800;
-      text-transform: uppercase; letter-spacing: 0.08em;
-      background: #1f1f1f; color: #888;
-    }
-    .mode-pill.auto { background: #1e3a8a; color: #93c5fd; }
-  `],
 })
 export class StatusBarComponent {
   @Input() status: SwitcherStatus | null = null;

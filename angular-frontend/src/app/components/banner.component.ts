@@ -4,6 +4,8 @@ import { CommonModule } from '@angular/common';
 /**
  * Quota-Warn-Banner + Cooldown-Recheck-Banner.
  *
+ * Look-and-Feel: Tailwind, hell auf weißem Card-BG — passt zu EduPro-Style.
+ *
  * `warn` (Input) — wenn gesetzt, zeigt das 90%-Warn-Banner mit „Jetzt switchen"
  *   und „Weitermachen"-Buttons.
  * `recheck` (Input) — wenn gesetzt, zeigt das Cooldown-abgelaufen-Banner
@@ -19,50 +21,53 @@ import { CommonModule } from '@angular/common';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div *ngIf="warn && !dismissedWarn()" class="banner warn">
-      <span class="icon">⚠️</span>
-      <div class="text">
-        <strong>Quota bei ~{{ warn.percent }}%</strong>
+    <div
+      *ngIf="warn && !dismissedWarn()"
+      class="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm bg-amber-50 dark:bg-amber-950/40 ring-1 ring-amber-200 dark:ring-amber-800 text-amber-900 dark:text-amber-200"
+    >
+      <span class="text-base">⚠️</span>
+      <div class="flex-1">
+        <strong class="font-bold">Quota bei ~{{ warn.percent }}%</strong>
         <span *ngIf="warn.project"> — in Projekt „{{ warn.project }}"</span>.
         Auto-Failover ist {{ autoMode ? 'an' : 'aus' }}.
       </div>
-      <div class="actions">
-        <button class="btn primary" (click)="switchNow.emit()">Jetzt switchen</button>
-        <button class="btn" (click)="dismissWarn()">Weitermachen</button>
+      <div class="flex gap-2">
+        <button
+          type="button"
+          (click)="switchNow.emit()"
+          class="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-500 text-amber-950 hover:bg-amber-400 transition"
+        >Jetzt switchen</button>
+        <button
+          type="button"
+          (click)="dismissWarn()"
+          class="px-3 py-1.5 text-xs font-bold rounded-lg border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900 transition"
+        >Weitermachen</button>
       </div>
     </div>
 
-    <div *ngIf="recheck && !dismissedRecheck()" class="banner recheck">
-      <span class="icon">🔄</span>
-      <div class="text">
-        <strong>Cooldown abgelaufen</strong> — letzter Failover vor {{ recheck.hoursAgo }} h.
-        Anthropic wieder probieren?
+    <div
+      *ngIf="recheck && !dismissedRecheck()"
+      class="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm bg-sky-50 dark:bg-sky-950/40 ring-1 ring-sky-200 dark:ring-sky-800 text-sky-900 dark:text-sky-200 mt-3"
+    >
+      <span class="text-base">🔄</span>
+      <div class="flex-1">
+        <strong class="font-bold">Cooldown abgelaufen</strong>
+        — letzter Failover vor {{ recheck.hoursAgo }} h. Anthropic wieder probieren?
       </div>
-      <div class="actions">
-        <button class="btn primary recheck-primary" (click)="promoteNow.emit()">Jetzt zurück</button>
-        <button class="btn" (click)="dismissRecheck()">Später</button>
+      <div class="flex gap-2">
+        <button
+          type="button"
+          (click)="promoteNow.emit()"
+          class="px-3 py-1.5 text-xs font-bold rounded-lg bg-sky-500 text-sky-950 hover:bg-sky-400 transition"
+        >Jetzt zurück</button>
+        <button
+          type="button"
+          (click)="dismissRecheck()"
+          class="px-3 py-1.5 text-xs font-bold rounded-lg border border-sky-300 dark:border-sky-700 hover:bg-sky-100 dark:hover:bg-sky-900 transition"
+        >Später</button>
       </div>
     </div>
   `,
-  styles: [`
-    .banner {
-      display: flex; align-items: center; gap: 0.75rem;
-      padding: 0.75rem 1rem; border-radius: 0.75rem; margin-bottom: 0.75rem;
-      font-size: 0.85rem;
-    }
-    .banner.warn { background: #2a1a0a; border: 1px solid #f59e0b66; color: #fcd34d; }
-    .banner.recheck { background: #0a1a2a; border: 1px solid #38bdf866; color: #7dd3fc; }
-    .icon { font-size: 1.1rem; }
-    .text { flex: 1; }
-    .actions { display: flex; gap: 0.4rem; }
-    .btn {
-      padding: 0.3rem 0.7rem; border-radius: 0.5rem;
-      border: 1px solid #444; background: transparent; color: inherit;
-      font-size: 0.75rem; font-weight: 700; cursor: pointer;
-    }
-    .btn.primary { background: #f59e0b; color: #000; border-color: #f59e0b; }
-    .btn.recheck-primary { background: #38bdf8; color: #000; border-color: #38bdf8; }
-  `],
 })
 export class BannerComponent {
   @Input() warn: { percent: number; project?: string } | null = null;
