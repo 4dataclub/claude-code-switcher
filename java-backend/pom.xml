@@ -40,6 +40,12 @@
       <artifactId>lombok</artifactId>
       <optional>true</optional>
     </dependency>
+    <!-- Spring Boot Actuator (Health-Check) — aktiviert 2026-05-15.
+         Nur /actuator/health exposed (siehe application.properties). -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
 
     <!-- Docker-Client: Container-Restart fuer den ccr-Sidecar via /var/run/docker.sock -->
     <dependency>
