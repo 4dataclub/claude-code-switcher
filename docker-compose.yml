@@ -23,6 +23,13 @@ services:
       - llm-cascade
       - db
     restart: unless-stopped
+    # Spring Boot Actuator /actuator/health (Phase K + actuator).
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:2000/actuator/health | grep -q '\"status\":\"UP\"' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
   switcher-frontend:
     build: ./frontend
