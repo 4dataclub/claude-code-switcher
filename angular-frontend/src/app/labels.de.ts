@@ -58,7 +58,7 @@ export const CASCADE_COOLDOWN_LABELS_DE: Partial<CascadeCooldownLabels> = {
   forceOff: 'Deaktivieren',
   effectiveOn: 'Effektiv: AN',
   effectiveOff: 'Effektiv: AUS',
-  hint: 'Standard = jedes Modell entscheidet selbst. Erzwingen = Cooldown bleibt auch wenn ein Modell ihn überspringen würde. Deaktivieren = Cooldowns global aus (nützlich für Tests).',
+  hint: 'Standard = jedes Modell entscheidet selbst. Erzwingen = Cooldown bleibt auch wenn ein Modell ihn überspringen würde (verhindert 503-Endlosschleifen bei falsch konfigurierten Modellen). Deaktivieren = Cooldowns global aus (nur für Tests — Nebeneffekt: das oberste Modell wird nie als „cooled" markiert, deshalb kommt die nächste Chain-Stufe nicht dran). Tipp: Wenn du gar nicht failovern willst, sondern nur ein Modell aktiv haben möchtest, nutze stattdessen den Modus-Schalter oben („Manuell").',
   loading: 'Lade Cascade-Config…',
   errorLoad: 'Cascade-Config konnte nicht geladen werden.',
 };
