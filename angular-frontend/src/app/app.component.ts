@@ -9,22 +9,26 @@ import {
 import { SwitcherApiService, SwitcherStatus, ChainEntry } from './services/switcher-api.service';
 import { StatusBarComponent } from './components/status-bar.component';
 import { BannerComponent } from './components/banner.component';
-import { ProviderGridComponent } from './components/provider-grid.component';
 import { ModePanelComponent } from './components/mode-panel.component';
+import {
+  MODELS_TABLE_LABELS_DE,
+  ADD_MODEL_FORM_LABELS_DE,
+  CASCADE_COOLDOWN_LABELS_DE,
+  API_KEYS_SECTION_LABELS_DE,
+} from './labels.de';
 
 /**
- * Switcher Angular-App — Phase L.4 (Vanilla → Angular Port).
+ * Switcher Angular-App — Phase L.4 (Vanilla abgelöst, Angular ist alleinige UI auf :2000).
  *
- * Top-Level Shell mit:
- * - Status-Bar (current provider/model/mode)
- * - Banner (Quota-Warn + Cooldown-Recheck)
- * - Mode-Panel (manual / auto + chain-editor)
- * - Provider-Grid (Cards + Models + manueller Switch)
- * - ki-models-ui Library für Cascade-Verwaltung
- * - Restart-Button
+ * Look-and-Feel: **exakt wie EduPro Admin-Tab „KI-Modelle"** — Tailwind, slate-50/
+ * slate-950 Page-BG, rounded-[40px] weiße bzw. dark-slate-900 Cards, gemeinsame
+ * `@4dataclub/ki-models-ui` Library-Components. Switcher-spezifische Ergänzung:
+ * der **Modus-Panel** oben (Manuell vs. Auto-Failover + Chain-Editor) plus
+ * Status-Bar, Banner und Restart-Button.
  *
- * Live-Updates via SSE in einer späteren Iteration. Aktuell wird `loadStatus()`
- * nach jedem Action manuell aufgerufen.
+ * Das alte dunkle Provider-Grid („AKTIVER ANBIETER (MANUELL)") ist entfernt —
+ * Modell-Auswahl + Cascade-Verwaltung passieren ausschließlich über die Library-
+ * Components, identisch zu EduPro.
  */
 @Component({
   selector: 'app-root',
@@ -33,7 +37,6 @@ import { ModePanelComponent } from './components/mode-panel.component';
     CommonModule,
     StatusBarComponent,
     BannerComponent,
-    ProviderGridComponent,
     ModePanelComponent,
     ModelsTableComponent,
     AddModelFormComponent,
@@ -41,10 +44,14 @@ import { ModePanelComponent } from './components/mode-panel.component';
     ApiKeysSectionComponent,
   ],
   template: `
-    <main class="shell">
-      <header class="hdr">
-        <h1>Claude Code Switcher</h1>
-        <p class="subtitle">API-Anbieter, Modell und Auto-Failover für Claude Code</p>
+    <main class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 space-y-6">
+      <header class="mb-2">
+        <h1 class="text-2xl font-extrabold tracking-tight text-slate-950 dark:text-slate-50">
+          Claude Code Switcher
+        </h1>
+        <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          API-Anbieter, Modell und Auto-Failover für Claude Code — gemeinsame Verwaltung mit EduPro.
+        </p>
       </header>
 
       <sw-status-bar [status]="status()"></sw-status-bar>
@@ -57,8 +64,11 @@ import { ModePanelComponent } from './components/mode-panel.component';
         (promoteNow)="onPromote()"
       ></sw-banner>
 
-      <section class="section">
-        <h2>Modus</h2>
+      <!-- Switcher-spezifische Sektion: Manuell vs. Auto-Failover + Chain-Editor -->
+      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
+        <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 mb-4">
+          Modus
+        </h2>
         <sw-mode-panel
           [mode]="status()?.mode ?? 'manual'"
           [chain]="status()?.fallback_chain ?? []"
@@ -69,79 +79,74 @@ import { ModePanelComponent } from './components/mode-panel.component';
         ></sw-mode-panel>
       </section>
 
-      <section class="section">
-        <h2>Aktiver Anbieter (manuell)</h2>
-        <sw-provider-grid
-          [activeProvider]="status()?.provider ?? null"
-          [activeModel]="activeModel()"
-          (switchTo)="onSwitchTo($event)"
-        ></sw-provider-grid>
+      <!-- Cascade-Cooldown Override (Library-Component, identisch zu EduPro) -->
+      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
+        <ki-cascade-cooldown [labels]="cascadeCooldownLabels"></ki-cascade-cooldown>
       </section>
 
-      <section class="section card">
-        <h2>Cascade-Cooldown</h2>
-        <ki-cascade-cooldown></ki-cascade-cooldown>
+      <!-- Modelle (Tabelle + Add-Form) — Library-Components, identisch zu EduPro -->
+      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800 space-y-8">
+        <ki-models-table
+          [labels]="modelsTableLabels"
+          (modelChanged)="reload()"
+        ></ki-models-table>
+        <ki-add-model-form
+          [labels]="addModelFormLabels"
+          (modelCreated)="reload()"
+        ></ki-add-model-form>
       </section>
 
-      <section class="section card">
-        <h2>Cascade-Modelle</h2>
-        <ki-models-table (modelChanged)="reload()"></ki-models-table>
-        <ki-add-model-form (modelCreated)="reload()"></ki-add-model-form>
+      <!-- API-Keys (Library-Component, identisch zu EduPro) -->
+      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
+        <ki-api-keys-section [labels]="apiKeysSectionLabels" (keyChanged)="reload()"></ki-api-keys-section>
       </section>
 
-      <section class="section card">
-        <ki-api-keys-section (keyChanged)="reload()"></ki-api-keys-section>
-      </section>
-
-      <div class="actions">
-        <button class="restart" (click)="onRestart()" [disabled]="restarting()">
+      <!-- Switcher-spezifisch: Claude-Restart-Trigger -->
+      <div class="pt-2">
+        <button
+          type="button"
+          (click)="onRestart()"
+          [disabled]="restarting()"
+          class="w-full rounded-2xl bg-slate-950 dark:bg-slate-50 text-slate-50 dark:text-slate-950 px-5 py-3 text-sm font-bold tracking-wide shadow-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition"
+        >
           {{ restarting() ? 'Restart läuft…' : '↺ Claude neu starten' }}
         </button>
       </div>
 
-      <p *ngIf="error()" class="error">{{ error() }}</p>
+      <p *ngIf="error()" class="text-sm font-medium text-red-600 dark:text-red-400">
+        {{ error() }}
+      </p>
 
-      <footer class="ftr">
-        Wrapper: <code>cd wrapper && ./install.sh</code> · dann <code>claude-auto</code> statt <code>claude</code>.
+      <footer class="pt-6 pb-2 text-center text-xs text-slate-500 dark:text-slate-500">
+        Wrapper:
+        <code class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">cd wrapper && ./install.sh</code>
+        · dann
+        <code class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">claude-auto</code>
+        statt
+        <code class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">claude</code>.
       </footer>
 
-      <div *ngIf="toast() as t" class="toast" [class.toast-err]="t.type === 'err'">
+      <div
+        *ngIf="toast() as t"
+        class="fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 rounded-xl text-sm font-bold shadow-lg z-50"
+        [class.bg-emerald-600]="t.type === 'ok'"
+        [class.text-emerald-50]="t.type === 'ok'"
+        [class.bg-red-700]="t.type === 'err'"
+        [class.text-red-50]="t.type === 'err'"
+      >
         {{ t.msg }}
       </div>
     </main>
   `,
-  styles: [`
-    :host { display: block; min-height: 100vh; background: #0a0a0a; color: #e5e5e5; font-family: ui-sans-serif, system-ui, sans-serif; }
-    .shell { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
-    .hdr { padding: 1rem 0 1.5rem; border-bottom: 1px solid #2a2a2a; margin-bottom: 1.25rem; }
-    .hdr h1 { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
-    .subtitle { color: #888; font-size: 0.85rem; margin: 0.25rem 0 0; }
-    .section { margin-bottom: 1.5rem; }
-    .section h2 { font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: #888; margin: 0 0 0.75rem; }
-    .section.card { background: #ffffff; color: #0f172a; padding: 1.5rem 2rem; border-radius: 1rem; }
-    .section.card h2 { color: #475569; }
-    .actions { margin: 1.5rem 0; }
-    .restart {
-      width: 100%; padding: 0.85rem; background: #38bdf8; color: #000; border: none;
-      border-radius: 0.75rem; font-weight: 800; font-size: 0.9rem; cursor: pointer;
-    }
-    .restart:disabled { opacity: 0.5; cursor: not-allowed; }
-    .ftr { color: #666; font-size: 0.75rem; text-align: center; padding: 1rem 0; }
-    code { background: #1f1f1f; padding: 0.1rem 0.3rem; border-radius: 0.25rem; font-size: 0.7rem; }
-    .error { color: #f87171; font-size: 0.85rem; margin-top: 0.5rem; }
-    .toast {
-      position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
-      padding: 0.7rem 1.2rem; background: #064e3b; color: #d1fae5;
-      border-radius: 0.6rem; font-size: 0.85rem; font-weight: 700;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 100;
-      animation: toastIn 0.2s ease-out;
-    }
-    .toast.toast-err { background: #7f1d1d; color: #fee2e2; }
-    @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 0.5rem); } to { opacity: 1; transform: translate(-50%, 0); } }
-  `],
 })
 export class AppComponent implements OnDestroy {
   private readonly api = inject(SwitcherApiService);
+
+  // Deutsche Labels für die Library-Components (analog zu EduPros i18n-Pipe).
+  readonly modelsTableLabels = MODELS_TABLE_LABELS_DE;
+  readonly addModelFormLabels = ADD_MODEL_FORM_LABELS_DE;
+  readonly cascadeCooldownLabels = CASCADE_COOLDOWN_LABELS_DE;
+  readonly apiKeysSectionLabels = API_KEYS_SECTION_LABELS_DE;
 
   readonly status = signal<SwitcherStatus | null>(null);
   readonly warn = signal<{ percent: number; project?: string } | null>(null);
@@ -152,11 +157,6 @@ export class AppComponent implements OnDestroy {
 
   /** EventSource für SSE-Live-Updates. Wird in ngOnInit aufgemacht + ngOnDestroy geschlossen. */
   private es: EventSource | null = null;
-
-  activeModel(): string | null {
-    const s = this.status();
-    return s?.activeRoute?.model || s?.model || null;
-  }
 
   ngOnInit(): void {
     this.reload();
@@ -250,14 +250,6 @@ export class AppComponent implements OnDestroy {
     });
   }
 
-  onSwitchTo(event: { provider: string; modelId: string }): void {
-    this.error.set(null);
-    this.api.switchProvider({ provider: event.provider, model: event.modelId }).subscribe({
-      next: () => this.reload(),
-      error: (e) => this.error.set('Switch failed: ' + (e?.error?.error ?? e?.message ?? e)),
-    });
-  }
-
   onModeChange(mode: 'manual' | 'auto'): void {
     this.api.setAuto({
       mode,
@@ -279,7 +271,7 @@ export class AppComponent implements OnDestroy {
   }
 
   onSwitchNow(): void {
-    // bei Banner-„Jetzt switchen": chain-promote zur nächsten Stufe
+    // Banner-„Jetzt switchen": chain-promote zur nächsten Stufe.
     this.api.chainPromote().subscribe(() => {
       this.warn.set(null);
       this.reload();

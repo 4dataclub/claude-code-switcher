@@ -31,26 +31,15 @@ services:
       retries: 3
       start_period: 60s
 
+  # Phase L.4 (2026-05-14): Angular-Frontend ist die alleinige UI auf :2000.
+  # Look-and-Feel exakt wie EduPro Admin-Tab „KI-Modelle" via
+  # `@4dataclub/ki-models-ui` Library. Switcher-Spezifisch ergänzt:
+  # Modus-Panel (Manuell/Auto-Failover + Chain-Editor), Status-Bar, Banner,
+  # Restart-Button. Vanilla-Frontend ist entfernt.
   switcher-frontend:
-    build: ./frontend
-    container_name: claude-switcher-frontend-1
-    # Einziger oeffentlicher Port: 2000 — wie im alten Node-Setup. Wrapper +
-    # README + Installer erwarten http://localhost:2000. nginx serv't die UI
-    # auf / und proxy't /api/* an switcher-backend:2000 (Docker-Netz).
-    ports: ["2000:80"]
-    depends_on:
-      - switcher-backend
-    restart: unless-stopped
-
-  # Phase L.4 MVP (2026-05-14): Angular-Frontend parallel zum Vanilla auf :2001.
-  # Vanilla bleibt auf :2000 (Production), Angular auf :2001 für MVP-Demo +
-  # Iteration. Switch zu Angular als alleinige UI erfolgt erst wenn die noch
-  # fehlenden Switcher-Features (Mode-Toggle, Chain-Editor, Provider-Cards,
-  # Banners) portiert sind.
-  switcher-frontend-angular:
     build: ./angular-frontend
-    container_name: claude-switcher-frontend-angular-1
-    ports: ["2001:80"]
+    container_name: claude-switcher-frontend-1
+    ports: ["2000:80"]
     depends_on:
       - switcher-backend
     restart: unless-stopped

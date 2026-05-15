@@ -716,10 +716,34 @@ public class ApiController {
         return reorderCascadeModels(req);
     }
 
-    /** Library-konformer Pfad — delegiert zu /cascade-settings. */
+    /**
+     * Library-konformer Pfad — delegiert zu /cascade-settings und remapped
+     * die Items in das von `@4dataclub/ki-models-ui` erwartete Format.
+     *
+     * Switcher-internes Format: `{key, valueMasked, configured}`.
+     * Library-Format:          `{settingKey, valueMasked, configured, keySource?, ...}`.
+     *
+     * Ohne dieses Remapping rendert `<ki-api-keys-section>` Items mit
+     * `settingKey === undefined` und der „Speichern"-Flow lässt sich nicht
+     * auf eine konkrete Zeile beziehen.
+     */
     @GetMapping("/api-keys")
     public List<Map<String, Object>> apiKeys() {
-        return cascadeSettings();
+        List<Map<String, Object>> source = cascadeSettings();
+        List<Map<String, Object>> out = new ArrayList<>(source.size());
+        for (Map<String, Object> item : source) {
+            Map<String, Object> mapped = new LinkedHashMap<>(item);
+            if (!mapped.containsKey("settingKey") && mapped.containsKey("key")) {
+                mapped.put("settingKey", mapped.get("key"));
+            }
+            // Library zeigt „Quelle"-Spalte (DB/ENV/fehlt) — Switcher kennt
+            // ENV-Fallback nicht im selben Sinne, also liefern wir den
+            // configured-Status auf die Library-Achse gemappt.
+            mapped.putIfAbsent("keySource", Boolean.TRUE.equals(mapped.get("configured")) ? "db" : "missing");
+            mapped.putIfAbsent("isDefault", false);
+            out.add(mapped);
+        }
+        return out;
     }
 
     @PostMapping("/api-keys/setting/{key}")
