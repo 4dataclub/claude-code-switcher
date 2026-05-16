@@ -34,6 +34,8 @@ export const MODELS_TABLE_LABELS_DE: Partial<ModelsTableLabels> = {
   btnTest: 'Test',
   btnReenable: 'Reaktivieren',
   btnDelete: 'Löschen',
+  btnSetActive: 'Als aktiv',
+  activeBadge: 'AKTIV',
   confirmDelete: (id: string) => `Modell "${id}" wirklich löschen?`,
 };
 

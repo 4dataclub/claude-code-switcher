@@ -91,7 +91,10 @@ import {
       <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800 space-y-8">
         <ki-models-table
           [labels]="modelsTableLabels"
+          [showActiveAction]="true"
+          [activeModelId]="activeModel()"
           (modelChanged)="reload()"
+          (activeModelChanged)="onSwitchToModel($event)"
         ></ki-models-table>
         <ki-add-model-form
           [labels]="addModelFormLabels"
@@ -226,6 +229,7 @@ export class AppComponent implements OnDestroy {
 
     reloadOn('switch');
     reloadOn('auto-config');
+    reloadOn('model-toggled');
     reloadOn('model-tested');
     reloadOn('model-created');
     reloadOn('model-deleted');
@@ -233,40 +237,16 @@ export class AppComponent implements OnDestroy {
     reloadOn('model-reenabled');
     reloadOn('setting-updated');
     reloadOn('cooldown-override');
-
-    // model-toggled: spezielles Verhalten — wenn der User im Manuell-Mode
-    // ein Modell „Aktiv" stellt, sehen wir das als „bitte als Live-Provider
-    // verwenden" und triggern einen /api/switch. Das deckt die intuitive UX
-    // ab, dass das Aktivieren in der Tabelle auch den aktuellen Run umstellt.
-    this.es.addEventListener('model-toggled', (e: MessageEvent) => {
-      this.reload();
-      try {
-        const data = e.data ? JSON.parse(e.data) : {};
-        if (data?.enabled === true && this.status()?.mode === 'manual') {
-          this.autoActivateToggledModel(data.id);
-        }
-      } catch {}
-    });
   }
 
   /**
-   * Manuell-Mode: User hat ein Modell „Aktiv" geschaltet → Live-Provider
-   * darauf umstellen. Wir holen uns die Modell-Details (Provider + modelId)
-   * aus `/api/ai-models` und rufen `/api/switch`. Provider-Namensraum-Mapping
-   * (cascade-„gemini" → switcher-„google") inline gemappt — anthropic/openrouter
-   * passen direkt.
+   * Library-Event `(activeModelChanged)` — User klickt „Als aktiv" pro Zeile
+   * in der Modell-Tabelle. Provider-Namensraum mappen (cascade-`gemini` →
+   * switcher-`google`) und Live-Switch via `/api/switch`.
    */
-  private autoActivateToggledModel(id: number | undefined): void {
-    if (typeof id !== 'number') return;
-    this.api.listAiModels().subscribe((models) => {
-      const m = models.find((x) => x.id === id);
-      if (!m || !m.enabled) return;
-      const uiProvider = m.provider === 'gemini' ? 'google' : m.provider;
-      // Nicht switchen wenn bereits aktiv.
-      const s = this.status();
-      if (s?.provider === uiProvider && this.activeModel() === m.modelId) return;
-      this.onSwitchTo({ provider: uiProvider, model: m.modelId });
-    });
+  onSwitchToModel(m: { provider: string; modelId: string }): void {
+    const uiProvider = m.provider === 'gemini' ? 'google' : m.provider;
+    this.onSwitchTo({ provider: uiProvider, model: m.modelId });
   }
 
   private showToast(msg: string, type: 'ok' | 'err' = 'ok'): void {
