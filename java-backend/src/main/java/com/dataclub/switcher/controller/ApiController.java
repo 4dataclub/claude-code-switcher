@@ -611,6 +611,27 @@ public class ApiController {
      */
     @PostMapping("/cascade-models/{id}/test")
     public JsonNode testCascadeModel(@PathVariable long id) {
+        // Anthropic-Sonderfall: Test ruft direkt api.anthropic.com auf und braucht
+        // einen echten sk-ant-Key. Max/Pro-OAuth (das für den Live-Switch reicht)
+        // ist nicht für direkte API-Calls nutzbar. Kurzschluss mit klarer Message
+        // statt die irreführende cascade-Fehlermeldung „Key nicht gesetzt".
+        var maybeModel = modelSvc.findModelById(id);
+        if (maybeModel.isPresent()) {
+            var m = maybeModel.get();
+            if ("anthropic".equalsIgnoreCase(m.getProvider()) && !modelSvc.modelHasRealKey(m)) {
+                ObjectNode info = configs.mapper().createObjectNode();
+                info.put("ok", false);
+                info.put("skipped", true);
+                info.put("error",
+                    "Test braucht echten sk-ant-Key (api.anthropic.com-Call). "
+                  + "Für reines Live-Switchen reicht der Max/Pro-Login von Claude Code — der ist nicht testbar. "
+                  + "Wenn du den Test trotzdem willst: API-Key unter https://console.anthropic.com erstellen "
+                  + "(separates Credits-Billing) und unten als anthropicApiKey eintragen.");
+                sse.broadcast("model-tested", Map.of("id", id, "ok", false));
+                return info;
+            }
+        }
+
         JsonNode r = cascade.testModel(id);
         sse.broadcast("model-tested", Map.of("id", id, "ok", r.path("ok").asBoolean(false)));
         return r;
