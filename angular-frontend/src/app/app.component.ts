@@ -73,9 +73,12 @@ import {
           [mode]="status()?.mode ?? 'manual'"
           [chain]="status()?.fallback_chain ?? []"
           [chainPosition]="status()?.chain_position ?? 0"
+          [activeProvider]="status()?.provider ?? null"
+          [activeModel]="activeModel()"
           (modeChanged)="onModeChange($event)"
           (chainChanged)="onChainChange($event)"
           (promoteRequested)="onPromote()"
+          (switchTo)="onSwitchTo($event)"
         ></sw-mode-panel>
       </section>
 
@@ -268,6 +271,28 @@ export class AppComponent implements OnDestroy {
 
   onPromote(): void {
     this.api.chainPromote().subscribe(() => this.reload());
+  }
+
+  /**
+   * Manueller Wechsel des aktiven Providers/Modells (vom Mode-Panel
+   * im Manuell-Modus). Wrapper kriegt den Restart-Marker und startet
+   * Claude Code mit den neuen Env-Vars neu.
+   */
+  onSwitchTo(event: { provider: string; model: string }): void {
+    this.error.set(null);
+    this.api.switchProvider({ provider: event.provider, model: event.model }).subscribe({
+      next: () => {
+        this.showToast(`Wechsel auf ${event.provider} · ${event.model} — Wrapper startet neu`);
+        this.reload();
+      },
+      error: (e) => this.error.set('Switch failed: ' + (e?.error?.error ?? e?.message ?? e)),
+    });
+  }
+
+  /** Best-Effort: aktives Modell aus activeRoute oder Top-Level-model. */
+  activeModel(): string | null {
+    const s = this.status();
+    return s?.activeRoute?.model || s?.model || null;
   }
 
   onSwitchNow(): void {
