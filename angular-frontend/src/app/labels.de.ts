@@ -11,6 +11,7 @@ import {
   AddModelFormLabels,
   CascadeCooldownLabels,
   ApiKeysSectionLabels,
+  FailoverChainLabels,
 } from '@4dataclub/ki-models-ui';
 
 export const MODELS_TABLE_LABELS_DE: Partial<ModelsTableLabels> = {
@@ -87,4 +88,19 @@ export const API_KEYS_SECTION_LABELS_DE: Partial<ApiKeysSectionLabels> = {
   empty: 'Noch keine Keys konfiguriert. Nutze das Formular oben.',
   hint: 'Keys werden im Backend-Settings-Store gespeichert und niemals im Klartext an den Browser zurückgegeben. Der Wert wird nur server-seitig zur Provider-Authentifizierung genutzt.',
   confirmClear: (k: string) => `DB-Wert für "${k}" wirklich löschen? (ENV-Fallback kann weiter greifen.)`,
+};
+
+export const FAILOVER_CHAIN_LABELS_DE: Partial<FailoverChainLabels> = {
+  title: 'Failover-Chain',
+  description: 'bei Quota-Erreichung wird der Reihe nach durchgegangen.',
+  addRow: 'Stufe hinzufügen',
+  removeRowTitle: 'Entfernen',
+  moveUpTitle: 'Nach oben',
+  moveDownTitle: 'Nach unten',
+  currentStep: 'Aktuelle Stufe:',
+  positionLabel: (pos: number, provider: string, model: string) =>
+    `Stufe ${pos + 1} (${provider} · ${model})`,
+  promote: '↶ Zurück zu Stufe 1',
+  hint: 'Bei Quota-Erreichung wechselt der Wrapper automatisch zur nächsten Stufe und startet Claude Code mit --resume neu (Kontext bleibt erhalten). Voraussetzung: claude-auto als Wrapper.',
+  emptyState: 'Keine Stufen konfiguriert. Füge eine hinzu um zu starten.',
 };

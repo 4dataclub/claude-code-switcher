@@ -1,7 +1,9 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { FailoverChainComponent } from '@4dataclub/ki-models-ui';
 import { ChainEntry } from '../services/switcher-api.service';
+import { FAILOVER_CHAIN_LABELS_DE } from '../labels.de';
 
 /**
  * Provider/Modell-Whitelist für den Chain-Editor (Auto-Failover).
@@ -55,7 +57,7 @@ const PROVIDER_MODELS: Record<string, { id: string; name: string }[]> = {
 @Component({
   selector: 'sw-mode-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, FailoverChainComponent],
   template: `
     <div>
       <!-- Tab-Toggle Manuell / Auto-Failover -->
@@ -130,67 +132,17 @@ const PROVIDER_MODELS: Record<string, { id: string; name: string }[]> = {
         </p>
       </div>
 
-      <!-- Auto-Chain-Editor -->
+      <!-- Auto-Chain-Editor (Library-Component) -->
       <div *ngIf="mode === 'auto'" class="mt-4 rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 sm:p-5 ring-1 ring-slate-200 dark:ring-slate-700">
-        <p class="text-sm text-slate-600 dark:text-slate-300 mb-3">
-          <strong class="font-semibold text-slate-900 dark:text-slate-100">Failover-Chain</strong>
-          — bei Quota-Erreichung wird der Reihe nach durchgegangen.
-        </p>
-
-        <div class="space-y-2">
-          <div *ngFor="let row of localChain; let i = index" class="flex items-center gap-2">
-            <span class="w-6 text-xs font-bold text-slate-500 dark:text-slate-400">{{ i + 1 }}.</span>
-            <select
-              [(ngModel)]="row.provider"
-              (change)="onProviderChange(i)"
-              class="flex-1 min-w-0 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-sm text-slate-900 dark:text-slate-100"
-            >
-              <option value="anthropic">Anthropic</option>
-              <option value="google">Google AI Studio</option>
-              <option value="openrouter">OpenRouter</option>
-            </select>
-            <select
-              [(ngModel)]="row.model"
-              (change)="emitChainChange()"
-              class="flex-1 min-w-0 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-sm text-slate-900 dark:text-slate-100"
-            >
-              <option *ngFor="let m of modelsFor(row.provider)" [value]="m.id">{{ m.name }}</option>
-            </select>
-            <button
-              type="button"
-              (click)="removeRow(i)"
-              *ngIf="localChain.length > 1"
-              title="Entfernen"
-              class="w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-500 hover:bg-red-500 hover:text-white transition"
-            >×</button>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          (click)="addRow()"
-          class="mt-3 px-3 py-1.5 text-xs font-bold rounded-lg border border-dashed border-slate-400 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-slate-950 dark:hover:border-slate-50 hover:text-slate-950 dark:hover:text-slate-50 transition"
-        >+ Stufe hinzufügen</button>
-
-        <div class="flex items-center gap-3 mt-4 pt-3 border-t border-dashed border-slate-300 dark:border-slate-700">
-          <span class="text-xs text-slate-500 dark:text-slate-400">Aktuelle Stufe:</span>
-          <span class="flex-1 text-sm text-slate-700 dark:text-slate-200">{{ positionLabel() }}</span>
-          <button
-            type="button"
-            *ngIf="(chainPosition ?? 0) > 0"
-            (click)="promoteRequested.emit()"
-            class="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-950 dark:bg-slate-50 text-slate-50 dark:text-slate-950 hover:opacity-90 transition"
-          >↶ Zurück zu Stufe 1</button>
-        </div>
-
-        <p class="mt-3 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-          Bei Quota-Erreichung wechselt der Wrapper automatisch zur nächsten Stufe und startet
-          Claude Code mit
-          <code class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">--resume</code>
-          neu (Kontext bleibt erhalten). Voraussetzung:
-          <code class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">claude-auto</code>
-          als Wrapper.
-        </p>
+        <ki-failover-chain
+          [chain]="localChain"
+          [availableModels]="libAvailableModels()"
+          [chainPosition]="chainPosition"
+          [showChainPosition]="true"
+          [labels]="failoverChainLabels"
+          (chainChanged)="onLibChainChanged($event)"
+          (promoteRequested)="promoteRequested.emit()"
+        ></ki-failover-chain>
       </div>
     </div>
   `,
@@ -309,35 +261,27 @@ export class ModePanelComponent {
     this.modeChanged.emit(m);
   }
 
-  onProviderChange(idx: number): void {
-    // Beim Provider-Wechsel auf erstes verfügbares Modell zurücksetzen.
-    const first = this.modelsFor(this.localChain[idx].provider)[0];
-    if (first) this.localChain[idx].model = first.id;
-    this.emitChainChange();
+  /** Deutsche Labels für die Library-Component (Switcher hat keinen i18n-Service). */
+  readonly failoverChainLabels = FAILOVER_CHAIN_LABELS_DE;
+
+  /**
+   * `<ki-failover-chain>` braucht `availableModels` im Format
+   * `{provider, modelId, displayName}[]`. Switcher führt die statische
+   * `PROVIDER_MODELS`-Whitelist (Provider → Modelle) — hier flatten + mappen.
+   */
+  libAvailableModels(): { provider: string; modelId: string; displayName: string }[] {
+    const out: { provider: string; modelId: string; displayName: string }[] = [];
+    for (const provider of Object.keys(PROVIDER_MODELS)) {
+      for (const m of PROVIDER_MODELS[provider]) {
+        out.push({ provider, modelId: m.id, displayName: m.name });
+      }
+    }
+    return out;
   }
 
-  modelsFor(provider: string) {
-    return PROVIDER_MODELS[provider] || [];
-  }
-
-  addRow(): void {
-    this.localChain = [...this.localChain, { provider: 'anthropic', model: 'claude-sonnet-4-6' }];
-    this.emitChainChange();
-  }
-
-  removeRow(idx: number): void {
-    this.localChain = this.localChain.filter((_, i) => i !== idx);
-    this.emitChainChange();
-  }
-
-  emitChainChange(): void {
-    this.chainChanged.emit([...this.localChain]);
-  }
-
-  positionLabel(): string {
-    const pos = this.chainPosition ?? 0;
-    const entry = this.localChain[pos];
-    if (!entry) return `Stufe ${pos + 1}`;
-    return `Stufe ${pos + 1} (${entry.provider} · ${entry.model})`;
+  /** Library hat die Chain editiert → lokal aktualisieren + nach oben propagieren. */
+  onLibChainChanged(c: ChainEntry[]): void {
+    this.localChain = c;
+    this.chainChanged.emit(c);
   }
 }
