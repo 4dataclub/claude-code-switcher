@@ -1,4 +1,4 @@
-import { Component, OnDestroy, inject, signal } from '@angular/core';
+import { Component, OnDestroy, ViewChild, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   ModelsTableComponent,
@@ -99,13 +99,13 @@ import {
         ></ki-models-table>
         <ki-add-model-form
           [labels]="addModelFormLabels"
-          (modelCreated)="reload()"
+          (modelCreated)="onModelCreated()"
         ></ki-add-model-form>
       </section>
 
       <!-- API-Keys (Library-Component, identisch zu EduPro) -->
       <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
-        <ki-api-keys-section [labels]="apiKeysSectionLabels" (keyChanged)="reload()"></ki-api-keys-section>
+        <ki-api-keys-section [labels]="apiKeysSectionLabels" (keyChanged)="onKeyChanged()"></ki-api-keys-section>
       </section>
 
       <!-- Switcher-spezifisch: Claude-Restart-Trigger -->
@@ -148,6 +148,13 @@ import {
 })
 export class AppComponent implements OnDestroy {
   private readonly api = inject(SwitcherApiService);
+
+  /**
+   * Referenz auf die Library-Modell-Tabelle. Wird gebraucht um sie nach
+   * externen Aktionen (Add-Model-Form, API-Key-Save) zu refreshen — die
+   * Library hört nicht selbst auf SSE und hat keinen [refreshTrigger]-Input.
+   */
+  @ViewChild(ModelsTableComponent) modelsTable?: ModelsTableComponent;
 
   // Deutsche Labels für die Library-Components (analog zu EduPros i18n-Pipe).
   readonly modelsTableLabels = MODELS_TABLE_LABELS_DE;
@@ -235,7 +242,11 @@ export class AppComponent implements OnDestroy {
     toastReloadOn('chain-promoted', () => 'Zurück auf Anthropic — Wrapper holt sich Restart-Marker');
     toastReloadOn('auto-promoted', (d) => `Auto-Promote → Anthropic (Cooldown ${d.hoursSinceFailover ?? '?'} h abgelaufen)`);
 
-    reloadOn('switch');
+    // 'switch'-Event mit Toast + Reload — wird vom Backend gefeuert wenn
+    // /api/switch erfolgreich war. Wir hängen einen Toast dran damit der
+    // User unabhängig vom Trigger-Pfad (Picker, Per-Row-„Als aktiv", Chat-
+    // Command „wechsel auf X") visuelles Feedback bekommt.
+    toastReloadOn('switch', (d) => `Wechsel auf ${d.provider}${d.model ? ' · ' + d.model : ''} — Wrapper startet neu`);
     reloadOn('auto-config');
     reloadOn('model-toggled');
     reloadOn('model-tested');
@@ -276,14 +287,17 @@ export class AppComponent implements OnDestroy {
   }
 
   /**
-   * Lädt die Cascade-Modell-Liste, filtert auf aktiv + key + nicht-autoDisabled
-   * und mappt den Provider-Namensraum (`gemini` → `google`) für die Switcher-UI.
+   * Lädt die Cascade-Modell-Liste und filtert auf alles was im „Wechseln zu"-
+   * Picker nutzbar ist: Key gesetzt + nicht auto-disabled. Das `enabled`-Flag
+   * (Cascade-Chain-Aktiv-Toggle) wird BEWUSST nicht abgefragt — ein Modell mit
+   * Key kann live ausgewählt werden, auch wenn es gerade nicht in der
+   * Cascade-Chain steht. Provider-Namensraum wird gemappt (`gemini` → `google`).
    */
   private reloadAvailableModels(): void {
     this.api.listAiModels().subscribe({
       next: (models) => {
         const usable = models
-          .filter((m) => m.enabled && m.keyConfigured && !m.autoDisabled)
+          .filter((m) => m.keyConfigured && !m.autoDisabled)
           .map((m) => ({
             provider: m.provider === 'gemini' ? 'google' : m.provider,
             modelId: m.modelId,
@@ -293,6 +307,25 @@ export class AppComponent implements OnDestroy {
       },
       error: () => this.availableModels.set([]),
     });
+  }
+
+  /**
+   * Wird vom Add-Model-Form gefeuert. Library-Tabelle weiß nichts vom Form,
+   * also triggern wir hier explizit ihr `reload()` + zusätzlich unseren
+   * eigenen Status- + Picker-Refresh.
+   */
+  onModelCreated(): void {
+    this.modelsTable?.reload();
+    this.reload();
+  }
+
+  /**
+   * Wird von der API-Keys-Section gefeuert. Tabelle muss refreshen damit
+   * die „Key gesetzt"-Spalte korrekt ist, und der Picker muss neu evaluieren.
+   */
+  onKeyChanged(): void {
+    this.modelsTable?.reload();
+    this.reload();
   }
 
   onModeChange(mode: 'manual' | 'auto'): void {
