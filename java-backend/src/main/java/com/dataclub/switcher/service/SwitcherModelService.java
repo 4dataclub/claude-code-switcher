@@ -42,9 +42,22 @@ public class SwitcherModelService {
 
     @Transactional
     public AiModelConfig createModel(Map<String, Object> body) {
+        String provider = (String) body.get("provider");
+        String modelId = (String) body.get("modelId");
+        if (provider == null || provider.isBlank() || modelId == null || modelId.isBlank()) {
+            throw new IllegalArgumentException("provider und modelId sind Pflicht");
+        }
+        // Uniqueness: pro (provider, modelId) darf nur EIN cascade-Modell existieren.
+        // Analog zu EduPros AppController.aiModelCreate — verhindert dass der
+        // Failover-Chain-Editor (oder ein anderer Konsument) doppelte Slots
+        // anlegt, die dieselbe externe API doppelt ansprechen würden.
+        if (modelRepo.findFirstByProviderAndModelId(provider, modelId).isPresent()) {
+            throw new IllegalArgumentException(
+                "Modell mit provider='" + provider + "' und modelId='" + modelId + "' existiert bereits");
+        }
         AiModelConfig m = new AiModelConfig();
-        m.setProvider((String) body.get("provider"));
-        m.setModelId((String) body.get("modelId"));
+        m.setProvider(provider);
+        m.setModelId(modelId);
         m.setDisplayName((String) body.getOrDefault("displayName", null));
         m.setApiKeySettingKey((String) body.getOrDefault(
             "apiKeySettingKey", m.getProvider() + "ApiKey"));
