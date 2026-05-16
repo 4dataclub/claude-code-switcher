@@ -42,12 +42,28 @@ export interface AutoConfig {
   chain_position?: number;
 }
 
+export interface SwitcherAiModel {
+  id: number;
+  provider: string;        // 'gemini' | 'anthropic' | 'openrouter' (cascade-Namensraum)
+  modelId: string;
+  displayName: string | null;
+  apiKeySettingKey: string;
+  enabled: boolean;
+  keyConfigured: boolean;
+  autoDisabled?: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class SwitcherApiService {
   private readonly http = inject(HttpClient);
 
   status(): Observable<SwitcherStatus> {
     return this.http.get<SwitcherStatus>('/api/status');
+  }
+
+  /** Modell-Liste vom Cascade-Backend, identisch zu dem was die ki-models-ui-Library sieht. */
+  listAiModels(): Observable<SwitcherAiModel[]> {
+    return this.http.get<SwitcherAiModel[]>('/api/ai-models');
   }
 
   whoami(): Observable<string> {
