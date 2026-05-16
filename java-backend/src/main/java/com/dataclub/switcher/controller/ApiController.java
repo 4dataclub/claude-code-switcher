@@ -600,9 +600,56 @@ public class ApiController {
 
     @DeleteMapping("/cascade-models/{id}")
     public Map<String, Object> deleteCascadeModel(@PathVariable long id) {
+        // Vor dem Delete: Modell-Details merken damit wir nachher entscheiden
+        // können ob das gelöschte Modell der Live-aktive war.
+        var deleted = modelSvc.findModelById(id);
         boolean ok = modelSvc.deleteModel(id);
         sse.broadcast("model-deleted", Map.of("id", id, "ok", ok));
+
+        // Auto-Follow-up: war das das aktuell aktive Modell? Dann switche zum
+        // ersten noch verfügbaren Modell (filter: hat Key + nicht autoDisabled).
+        // Sonst bleibt cfg auf einem ins-Leere-Zeigen, was vermutlich zu einem
+        // verwirrenden Banner/Status führt.
+        if (ok && deleted.isPresent()) {
+            autoSwitchIfActiveWasDeleted(deleted.get());
+        }
+
         return Map.of("ok", ok, "id", id);
+    }
+
+    /**
+     * Prüft ob das gelöschte Modell der aktuell aktive Live-Provider war —
+     * wenn ja, switche atomar zum ersten noch verfügbaren Modell. Wenn keins
+     * mehr da ist, passiert nichts (Status wird stale, UI kann das anzeigen).
+     */
+    private void autoSwitchIfActiveWasDeleted(com.dataclub.switcher.model.AiModelConfig deleted) {
+        ObjectNode cfg = configs.readConfig();
+        ObjectNode sw = cfg.has("_switcher") && cfg.get("_switcher").isObject()
+            ? (ObjectNode) cfg.get("_switcher") : configs.mapper().createObjectNode();
+        String currentProvider = configs.deriveProvider(cfg);
+        String currentModel = sw.path("activeRoute").path("model").asText(
+            cfg.path("model").asText(""));
+
+        String deletedSwProv = CASCADE_TO_SWITCHER.getOrDefault(deleted.getProvider(), deleted.getProvider());
+        boolean wasActive = deletedSwProv.equals(currentProvider)
+                         && (deleted.getModelId().equals(currentModel)
+                             || (currentModel == null || currentModel.isEmpty()));
+        if (!wasActive) return;
+
+        // Erstes verfügbares Modell finden (Key gesetzt + nicht auto-disabled).
+        com.dataclub.switcher.model.AiModelConfig replacement = null;
+        for (com.dataclub.switcher.model.AiModelConfig m : modelSvc.listModels()) {
+            if (Boolean.TRUE.equals(m.getAutoDisabled())) continue;
+            if (!modelSvc.modelHasKey(m)) continue;
+            replacement = m;
+            break;
+        }
+        if (replacement == null) return;
+
+        SwitchRequest req = new SwitchRequest();
+        req.provider = CASCADE_TO_SWITCHER.getOrDefault(replacement.getProvider(), replacement.getProvider());
+        req.model = replacement.getModelId();
+        doSwitch(req); // schreibt config, Restart-Marker, broadcastet 'switch'-SSE
     }
 
     /**
