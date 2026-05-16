@@ -75,6 +75,7 @@ import {
           [chainPosition]="status()?.chain_position ?? 0"
           [activeProvider]="status()?.provider ?? null"
           [activeModel]="activeModel()"
+          [availableModels]="availableModels()"
           (modeChanged)="onModeChange($event)"
           (chainChanged)="onChainChange($event)"
           (promoteRequested)="onPromote()"
@@ -160,6 +161,13 @@ export class AppComponent implements OnDestroy {
   readonly error = signal<string | null>(null);
   readonly restarting = signal(false);
   readonly toast = signal<{ msg: string; type: 'ok' | 'err' } | null>(null);
+  /**
+   * Aktive (enabled + keyConfigured) Cascade-Modelle — speist die Manuell-
+   * Picker-Dropdowns im Modus-Panel. Wird bei jedem `reload()` und bei
+   * SSE-Toggle-Events neu geladen. Provider-Namensraum wird hier auf
+   * Switcher-UI (`google` statt `gemini`) gemappt.
+   */
+  readonly availableModels = signal<{ provider: string; modelId: string; displayName: string }[]>([]);
 
   /** EventSource für SSE-Live-Updates. Wird in ngOnInit aufgemacht + ngOnDestroy geschlossen. */
   private es: EventSource | null = null;
@@ -263,6 +271,27 @@ export class AppComponent implements OnDestroy {
         }
       },
       error: (e) => this.error.set('Status nicht erreichbar: ' + (e?.message ?? e)),
+    });
+    this.reloadAvailableModels();
+  }
+
+  /**
+   * Lädt die Cascade-Modell-Liste, filtert auf aktiv + key + nicht-autoDisabled
+   * und mappt den Provider-Namensraum (`gemini` → `google`) für die Switcher-UI.
+   */
+  private reloadAvailableModels(): void {
+    this.api.listAiModels().subscribe({
+      next: (models) => {
+        const usable = models
+          .filter((m) => m.enabled && m.keyConfigured && !m.autoDisabled)
+          .map((m) => ({
+            provider: m.provider === 'gemini' ? 'google' : m.provider,
+            modelId: m.modelId,
+            displayName: m.displayName || m.modelId,
+          }));
+        this.availableModels.set(usable);
+      },
+      error: () => this.availableModels.set([]),
     });
   }
 
