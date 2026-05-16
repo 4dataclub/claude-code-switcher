@@ -111,7 +111,21 @@ public class SwitcherModelService {
         return true;
     }
 
+    /**
+     * Hat das Modell einen API-Key der zum Switchen reicht?
+     *
+     * **Sonderfall Anthropic:** Claude Code authentifiziert sich beim Anthropic-
+     * direkt-Routing über sein eigenes OAuth/Login (typisch Max- oder Pro-Abo).
+     * Der `anthropicApiKey` in den Switcher-Settings ist NUR nötig wenn man
+     * Anthropic-Modelle über `/api/models/{id}/test` oder andere Backend-Tools
+     * direkt API-mäßig ansprechen will (separates pay-per-token-Billing). Für
+     * den reinen Live-Switch reicht das Max/Pro-Abo via Browser-Login von
+     * Claude Code — daher hier `true` zurückgeben, auch wenn kein Key gesetzt.
+     */
     public boolean modelHasKey(AiModelConfig m) {
+        if ("anthropic".equalsIgnoreCase(m.getProvider())) {
+            return true;
+        }
         String v = getSettingRaw(m.getApiKeySettingKey());
         return v != null && !v.isBlank();
     }

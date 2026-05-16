@@ -261,9 +261,14 @@ public class ApiController {
         if (cfg.has("model")) marker.set("model", cfg.get("model"));
         configs.writeRestartMarker("manual-switch", marker);
 
-        sse.broadcast("switch", Map.of("provider", req.provider, "model",
-            cfg.has("model") ? cfg.get("model").asText() : null,
-            "activeRoute", sw.has("activeRoute") ? sw.get("activeRoute") : null));
+        // Map.of() lehnt null-Werte ab → bei Switch zu Anthropic ist activeRoute
+        // bewusst null (siehe `sw.remove("activeRoute")` oben). HashMap erlaubt
+        // nulls und löst das Problem.
+        Map<String, Object> switchEvent = new HashMap<>();
+        switchEvent.put("provider", req.provider);
+        switchEvent.put("model", cfg.has("model") ? cfg.get("model").asText() : null);
+        switchEvent.put("activeRoute", sw.has("activeRoute") ? sw.get("activeRoute") : null);
+        sse.broadcast("switch", switchEvent);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("success", routerOk);
@@ -435,6 +440,10 @@ public class ApiController {
         ObjectNode keys = sw.has("keys") && sw.get("keys").isObject() ? (ObjectNode) sw.get("keys") : configs.mapper().createObjectNode();
         while (pos < chain.size()) {
             String tProv = chain.get(pos).path("provider").asText();
+            // Anthropic ist immer reachable — Claude Code authentifiziert sich
+            // beim Anthropic-direkt-Routing über sein eigenes OAuth/Login
+            // (Max/Pro-Abo), KEIN Switcher-Key nötig.
+            if ("anthropic".equals(tProv)) break;
             String keyName = "google".equals(tProv) ? "google" : "openrouter".equals(tProv) ? "openrouter" : null;
             if (keyName != null && !keys.path(keyName).asText("").isBlank()) break;
             pos++;
