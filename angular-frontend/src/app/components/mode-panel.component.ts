@@ -136,7 +136,7 @@ const PROVIDER_MODELS: Record<string, { id: string; name: string }[]> = {
       <div *ngIf="mode === 'auto'" class="mt-4 rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 sm:p-5 ring-1 ring-slate-200 dark:ring-slate-700">
         <ki-failover-chain
           [chain]="localChain"
-          [availableModels]="libAvailableModels()"
+          [availableModels]="libAvailableModelsList"
           [chainPosition]="chainPosition"
           [showChainPosition]="true"
           [labels]="failoverChainLabels"
@@ -267,17 +267,16 @@ export class ModePanelComponent {
   /**
    * `<ki-failover-chain>` braucht `availableModels` im Format
    * `{provider, modelId, displayName}[]`. Switcher führt die statische
-   * `PROVIDER_MODELS`-Whitelist (Provider → Modelle) — hier flatten + mappen.
+   * `PROVIDER_MODELS`-Whitelist (Provider → Modelle) — hier einmal beim Init
+   * flatten + mappen, **stabile Property** behalten.
+   *
+   * WICHTIG: NICHT als Getter/Methode — bei jedem CD-Tick neue Array-Referenz
+   * würde ngOnChanges in der Library pausenlos feuern (siehe EduPro PR #52
+   * für den identischen Fix dort).
    */
-  libAvailableModels(): { provider: string; modelId: string; displayName: string }[] {
-    const out: { provider: string; modelId: string; displayName: string }[] = [];
-    for (const provider of Object.keys(PROVIDER_MODELS)) {
-      for (const m of PROVIDER_MODELS[provider]) {
-        out.push({ provider, modelId: m.id, displayName: m.name });
-      }
-    }
-    return out;
-  }
+  readonly libAvailableModelsList: { provider: string; modelId: string; displayName: string }[] =
+    Object.entries(PROVIDER_MODELS).flatMap(([provider, models]) =>
+      models.map((m) => ({ provider, modelId: m.id, displayName: m.name })));
 
   /** Library hat die Chain editiert → lokal aktualisieren + nach oben propagieren. */
   onLibChainChanged(c: ChainEntry[]): void {
