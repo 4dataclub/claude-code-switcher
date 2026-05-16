@@ -130,6 +130,20 @@ public class SwitcherModelService {
         return v != null && !v.isBlank();
     }
 
+    /**
+     * Hat das Modell einen **echten** API-Key im DB-Setting? Im Unterschied zu
+     * {@link #modelHasKey(AiModelConfig)} kein Anthropic-Sonderfall — nutzbar
+     * z.B. fürs Backend-Test (api.anthropic.com braucht echten sk-ant-Key).
+     */
+    public boolean modelHasRealKey(AiModelConfig m) {
+        String v = getSettingRaw(m.getApiKeySettingKey());
+        return v != null && !v.isBlank();
+    }
+
+    public Optional<AiModelConfig> findModelById(long id) {
+        return modelRepo.findById(id);
+    }
+
     // ─── Settings ────────────────────────────────────────────────────────────
 
     /** Liste aller Settings; sensible Werte werden maskiert. */
