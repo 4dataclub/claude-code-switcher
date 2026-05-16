@@ -588,14 +588,21 @@ public class ApiController {
 
     @PostMapping("/cascade-models")
     public Map<String, Object> createCascadeModel(@RequestBody Map<String, Object> body) {
-        AiModelConfig created = modelSvc.createModel(body);
-        sse.broadcast("model-created", Map.of("ok", true, "id", created.getId()));
-        return Map.of(
-            "ok", true,
-            "id", created.getId(),
-            "provider", created.getProvider(),
-            "modelId", created.getModelId()
-        );
+        try {
+            AiModelConfig created = modelSvc.createModel(body);
+            sse.broadcast("model-created", Map.of("ok", true, "id", created.getId()));
+            return Map.of(
+                "ok", true,
+                "id", created.getId(),
+                "provider", created.getProvider(),
+                "modelId", created.getModelId()
+            );
+        } catch (IllegalArgumentException e) {
+            // Service rejected (z.B. Duplikat oder Pflichtfeld fehlt) — Lib-konformes
+            // Error-Format (HTTP 200 + ok:false), damit ki-models-ui den error-String
+            // als Toast/Fehlermeldung anzeigt.
+            return Map.of("ok", false, "error", e.getMessage());
+        }
     }
 
     @DeleteMapping("/cascade-models/{id}")
