@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { FailoverChainComponent } from '@4dataclub/ki-models-ui';
@@ -175,34 +175,41 @@ export class ModePanelComponent {
   pickerProvider = 'anthropic';
   pickerModel = '';
 
-  ngOnChanges(): void {
-    this.localChain = this.chain.length
-      ? this.chain.map((e) => ({ ...e }))
-      : [
-          { provider: 'anthropic',  model: 'claude-sonnet-4-6' },
-          { provider: 'google',     model: 'gemini-2.5-pro' },
-          { provider: 'openrouter', model: 'deepseek/deepseek-chat-v3.1' },
-        ];
+  ngOnChanges(changes: SimpleChanges): void {
+    // **Wichtig**: `localChain` NUR rebuilden wenn die Chain-Eingabe sich
+    // wirklich geändert hat — nicht bei JEDER Input-Änderung. Sonst überschreiben
+    // SSE-Events die rein nicht-Chain-Felder updaten (z.B. activeProvider nach
+    // einem auto-switch) die mid-edit Eingaben des Users. Genau das fühlt sich
+    // an wie „die Failover-Kette macht kein Refresh" (Eingaben verschwinden).
+    if (changes['chain']) {
+      this.localChain = this.chain.length
+        ? this.chain.map((e) => ({ ...e }))
+        : [
+            { provider: 'anthropic',  model: 'claude-sonnet-4-6' },
+            { provider: 'google',     model: 'gemini-2.5-pro' },
+            { provider: 'openrouter', model: 'deepseek/deepseek-chat-v3.1' },
+          ];
+    }
 
-    // Manuell-Picker: vorbelegen auf einen Provider der **aktive Modelle** hat.
-    // Wenn der aktuelle aktive Provider verfügbar ist → diesen, sonst erster
-    // verfügbarer. Modell entsprechend.
-    const providers = this.availableProviders();
-    if (providers.length > 0) {
-      if (this.activeProvider && providers.includes(this.activeProvider)) {
-        this.pickerProvider = this.activeProvider;
-      } else if (!providers.includes(this.pickerProvider)) {
-        this.pickerProvider = providers[0];
+    // Manuell-Picker-State refreshen wenn relevante Inputs sich änderten.
+    if (changes['availableModels'] || changes['activeProvider'] || changes['activeModel']) {
+      const providers = this.availableProviders();
+      if (providers.length > 0) {
+        if (this.activeProvider && providers.includes(this.activeProvider)) {
+          this.pickerProvider = this.activeProvider;
+        } else if (!providers.includes(this.pickerProvider)) {
+          this.pickerProvider = providers[0];
+        }
+        const candidate = this.activeModel && this.modelsForActive(this.pickerProvider)
+          .some((m) => m.modelId === this.activeModel)
+            ? this.activeModel
+            : this.modelsForActive(this.pickerProvider)[0]?.modelId ?? '';
+        if (!this.pickerModel || !this.modelsForActive(this.pickerProvider).some((m) => m.modelId === this.pickerModel)) {
+          this.pickerModel = candidate;
+        }
+      } else {
+        this.pickerModel = '';
       }
-      const candidate = this.activeModel && this.modelsForActive(this.pickerProvider)
-        .some((m) => m.modelId === this.activeModel)
-          ? this.activeModel
-          : this.modelsForActive(this.pickerProvider)[0]?.modelId ?? '';
-      if (!this.pickerModel || !this.modelsForActive(this.pickerProvider).some((m) => m.modelId === this.pickerModel)) {
-        this.pickerModel = candidate;
-      }
-    } else {
-      this.pickerModel = '';
     }
   }
 
