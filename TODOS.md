@@ -99,13 +99,13 @@ Tasks:
 
 | # | Task | Status |
 |---|---|---|
-| L.1 | Repo + ng-Library-Skeleton + 4 Components + Service + InjectionToken | ✅ done |
-| L.2 | 2 fehlende Components ergänzen (mode-panel manual/auto-failover, key-card) | **← nächster Schritt** |
-| L.3 | EduPro migrieren: `npm i @dataclub/ki-models-ui`, admin.component umschreiben | offen |
-| L.4 | **Switcher Vanilla-HTML → Angular-Migration** + Library integrieren; Switcher-spezifisch (Quota-Banner + Restart-Button) bleibt außerhalb | offen |
-| L.5 | **npm-Publish** + Git-Tag + README mit ASCII-Architektur-Bild | offen |
-| L.6 | Doku-Spiegel: README in EduPro + Switcher mit „ki-models-ui-Integration"-Sektion + tools-site-Eintrag (`feedback_shared_lib_docs_propagation` greift) | offen |
-| L.7 | Sanity-Check: Bug-Fix in Library → ein Release → `npm update` in beiden Konsumenten → Fix in beiden UIs sichtbar | offen |
+| L.1 | Repo + ng-Library-Skeleton + Components + Service + InjectionToken | ✅ done |
+| L.2 | 5 Components: models-table, add-model-form, cascade-cooldown, api-keys-section, failover-chain | ✅ done (v0.7.0) |
+| L.3 | EduPro migriert: alle 5 `<ki-…>`-Components live | ✅ done |
+| L.4 | Switcher Vanilla-HTML → Angular + Library-Integration + mode-panel/banner/status-bar | ✅ done |
+| L.5 | **npm-Publish** auf GitHub Packages + Git-Tag | 🟡 offen — aktuell Tarballs |
+| L.6 | Doku-Spiegel: tools-site ✅ — Switcher README offen | 🟡 teilweise |
+| L.7 | Sanity-Check: Bug-Fix → Release → `npm update` → Fix sichtbar | offen (wartet auf L.5) |
 
 Details in
 `~/obsidian-brain/shared/04 Ressourcen/KI & Automatisierung/Claude Memory/project_next_session.md`.

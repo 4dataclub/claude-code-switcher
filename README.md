@@ -351,6 +351,33 @@ Den API-Tier-Status checkst du in [console.cloud.google.com/billing](https://con
 
 ---
 
+## Geteilte Library: @4dataclub/ki-models-ui
+
+Die komplette Admin-UI (Modell-Verwaltung, API-Keys, Cascade-Config, Failover-Chain)
+wird durch die gemeinsame Angular-Library [`@4dataclub/ki-models-ui`](https://github.com/4dataclub/ki-models-ui)
+gerendert — dieselbe Library wie in EduPro, kein doppelter Code.
+
+```
+┌─ Switcher Angular-Frontend ─────────────────────────────────────────┐
+│  app.component.ts:                                                   │
+│    <ki-cascade-cooldown>  — Cooldown Tri-State                       │
+│    <ki-models-table>      — Modell-Liste + Toggle + Test + Delete    │
+│    <ki-add-model-form>    — Neues Modell hinzufügen                  │
+│    <ki-api-keys-section>  — API-Keys verwalten                       │
+│                                                                      │
+│  mode-panel.component.ts (Switcher-own):                             │
+│    <ki-failover-chain>    — Failover-Reihenfolge + Promote-Button    │
+│                                                                      │
+│  banner.component.ts / status-bar.component.ts (Switcher-own)       │
+└─────────────────────────────────────────────────────────────────────┘
+         ↓ HTTP via KiModelsApiService (KI_MODELS_API_BASE = /api)
+┌─ Switcher Backend /api/* ───────────────────────────────────────────┐
+│  ai-models · api-keys · cascade-config  (eigene Postgres-Tabellen)  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## Architektur
 
 ```
