@@ -6,35 +6,46 @@
 
 *Web-UI auf `http://localhost:2000` — Failover-Chain editierbar, Provider/Modell jederzeit manuell wechselbar.*
 
-### Modell-Auswahl pro Provider
+### UI-Bereiche
 
 <table>
 <tr>
-<td width="33%">
+<td width="50%">
 
-**Anthropic — Claude-Modelle**
+**Auto-Failover — Chain-Editor**
 
-![Anthropic-Modelle](docs/screenshots/03-provider-anthropic.png)
+![Auto-Failover Chain Editor](docs/screenshots/02-auto-mode.png)
 
-Opus 4.7, Sonnet 4.6, Haiku 4.5
-
-</td>
-<td width="33%">
-
-**Google AI — Gemini-Modelle**
-
-![Google AI Modelle](docs/screenshots/04-provider-google.png)
-
-Gemini 2.5 Pro/Flash/Flash-Lite, Gemini 3 Pro/Flash (Preview)
+Modus-Umschalter (Manuell / Auto-Failover) + editierbare Failover-Chain mit ↑↓×-Buttons
 
 </td>
-<td width="33%">
+<td width="50%">
 
-**OpenRouter — Mix**
+**Modell-Verwaltung**
 
-![OpenRouter Modelle](docs/screenshots/05-provider-openrouter.png)
+![Modell-Verwaltung Tabelle](docs/screenshots/04-models-table.png)
 
-Claude Sonnet 4.5, Gemini 2.5 Pro/Flash, DeepSeek Chat v3.1, Llama 3.3 70B (Free), GPT-OSS 120B (Free), Nemotron Nano 9B (Free)
+Cascade-Modelle mit Toggle, Test, Re-Enable, Löschen + Neues-Modell-Formular
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**API-Keys**
+
+![API-Keys Sektion](docs/screenshots/06-api-keys.png)
+
+Setting-Key-basierte Key-Verwaltung — mehrere Modelle können einen Key teilen
+
+</td>
+<td width="50%">
+
+**Gemini aktiv (nach Failover)**
+
+![Status: Gemini aktiv](docs/screenshots/07-status-gemini-active.png)
+
+Status-Bar zeigt aktiven Provider nach Auto-Switch
 
 </td>
 </tr>
