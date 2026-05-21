@@ -249,23 +249,49 @@ try:
 except: print('')
 " 2>/dev/null)
 
-      if [[ -n "$ANTHROPIC_LONG_TOKEN" ]]; then
-        echo "↪ Anthropic via Long-Token (CLAUDE_CODE_OAUTH_TOKEN aus settings.json)" >&2
-        export CLAUDE_CODE_OAUTH_TOKEN="$ANTHROPIC_LONG_TOKEN"
-      else
-        unset CLAUDE_CODE_OAUTH_TOKEN
-        AUTH_LOGGED_IN=$("$CLAUDE_BIN" auth status 2>/dev/null | python3 -c "
+      # OAuth-Login hat Vorrang vor Long-Token (sonst kein Remote Control).
+      # Long-Token nur als Fallback wenn OAuth nicht (mehr) da ist — z.B. nach
+      # Provider-Switch der die Keychain geleert hat.
+      unset CLAUDE_CODE_OAUTH_TOKEN
+      AUTH_LOGGED_IN=$("$CLAUDE_BIN" auth status 2>/dev/null | python3 -c "
 import json, sys
 try: print('true' if json.load(sys.stdin).get('loggedIn') else 'false')
-except: print('unknown')
+except: print('false')
 " 2>/dev/null)
-        if [[ "$AUTH_LOGGED_IN" == "false" ]]; then
-          echo "" >&2
-          echo "⚠ Anthropic-Modus aktiv, aber nicht eingeloggt + kein Long-Token gespeichert." >&2
-          echo "  Bitte einmal:  claude auth login" >&2
-          echo "  Optional:      claude setup-token  → Token im UI hinterlegen" >&2
-          echo "" >&2
-          notify "Login nötig: claude auth login"
+
+      if [[ "$AUTH_LOGGED_IN" == "true" ]]; then
+        echo "↪ Anthropic via OAuth (Keychain) — Remote Control verfügbar" >&2
+      else
+        # Keine OAuth-Session → automatisch Login-Flow starten.
+        # Hintergrund: Beim Switch auf einen anderen Provider macht der Wrapper
+        # 'claude auth logout' (Router-Schutz). Switcht der User später zurück
+        # auf Anthropic, ist die OAuth-Session weg → Remote Control bricht.
+        # Statt nur einen Hinweis auszugeben, starten wir den Login automatisch,
+        # damit der User nur einmal durch den Browser-Flow muss.
+        echo "" >&2
+        echo "⚠ Anthropic-Modus aktiv, aber keine OAuth-Session." >&2
+        echo "↪ Starte 'claude auth login' automatisch (Browser öffnet sich)…" >&2
+        echo "" >&2
+        notify "Auto-Login wird gestartet — Browser-Flow durchklicken"
+        if [[ -e /dev/tty ]]; then
+          "$CLAUDE_BIN" auth login </dev/tty >/dev/tty 2>&1 || true
+        else
+          "$CLAUDE_BIN" auth login >&2 || true
+        fi
+        # Re-Check nach Login-Versuch
+        AUTH_LOGGED_IN_AFTER=$("$CLAUDE_BIN" auth status 2>/dev/null | python3 -c "
+import json, sys
+try: print('true' if json.load(sys.stdin).get('loggedIn') else 'false')
+except: print('false')
+" 2>/dev/null)
+        if [[ "$AUTH_LOGGED_IN_AFTER" == "true" ]]; then
+          echo "↪ Login erfolgreich — Remote Control jetzt verfügbar" >&2
+        elif [[ -n "$ANTHROPIC_LONG_TOKEN" ]]; then
+          echo "↪ Login nicht durch — fallback auf Long-Token (Remote Control bleibt blockiert)" >&2
+          export CLAUDE_CODE_OAUTH_TOKEN="$ANTHROPIC_LONG_TOKEN"
+        else
+          echo "⚠ Login nicht durch + kein Long-Token. Claude startet trotzdem, wird aber bei API-Call failen." >&2
+          notify "Login nicht durch — claude startet ohne Auth"
         fi
       fi
     fi

@@ -6,35 +6,46 @@
 
 *Web-UI auf `http://localhost:2000` — Failover-Chain editierbar, Provider/Modell jederzeit manuell wechselbar.*
 
-### Modell-Auswahl pro Provider
+### UI-Bereiche
 
 <table>
 <tr>
-<td width="33%">
+<td width="50%">
 
-**Anthropic — Claude-Modelle**
+**Auto-Failover — Chain-Editor**
 
-![Anthropic-Modelle](docs/screenshots/03-provider-anthropic.png)
+![Auto-Failover Chain Editor](docs/screenshots/02-auto-mode.png)
 
-Opus 4.7, Sonnet 4.6, Haiku 4.5
-
-</td>
-<td width="33%">
-
-**Google AI — Gemini-Modelle**
-
-![Google AI Modelle](docs/screenshots/04-provider-google.png)
-
-Gemini 2.5 Pro/Flash/Flash-Lite, Gemini 3 Pro/Flash (Preview)
+Modus-Umschalter (Manuell / Auto-Failover) + editierbare Failover-Chain mit ↑↓×-Buttons
 
 </td>
-<td width="33%">
+<td width="50%">
 
-**OpenRouter — Mix**
+**Modell-Verwaltung**
 
-![OpenRouter Modelle](docs/screenshots/05-provider-openrouter.png)
+![Modell-Verwaltung Tabelle](docs/screenshots/04-models-table.png)
 
-Claude Sonnet 4.5, Gemini 2.5 Pro/Flash, DeepSeek Chat v3.1, Llama 3.3 70B (Free), GPT-OSS 120B (Free), Nemotron Nano 9B (Free)
+Cascade-Modelle mit Toggle, Test, Re-Enable, Löschen + Neues-Modell-Formular
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**API-Keys**
+
+![API-Keys Sektion](docs/screenshots/06-api-keys.png)
+
+Setting-Key-basierte Key-Verwaltung — mehrere Modelle können einen Key teilen
+
+</td>
+<td width="50%">
+
+**Gemini aktiv (nach Failover)**
+
+![Status: Gemini aktiv](docs/screenshots/07-status-gemini-active.png)
+
+Status-Bar zeigt aktiven Provider nach Auto-Switch
 
 </td>
 </tr>
@@ -391,16 +402,28 @@ gerendert — dieselbe Library wie in EduPro, kein doppelter Code.
          │ HTTP zu localhost:2000
          ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│ Switcher-Server (Docker-Container, Express auf :2000)               │
+│ switcher-frontend (Angular/nginx, Port :2000)                       │
 │   • UI: http://localhost:2000                                       │
+│   • ki-models-ui Library-Components + Mode-Panel + Status-Bar       │
+│   • Proxy: /api/* → switcher-backend intern                         │
+└────────┬────────────────────────────────────────────────────────────┘
+         │ /api/* (intern)
+         ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ switcher-backend (Spring Boot, intern :2000)                        │
 │   • API: /api/switch /api/auto /api/quota-error /api/warn …        │
 │   • State: ~/.claude/settings.json (._switcher block)               │
-│   • Background-Timer: alle 30 min Auto-Promote-Check                │
+│   • AutoPromoteService: alle 30 min Auto-Promote-Check              │
 │   • Schreibt router-config.json + restartet Router-Container        │
 │     via Docker-Socket                                               │
-└────────┬────────────────────────────────────────────────────────────┘
-         │
-         ▼
+└────────┬──────────────────────────────┬──────────────────────────────┘
+         │                              │
+         ▼                              ▼
+┌────────────────────────┐  ┌──────────────────────────────────────┐
+│ db (PostgreSQL 16)     │  │ llm-cascade (Spring Boot, :8090)     │
+│ Volume: switcher_pgdata│  │ AI-Modell-Config + Cascade-State     │
+└────────────────────────┘  └──────────────────────────────────────┘
+
 ┌─────────────────────────────────────────────────────────────────────┐
 │ claude-code-router (Docker-Container, ccr auf :3456)                │
 │   • Image: node:20-alpine + npm i -g @musistudio/claude-code-router │
@@ -463,8 +486,12 @@ curl http://localhost:2000/api/status
 
 **Container-Namen-Konflikt nach Setup-Wechsel** — alte Container räumen:
 ```bash
-docker stop claude-switcher-claude-switcher-1 claude-switcher-router-1
-docker rm   claude-switcher-claude-switcher-1 claude-switcher-router-1
+docker stop claude-switcher-backend-1 claude-switcher-frontend-1 \
+            claude-switcher-router-1 claude-switcher-llm-cascade-1 \
+            claude-switcher-db-1
+docker rm   claude-switcher-backend-1 claude-switcher-frontend-1 \
+            claude-switcher-router-1 claude-switcher-llm-cascade-1 \
+            claude-switcher-db-1
 ```
 
 **Settings/Keys gehen verloren** — sie liegen in `~/.claude/settings.json` (`_switcher`-Block). Backup machen wenn dir die Konfiguration wichtig ist. Container-Restart löscht nichts, nur explizites `rm -rf ~/.claude/router-config.json` würde die Router-Config killen.
@@ -499,9 +526,9 @@ MIT — siehe [LICENSE](LICENSE) (sofern vorhanden) oder Standard-MIT-Klausel: f
 
 ## Entwicklung — Setup-Bundles bauen
 
-Die User-Datei `setup.sh` (Bash, macOS/Linux) und `setup.ps1` (PowerShell, Windows) sind **selbst-extrahierende Bundles** — sie enthalten alle Source-Files (Dockerfile, server.js, wrapper/*, Doku-Screenshots, CLAUDE.md-Block) als Base64-Payload.
+Die User-Datei `setup.sh` (Bash, macOS/Linux) und `setup.ps1` (PowerShell, Windows) sind **selbst-extrahierende Bundles** — sie enthalten alle Source-Files (`java-backend/`, `angular-frontend/`, `router/`, `wrapper/`, `docs/`, CLAUDE.md-Block) als Base64-Payload.
 
-**Single Source of Truth:** die echten Source-Files liegen im Repo (`server.js`, `wrapper/`, `docs/screenshots/`, …). Die Bundles sind generiert.
+**Single Source of Truth:** die echten Source-Files liegen im Repo (`java-backend/`, `angular-frontend/`, `wrapper/`, `docs/screenshots/`, …). Die Bundles sind generiert.
 
 **Nach Source-Änderung Bundles regenerieren:**
 
