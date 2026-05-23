@@ -74,6 +74,8 @@ public class SwitcherModelService {
         if (body.get("cooldown503OverrideSec") instanceof Number cn) {
             m.setCooldown503OverrideSec(cn.intValue());
         }
+        // Phase S': Cascade-Bereich — null ergibt in llm-cascade "general"-Fallback.
+        m.setCategory((String) body.getOrDefault("category", null));
         return modelRepo.save(m);
     }
 
@@ -96,6 +98,9 @@ public class SwitcherModelService {
             }
             if (patch.containsKey("displayName")) {
                 m.setDisplayName((String) patch.get("displayName"));
+            }
+            if (patch.containsKey("category")) {
+                m.setCategory((String) patch.get("category"));
             }
             return modelRepo.save(m);
         });

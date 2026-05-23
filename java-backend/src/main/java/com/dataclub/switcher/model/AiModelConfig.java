@@ -45,6 +45,18 @@ public class AiModelConfig {
     @Column(name = "api_key_setting_key", length = 100, nullable = false)
     private String apiKeySettingKey;
 
+    /**
+     * Cascade-Bereich (Phase S' — 2026-05-21).
+     *
+     * Bestimmt in welcher unabhängigen Failover-Chain das Modell verwendet wird.
+     * {@code null} → llm-cascade behandelt es wie "general" (globaler Fallback).
+     *
+     * Switcher-Empfehlung: "default" (alle Modelle) oder "free-only" / "cloud-premium".
+     * Feld existiert in der geteilten DB-Tabelle seit llm-cascade v0.4.0.
+     */
+    @Column(length = 64)
+    private String category;
+
     @Column(nullable = false)
     private Boolean enabled;
 

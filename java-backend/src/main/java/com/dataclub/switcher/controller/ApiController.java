@@ -38,6 +38,7 @@ import java.util.regex.Pattern;
  *   GET  /api/events            — SSE-Stream fuer UI-Updates
  *   GET  /api/cascade-health    — llm-cascade-Reachability
  *   GET  /api/cascade-models    — Modell-Liste aus llm-cascade
+ *   GET  /api/cascades          — Cascade-Bereiche (Proxy zu llm-cascade, fuer ki-cascades-view)
  */
 @RestController
 @RequestMapping("/api")
@@ -517,6 +518,20 @@ public class ApiController {
         return Map.of("ok", cascade.isHealthy(), "url", cascade.url());
     }
 
+    /**
+     * Proxy zu llm-cascade GET /api/cascades.
+     *
+     * Liefert alle Cascade-Bereiche dynamisch (distinct category aus der DB).
+     * Wird vom Frontend-Library-Component {@code <ki-cascades-view>} genutzt,
+     * der per {@code KI_MODELS_API_BASE='/api'} auf diesen Endpoint zugreift.
+     *
+     * Fallback: liefert leeres Array wenn llm-cascade nicht erreichbar.
+     */
+    @GetMapping("/cascades")
+    public com.fasterxml.jackson.databind.JsonNode cascades() {
+        return cascade.getCascades();
+    }
+
     // ─── Cascade-Cooldown-Override (Tri-State, analog EduPro PR #37) ─────────
 
     @GetMapping("/cascade-cooldown-override")
@@ -768,6 +783,7 @@ public class ApiController {
             entry.put("autoDisabled", Boolean.TRUE.equals(m.getAutoDisabled()));
             entry.put("autoDisabledReason", m.getAutoDisabledReason());
             entry.put("autoDisabledAt", m.getAutoDisabledAt());
+            entry.put("category", m.getCategory());   // Phase S': Cascade-Bereich (null → "general")
             entry.put("keyConfigured", modelSvc.modelHasKey(m));
             entry.put("cooldownRemainingSec", 0);
             out.add(entry);

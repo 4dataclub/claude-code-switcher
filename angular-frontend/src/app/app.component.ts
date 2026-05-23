@@ -3,8 +3,10 @@ import { CommonModule } from '@angular/common';
 import {
   ModelsTableComponent,
   AddModelFormComponent,
-  CascadeCooldownComponent,
+  CascadesViewComponent,
   ApiKeysSectionComponent,
+  CascadesViewLabels,
+  FailoverChainLabels,
 } from '@4dataclub/ki-models-ui';
 import { SwitcherApiService, SwitcherStatus, ChainEntry, SwitcherAiModel } from './services/switcher-api.service';
 import { StatusBarComponent } from './components/status-bar.component';
@@ -13,7 +15,8 @@ import { ModePanelComponent } from './components/mode-panel.component';
 import {
   MODELS_TABLE_LABELS_DE,
   ADD_MODEL_FORM_LABELS_DE,
-  CASCADE_COOLDOWN_LABELS_DE,
+  CASCADES_VIEW_LABELS_DE,
+  FAILOVER_CHAIN_LABELS_DE,
   API_KEYS_SECTION_LABELS_DE,
 } from './labels.de';
 
@@ -40,7 +43,7 @@ import {
     ModePanelComponent,
     ModelsTableComponent,
     AddModelFormComponent,
-    CascadeCooldownComponent,
+    CascadesViewComponent,
     ApiKeysSectionComponent,
   ],
   template: `
@@ -83,9 +86,16 @@ import {
         ></sw-mode-panel>
       </section>
 
-      <!-- Cascade-Cooldown Override (Library-Component, identisch zu EduPro) -->
+      <!-- Cascade-Bereiche (Phase S') — N Karten dynamisch, jede mit eigener Failover-Chain + Cooldown -->
       <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
-        <ki-cascade-cooldown [labels]="cascadeCooldownLabels"></ki-cascade-cooldown>
+        <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 mb-4">
+          Cascade-Bereiche
+        </h2>
+        <ki-cascades-view
+          [labels]="cascadesViewLabels"
+          [chainLabels]="failoverChainLabels"
+          [hintByCascade]="cascadeHints"
+        ></ki-cascades-view>
       </section>
 
       <!-- Modelle (Tabelle + Add-Form) — Library-Components, identisch zu EduPro -->
@@ -159,8 +169,19 @@ export class AppComponent implements OnDestroy {
   // Deutsche Labels für die Library-Components (analog zu EduPros i18n-Pipe).
   readonly modelsTableLabels = MODELS_TABLE_LABELS_DE;
   readonly addModelFormLabels = ADD_MODEL_FORM_LABELS_DE;
-  readonly cascadeCooldownLabels = CASCADE_COOLDOWN_LABELS_DE;
+  readonly cascadesViewLabels: Partial<CascadesViewLabels> = CASCADES_VIEW_LABELS_DE;
+  readonly failoverChainLabels: Partial<FailoverChainLabels> = FAILOVER_CHAIN_LABELS_DE;
   readonly apiKeysSectionLabels = API_KEYS_SECTION_LABELS_DE;
+
+  /**
+   * Sub-Hints pro Cascade-Name — wird als Untertitel unter dem Cascade-Namen angezeigt.
+   * Switcher nutzt „default" (primäre Modelle) + „fallback" (kostenfreie OR-Modelle).
+   */
+  readonly cascadeHints: Record<string, string> = {
+    default:  'Primäre Modelle (bezahlte API) — höchste Qualität, eigener Cooldown.',
+    fallback: 'Kostenfreie OpenRouter-Modelle — unabhängiger Cooldown vom default-Bereich.',
+    general:  'Globaler Fallback — wird genutzt wenn kein Bereich passt.',
+  };
 
   readonly status = signal<SwitcherStatus | null>(null);
   readonly warn = signal<{ percent: number; project?: string } | null>(null);

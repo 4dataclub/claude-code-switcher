@@ -9,7 +9,7 @@
 import {
   ModelsTableLabels,
   AddModelFormLabels,
-  CascadeCooldownLabels,
+  CascadesViewLabels,
   ApiKeysSectionLabels,
   FailoverChainLabels,
 } from '@4dataclub/ki-models-ui';
@@ -53,17 +53,14 @@ export const ADD_MODEL_FORM_LABELS_DE: Partial<AddModelFormLabels> = {
   errorFailed: 'Speichern fehlgeschlagen',
 };
 
-export const CASCADE_COOLDOWN_LABELS_DE: Partial<CascadeCooldownLabels> = {
-  title: 'Cascade-Cooldown',
-  subtitle: 'Globales Override für das Cooldown-Verhalten pro Modell.',
-  default: 'Standard',
-  forceOn: 'Erzwingen',
-  forceOff: 'Deaktivieren',
-  effectiveOn: 'Effektiv: AN',
-  effectiveOff: 'Effektiv: AUS',
-  hint: 'Standard = jedes Modell entscheidet selbst. Erzwingen = Cooldown bleibt auch wenn ein Modell ihn überspringen würde (verhindert 503-Endlosschleifen bei falsch konfigurierten Modellen). Deaktivieren = Cooldowns global aus (nur für Tests — Nebeneffekt: das oberste Modell wird nie als „cooled" markiert, deshalb kommt die nächste Chain-Stufe nicht dran). Tipp: Wenn du gar nicht failovern willst, sondern nur ein Modell aktiv haben möchtest, nutze stattdessen den Modus-Schalter oben („Manuell").',
-  loading: 'Lade Cascade-Config…',
-  errorLoad: 'Cascade-Config konnte nicht geladen werden.',
+export const CASCADES_VIEW_LABELS_DE: Partial<CascadesViewLabels> = {
+  loading: 'Lade Cascade-Bereiche…',
+  empty: 'Noch keine Cascade-Bereiche konfiguriert.',
+  emptyHint: 'Füge mindestens ein Modell mit einem category-Wert hinzu, damit es hier als Karte erscheint.',
+  defaultHint: 'Eigenständige Failover-Chain — eigener Cooldown-Timer + Sticky-Pointer.',
+  cooldownTitle: 'Cooldown-Status',
+  statusFree: '🟢 frei',
+  statusCooldown: '🟡 Cooldown',
 };
 
 export const API_KEYS_SECTION_LABELS_DE: Partial<ApiKeysSectionLabels> = {

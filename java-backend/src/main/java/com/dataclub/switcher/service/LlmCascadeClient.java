@@ -124,5 +124,19 @@ public class LlmCascadeClient {
         }
     }
 
+    /**
+     * Cascade-Bereiche — Proxy zu GET /api/cascades.
+     * Liefert pro distinct category: name, currentModel, cooldownSec.
+     * Wird vom Switcher-Frontend via {@code <ki-cascades-view>} genutzt.
+     */
+    public JsonNode getCascades() {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/cascades", String.class);
+            return json == null ? mapper.createArrayNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createArrayNode();
+        }
+    }
+
     public String url() { return cascadeUrl; }
 }
