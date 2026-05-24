@@ -104,6 +104,9 @@ import {
           [labels]="modelsTableLabels"
           [showActiveAction]="true"
           [activeModelId]="activeModel()"
+          [categoryTitles]="categoryTitles"
+          [categoryHints]="cascadeHints"
+          [categoryOrder]="cascadeOrder"
           (modelChanged)="reload()"
           (activeModelChanged)="onSwitchToModel($event)"
         ></ki-models-table>
@@ -183,6 +186,24 @@ export class AppComponent implements OnDestroy {
     'free-only': 'Kostenfreie OpenRouter-Modelle — kein Cooldown, Rate-Limited.',
     general:     'Globaler Fallback — wird genutzt wenn kein Bereich passt.',
   };
+
+  /**
+   * Anzeige-Titel pro Kategorie in der Modelle-Tabelle. Ohne diesen Input würde
+   * die Library ab v0.10.0 die Kategorie-Strings capitalizen (`free-only` →
+   * `Free Only`); wir wollen explizite, sprechende Labels.
+   */
+  readonly categoryTitles: Record<string, string> = {
+    cloud:       'Cloud — Premium-Modelle',
+    'free-only': 'Free Only — kostenfrei',
+    general:     'General — Fallback',
+  };
+
+  /**
+   * Reihenfolge der Kategorie-Sektionen in der Modelle-Tabelle. Cloud zuerst
+   * (Default für den Switcher), Free-Only danach. `general` ist Fallback und
+   * landet automatisch hinten falls überhaupt jemand ein `general`-Modell hat.
+   */
+  readonly cascadeOrder: string[] = ['cloud', 'free-only', 'general'];
 
   readonly status = signal<SwitcherStatus | null>(null);
   readonly warn = signal<{ percent: number; project?: string } | null>(null);
