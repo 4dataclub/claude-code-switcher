@@ -175,12 +175,13 @@ export class AppComponent implements OnDestroy {
 
   /**
    * Sub-Hints pro Cascade-Name — wird als Untertitel unter dem Cascade-Namen angezeigt.
-   * Switcher nutzt „default" (primäre Modelle) + „fallback" (kostenfreie OR-Modelle).
+   * Switcher nutzt „cloud" (bezahlte Tier-Modelle) + „free-only" (kostenfreie OR-Modelle).
+   * Phase S'': Umbenennung default→cloud, fallback→free-only.
    */
   readonly cascadeHints: Record<string, string> = {
-    default:  'Primäre Modelle (bezahlte API) — höchste Qualität, eigener Cooldown.',
-    fallback: 'Kostenfreie OpenRouter-Modelle — unabhängiger Cooldown vom default-Bereich.',
-    general:  'Globaler Fallback — wird genutzt wenn kein Bereich passt.',
+    cloud:       'Bezahlte Tier-Modelle (Anthropic / Google / OpenRouter) — eigener Cooldown.',
+    'free-only': 'Kostenfreie OpenRouter-Modelle — kein Cooldown, Rate-Limited.',
+    general:     'Globaler Fallback — wird genutzt wenn kein Bereich passt.',
   };
 
   readonly status = signal<SwitcherStatus | null>(null);

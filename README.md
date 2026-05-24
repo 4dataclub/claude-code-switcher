@@ -62,6 +62,7 @@ Status-Bar zeigt aktiven Provider nach Auto-Switch
 - [Setup Windows (PowerShell)](#setup-windows-powershell)
 - [UI bedienen](#ui-bedienen)
 - [Failover-Chain](#failover-chain)
+- [Cascade-Struktur](#cascade-struktur)
 - [Was kostet was](#was-kostet-was)
 - [Datenschutz](#datenschutz)
 - [Architektur](#architektur)
@@ -292,6 +293,38 @@ Default-Reihenfolge wenn Anthropic-Quota leer ist:
 ¹ Schätzung für ~500 K Input + 50 K Output Tokens. Tatsächliche Kosten variieren.
 
 Im UI editierbar — du kannst je Stufe Provider und Modell ändern.
+
+---
+
+## Cascade-Struktur
+
+Der Switcher verwaltet seine Modelle in zwei unabhängigen Cascades, die im
+Admin-UI als separate Tabs sichtbar sind (`<ki-cascades-view>`):
+
+```
+┌─ free-only ──────────────────┐   ┌─ cloud ──────────────────────┐
+│ deepseek/deepseek-v3 (free)  │   │ claude-opus-4-7 (Anthropic)  │
+│ llama-3.3-70b (free)         │   │ gemini-2.5-pro (Google)      │
+│ gemma-3-4b (free)            │   │ gpt-oss-120b (OpenRouter)    │
+│                              │   │                              │
+│ cooldown: keiner             │   │ cooldown: 32 s (Standard)    │
+│ (kostenlos, Rate-Limitiert)  │   │ (eigener unabhängiger Timer) │
+└──────────────────────────────┘   └──────────────────────────────┘
+```
+
+**Warum zwei getrennte Bereiche?**
+
+| | `cloud` | `free-only` |
+|---|---|---|
+| **Kosten** | bezahlt (API-Abrechnung) | kostenlos |
+| **Qualität** | hoch | variabel |
+| **Cooldown** | eigener Timer (llm-cascade) | nicht nötig — kein Rate-Limit-Risiko |
+| **Typischer Einsatz** | Hauptarbeit, komplexe Tasks | Notnagel bei Quota-Leer |
+
+Die Trennung ist semantisch grundverschieden von EduPro (`utility`/`content`
+nach Task-Typ) — hier geht es um **Kosten-Tier**, nicht um den Verwendungszweck.
+Beide Apps nutzen dieselbe `@4dataclub/ki-models-ui` Library; die Kategorienamen
+kommen direkt aus der Datenbank und werden als Tab-Titel angezeigt.
 
 ---
 
