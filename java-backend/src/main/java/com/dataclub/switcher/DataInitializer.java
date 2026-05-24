@@ -73,7 +73,7 @@ public class DataInitializer {
             new Default("gemini",     "gemini-2.5-pro",                           "Gemini 2.5 Pro",        "geminiApiKey",     "cloud"),
             new Default("openrouter", "openai/gpt-oss-120b:free",                 "GPT-OSS 120B (OR)",     "openrouterApiKey", "cloud"),
             // ── free-only-Cascade: kostenfreie OpenRouter-Modelle (kein Cooldown) ──
-            new Default("openrouter", "deepseek/deepseek-chat-v3-0324:free",      "DeepSeek V3 (free)",    "openrouterApiKey", "free-only"),
+            new Default("openrouter", "deepseek/deepseek-v4-flash:free",          "DeepSeek V4 Flash (free)", "openrouterApiKey", "free-only"),
             new Default("openrouter", "meta-llama/llama-3.3-70b-instruct:free",   "Llama 3.3 70B (free)",  "openrouterApiKey", "free-only"),
             new Default("openrouter", "google/gemma-3-4b-it:free",                "Gemma 3 4B (free)",     "openrouterApiKey", "free-only")
         );

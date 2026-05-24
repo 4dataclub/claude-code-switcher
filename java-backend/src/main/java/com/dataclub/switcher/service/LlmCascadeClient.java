@@ -138,5 +138,50 @@ public class LlmCascadeClient {
         }
     }
 
+    /**
+     * Display-Metadaten pro Kategorie — Proxy zu GET /api/categories.
+     * Liefert pro Kategorie: name, displayName, description, orderIdx.
+     * Wird vom Frontend-Library-Component {@code <ki-cascades-view>} (für
+     * Title/Hint pro Bereich) + {@code <ki-add-model-form>} (für das
+     * Kategorie-Dropdown beim Anlegen) gelesen. Fallback: leeres Array.
+     */
+    public JsonNode getCategories() {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/categories", String.class);
+            return json == null ? mapper.createArrayNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createArrayNode();
+        }
+    }
+
+    /**
+     * Upsert für die Metadaten einer Kategorie — Proxy zu PUT /api/categories/{name}.
+     * Body wird unverändert durchgereicht: {displayName?, description?, orderIdx?}.
+     * Liefert true bei HTTP 2xx, false sonst.
+     */
+    public boolean updateCategory(String name, JsonNode body) {
+        try {
+            org.springframework.http.HttpHeaders h = new org.springframework.http.HttpHeaders();
+            h.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            org.springframework.http.HttpEntity<String> req = new org.springframework.http.HttpEntity<>(
+                body == null ? "{}" : mapper.writeValueAsString(body), h);
+            rest.exchange(cascadeUrl + "/api/categories/" + name,
+                org.springframework.http.HttpMethod.PUT, req, String.class);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Löscht NUR die Metadaten-Zeile (Kategorie selbst bleibt). */
+    public boolean deleteCategoryMeta(String name) {
+        try {
+            rest.delete(cascadeUrl + "/api/categories/" + name);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public String url() { return cascadeUrl; }
 }

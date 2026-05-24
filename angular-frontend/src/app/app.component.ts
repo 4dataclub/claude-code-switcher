@@ -112,6 +112,7 @@ import {
         ></ki-models-table>
         <ki-add-model-form
           [labels]="addModelFormLabels"
+          [defaultCategoryByProvider]="defaultCategoryByProvider"
           (modelCreated)="onModelCreated()"
         ></ki-add-model-form>
       </section>
@@ -204,6 +205,22 @@ export class AppComponent implements OnDestroy {
    * landet automatisch hinten falls überhaupt jemand ein `general`-Modell hat.
    */
   readonly cascadeOrder: string[] = ['cloud', 'free-only', 'general'];
+
+  /**
+   * Default-Kategorie pro Provider — wird beim Provider-Wechsel im "Neues
+   * Modell hinzufügen"-Form vorgewählt. Switcher-Schema: Anthropic/Gemini
+   * sind cloud (bezahlt), OpenRouter ist free-only (typisch :free), Ollama
+   * läuft lokal und kommt nicht in die Cascade.
+   */
+  readonly defaultCategoryByProvider: Record<string, string> = {
+    anthropic:     'cloud',
+    gemini:        'cloud',
+    openai:        'cloud',
+    deepseek:      'cloud',
+    openrouter:    'free-only',
+    ollama:        'general',
+    openai_compat: 'general',
+  };
 
   readonly status = signal<SwitcherStatus | null>(null);
   readonly warn = signal<{ percent: number; project?: string } | null>(null);
