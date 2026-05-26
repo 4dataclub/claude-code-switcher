@@ -7,7 +7,30 @@
 >
 > **Pattern-übergeordnet:** Jedes 4dataclub-Repo bekommt eine `TODOS.md`.
 
-Stand: 2026-05-19 — Phase K ✅ fertig, PR #7 merged, Phase L.2 ist nächster Schritt
+Stand: 2026-05-24 — Phase K ✅, S'' PR #40 offen (cascade free-only/cloud)
+
+---
+
+## 🔵 Phase S'' — Cascade-Kategorien `free-only` + `cloud` — PR #40 OFFEN
+
+> Switcher nutzt `free-only` / `cloud` (Kosten-Tier), **nicht** `utility`/`content` wie EduPro.
+>
+> ```
+> ┌─ free-only ──────┐   ┌─ cloud ────────┐
+> │ deepseek-free    │   │ claude-opus    │
+> │ llama-3.3        │   │ gpt-4o         │
+> │ gemma3           │   │ gemini-pro     │
+> │ cooldown: 0s     │   │ cooldown: 32s  │ ← unabhängig
+> └──────────────────┘   └────────────────┘
+> ```
+
+| # | Task | Status |
+|---|---|---|
+| S2.1 | DataInitializer: `default`→`cloud`, `fallback`→`free-only` | ✅ PR #40 |
+| S2.2 | DB-Migration bestehender Einträge (idempotent) | ✅ PR #40 |
+| S2.3 | Modell-Seed: cloud + free-only neu | ✅ PR #40 |
+| S2.4 | Angular cascadeHints-Map auf neue Keys umgestellt | ✅ PR #40 |
+| S2.5 | README Cascade-Diagramm | ✅ PR #40 |
 
 ---
 

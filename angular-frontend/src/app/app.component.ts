@@ -104,11 +104,15 @@ import {
           [labels]="modelsTableLabels"
           [showActiveAction]="true"
           [activeModelId]="activeModel()"
+          [categoryTitles]="categoryTitles"
+          [categoryHints]="cascadeHints"
+          [categoryOrder]="cascadeOrder"
           (modelChanged)="reload()"
           (activeModelChanged)="onSwitchToModel($event)"
         ></ki-models-table>
         <ki-add-model-form
           [labels]="addModelFormLabels"
+          [defaultCategoryByProvider]="defaultCategoryByProvider"
           (modelCreated)="onModelCreated()"
         ></ki-add-model-form>
       </section>
@@ -175,12 +179,47 @@ export class AppComponent implements OnDestroy {
 
   /**
    * Sub-Hints pro Cascade-Name — wird als Untertitel unter dem Cascade-Namen angezeigt.
-   * Switcher nutzt „default" (primäre Modelle) + „fallback" (kostenfreie OR-Modelle).
+   * Switcher nutzt „cloud" (bezahlte Tier-Modelle) + „free-only" (kostenfreie OR-Modelle).
+   * Phase S'': Umbenennung default→cloud, fallback→free-only.
    */
   readonly cascadeHints: Record<string, string> = {
-    default:  'Primäre Modelle (bezahlte API) — höchste Qualität, eigener Cooldown.',
-    fallback: 'Kostenfreie OpenRouter-Modelle — unabhängiger Cooldown vom default-Bereich.',
-    general:  'Globaler Fallback — wird genutzt wenn kein Bereich passt.',
+    cloud:       'Bezahlte Tier-Modelle (Anthropic / Google / OpenRouter) — eigener Cooldown.',
+    'free-only': 'Kostenfreie OpenRouter-Modelle — kein Cooldown, Rate-Limited.',
+    general:     'Globaler Fallback — wird genutzt wenn kein Bereich passt.',
+  };
+
+  /**
+   * Anzeige-Titel pro Kategorie in der Modelle-Tabelle. Ohne diesen Input würde
+   * die Library ab v0.10.0 die Kategorie-Strings capitalizen (`free-only` →
+   * `Free Only`); wir wollen explizite, sprechende Labels.
+   */
+  readonly categoryTitles: Record<string, string> = {
+    cloud:       'Cloud — Premium-Modelle',
+    'free-only': 'Free Only — kostenfrei',
+    general:     'General — Fallback',
+  };
+
+  /**
+   * Reihenfolge der Kategorie-Sektionen in der Modelle-Tabelle. Cloud zuerst
+   * (Default für den Switcher), Free-Only danach. `general` ist Fallback und
+   * landet automatisch hinten falls überhaupt jemand ein `general`-Modell hat.
+   */
+  readonly cascadeOrder: string[] = ['cloud', 'free-only', 'general'];
+
+  /**
+   * Default-Kategorie pro Provider — wird beim Provider-Wechsel im "Neues
+   * Modell hinzufügen"-Form vorgewählt. Switcher-Schema: Anthropic/Gemini
+   * sind cloud (bezahlt), OpenRouter ist free-only (typisch :free), Ollama
+   * läuft lokal und kommt nicht in die Cascade.
+   */
+  readonly defaultCategoryByProvider: Record<string, string> = {
+    anthropic:     'cloud',
+    gemini:        'cloud',
+    openai:        'cloud',
+    deepseek:      'cloud',
+    openrouter:    'free-only',
+    ollama:        'general',
+    openai_compat: 'general',
   };
 
   readonly status = signal<SwitcherStatus | null>(null);

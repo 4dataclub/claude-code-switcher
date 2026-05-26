@@ -532,6 +532,32 @@ public class ApiController {
         return cascade.getCascades();
     }
 
+    /**
+     * Proxy zu llm-cascade GET/PUT/DELETE /api/categories — Display-Metadaten
+     * pro Kategorie (displayName, description, orderIdx). Wird vom Frontend
+     * für den Inline-Edit in der Cascades-View + das Kategorie-Dropdown im
+     * "Neues Modell hinzufügen"-Form genutzt.
+     */
+    @GetMapping("/categories")
+    public com.fasterxml.jackson.databind.JsonNode categories() {
+        return cascade.getCategories();
+    }
+
+    @PutMapping("/categories/{name}")
+    public ResponseEntity<Map<String, Object>> categoryUpsert(@PathVariable String name,
+                                                              @RequestBody com.fasterxml.jackson.databind.JsonNode body) {
+        boolean ok = cascade.updateCategory(name, body);
+        return ok ? ResponseEntity.ok(Map.of("ok", true))
+                  : ResponseEntity.status(502).body(Map.of("ok", false, "error", "llm-cascade upstream failed"));
+    }
+
+    @DeleteMapping("/categories/{name}")
+    public ResponseEntity<Map<String, Object>> categoryDeleteMeta(@PathVariable String name) {
+        boolean ok = cascade.deleteCategoryMeta(name);
+        return ok ? ResponseEntity.ok(Map.of("ok", true))
+                  : ResponseEntity.status(502).body(Map.of("ok", false, "error", "llm-cascade upstream failed"));
+    }
+
     // ─── Cascade-Cooldown-Override (Tri-State, analog EduPro PR #37) ─────────
 
     @GetMapping("/cascade-cooldown-override")
