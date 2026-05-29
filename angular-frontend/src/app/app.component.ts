@@ -5,6 +5,7 @@ import {
   AddModelFormComponent,
   CascadesViewComponent,
   ApiKeysSectionComponent,
+  RoutingDecisionsComponent,
   CascadesViewLabels,
   FailoverChainLabels,
 } from '@4dataclub/ki-models-ui';
@@ -45,6 +46,7 @@ import {
     AddModelFormComponent,
     CascadesViewComponent,
     ApiKeysSectionComponent,
+    RoutingDecisionsComponent,
   ],
   template: `
     <main class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 space-y-6">
@@ -120,6 +122,13 @@ import {
       <!-- API-Keys (Library-Component, identisch zu EduPro) -->
       <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
         <ki-api-keys-section [labels]="apiKeysSectionLabels" (keyChanged)="onKeyChanged()"></ki-api-keys-section>
+      </section>
+
+      <!-- Semantic-Routing-Cache (Library v0.11.0, llm-cascade ≥ 0.6.0).
+           Zeigt cached purpose → category Entscheidungen + Test-Preview-Input.
+           Bei Backend ohne /routing-Endpoint (Pre-0.6.0): empty state, kein Crash. -->
+      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
+        <ki-routing-decisions></ki-routing-decisions>
       </section>
 
       <!-- Switcher-spezifisch: Claude-Restart-Trigger -->
