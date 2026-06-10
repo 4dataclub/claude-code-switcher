@@ -542,6 +542,40 @@ Wrapper-Alias entfernen: die Zeilen zwischen `# === claude-switcher ===` und `# 
 
 ---
 
+## Lokale Modelle (optional, Profile `local-llm`)
+
+Default startet der Switcher OHNE Ollama — die meisten Nutzer:innen
+wollen ja zwischen Cloud-Providern (Anthropic / Google / OpenRouter)
+switchen, nicht ein 3-GB-Modell lokal laufen lassen.
+
+Wer trotzdem lokal kostenlos generieren will:
+
+```bash
+docker compose --profile local-llm up -d
+```
+
+Das startet einen zusätzlichen `claude-switcher-ollama-1` Container der
+beim ersten Start `gemma3:4b` (~3.3 GB) zieht. Aus dem Switcher-UI:
+
+1. „KI-Modelle" → „Modell hinzufügen" → Provider `ollama`, Modell-ID
+   `gemma3:4b`, Kategorie `free-only` (oder eigene).
+2. „Test" sollte jetzt ✓ zurückgeben.
+
+Anderes Modell statt gemma:
+
+```bash
+docker exec claude-switcher-ollama-1 ollama pull llama3.2:3b
+```
+
+Dann im UI das Modell mit ID `llama3.2:3b` anlegen.
+
+**Warum opt-in?** Ohne das Profile startet Ollama nicht — der Cascade
+wirft beim Test einen sprechenden „Ollama unreachable"-Fehler statt zu
+crashen. Modelle die andere Provider nutzen funktionieren unverändert
+weiter.
+
+---
+
 ## Sicherheit
 
 - **Niemals** `~/.claude/settings.json` committen — enthält API-Keys.
