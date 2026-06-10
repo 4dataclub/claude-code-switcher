@@ -6,6 +6,7 @@ import {
   CascadesViewComponent,
   ApiKeysSectionComponent,
   RoutingDecisionsComponent,
+  ModelsQualityStatsComponent,
   CascadesViewLabels,
   FailoverChainLabels,
 } from '@4dataclub/ki-models-ui';
@@ -47,6 +48,7 @@ import {
     CascadesViewComponent,
     ApiKeysSectionComponent,
     RoutingDecisionsComponent,
+    ModelsQualityStatsComponent,
   ],
   template: `
     <main class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 space-y-6">
@@ -130,6 +132,19 @@ import {
            Bei Backend ohne /routing-Endpoint (Pre-0.6.0): empty state, kein Crash. -->
       <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
         <ki-routing-decisions></ki-routing-decisions>
+      </section>
+
+      <!-- Quality-Stats (Library v0.12.0, llm-cascade ≥ 0.7.2).
+           Worst-first: KILL-Kandidaten (✗ Score < 0.1) stehen oben damit der
+           User sofort sieht welche Modelle Probleme machen. Switcher delegiert
+           via cascade.getQualityStats() an die llm-cascade-Sidecar (gemeinsame
+           DB mit Switcher) — bei Cascade < 0.7.2 zeigt die Component „keine
+           Daten" statt zu crashen. -->
+      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
+        <ki-models-quality-stats
+          [title]="'Modell-Qualität — letzte 30 Tage'"
+          [subtitle]="'Schlechte Modelle stehen oben. KILL-Kandidaten sollten deaktiviert werden.'">
+        </ki-models-quality-stats>
       </section>
 
       <!-- Switcher-spezifisch: Claude-Restart-Trigger -->
