@@ -87,7 +87,7 @@ services:
       start_period: 10s
 
   llm-cascade:
-    image: ghcr.io/4dataclub/llm-cascade:0.7.2
+    image: ghcr.io/4dataclub/llm-cascade:0.7.3
     container_name: claude-switcher-llm-cascade-1
     ports:
       - "127.0.0.1:8091:8090"
@@ -95,6 +95,11 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/switcher
       SPRING_DATASOURCE_USERNAME: switcher
       SPRING_DATASOURCE_PASSWORD: switcher
+      # Wenn das optionale `local-llm`-Profile aktiv ist, sieht der Cascade
+      # den `ollama`-Service im selben Netz. Ohne Profile bleibt die Variable
+      # gesetzt — der Cascade wird dann beim Test des Modells einen sauberen
+      # "Ollama unreachable"-Fehler bringen statt zu crashen.
+      OLLAMA_BASE_URL: http://ollama:11434/v1
     depends_on:
       - db
     restart: unless-stopped
@@ -110,5 +115,32 @@ services:
       - switcher_pgdata:/var/lib/postgresql/data
     restart: unless-stopped
 
+  # ─── Optional: Lokales Ollama (Profile `local-llm`) ─────────────────────
+  # NICHT default-an, weil Ollama beim ersten Start mehrere GB Modell-Weights
+  # zieht (gemma3:4b allein ist ~3.3 GB). Wer das will, startet:
+  #
+  #   docker compose --profile local-llm up -d
+  #
+  # Dann ist der Service unter `http://ollama:11434/v1` aus dem Cascade-
+  # Container erreichbar und Modelle wie `ollama:gemma3:4b` funktionieren.
+  #
+  # Wer NICHT braucht: einfach den default `docker compose up -d` nutzen —
+  # Ollama startet dann nicht. Modelle die in der DB stehen aber Ollama
+  # brauchen, werfen einen sprechenden "Ollama unreachable"-Fehler im
+  # Test-Result; die anderen Modelle funktionieren weiter.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: claude-switcher-ollama-1
+    profiles: ["local-llm"]
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    # Beim Start: gemma3:4b pullen (idempotent, springt nur an wenn nicht
+    # schon im Volume). Wer ein anderes Modell will: `docker exec
+    # claude-switcher-ollama-1 ollama pull <model>` oder über das Switcher-UI
+    # die Modell-ID in der ai_model_config-Tabelle aendern.
+    entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull gemma3:4b; wait"]
+
 volumes:
   switcher_pgdata:
+  ollama_data:
