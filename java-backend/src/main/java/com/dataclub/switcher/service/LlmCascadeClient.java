@@ -183,5 +183,30 @@ public class LlmCascadeClient {
         }
     }
 
+    /**
+     * Quality-Stats pro Modell — Proxy zu GET /api/stats/quality (llm-cascade
+     * ≥ 0.7.2). Liefert pro Modell {@code QualityStatRow} mit Score, Tier
+     * (★/◐/▽/✗/?), successRate, avgChars, callsLast30d.
+     *
+     * Default-Sortierung „worst-first" damit KILL-Kandidaten in der
+     * UI oben sichtbar sind. Wird von der Library-Component
+     * {@code <ki-models-quality-stats>} aus {@code @4dataclub/ki-models-ui}
+     * v0.12.0 aufgerufen.
+     *
+     * Bei Backend-Fehler/Verfügbarkeitsproblem (z.B. llm-cascade unreachable
+     * oder Version &lt; 0.7.2) → leeres Array. Frontend zeigt dann „keine
+     * Daten" statt zu crashen.
+     */
+    public JsonNode getQualityStats(String sortBy) {
+        try {
+            String url = cascadeUrl + "/api/stats/quality"
+                + (sortBy == null || sortBy.isBlank() ? "" : "?sortBy=" + sortBy);
+            String json = rest.getForObject(url, String.class);
+            return json == null ? mapper.createArrayNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createArrayNode();
+        }
+    }
+
     public String url() { return cascadeUrl; }
 }

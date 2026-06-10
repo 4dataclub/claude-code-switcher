@@ -87,7 +87,7 @@ services:
       start_period: 10s
 
   llm-cascade:
-    image: ghcr.io/4dataclub/llm-cascade:0.6.0
+    image: ghcr.io/4dataclub/llm-cascade:0.7.2
     container_name: claude-switcher-llm-cascade-1
     ports:
       - "127.0.0.1:8091:8090"

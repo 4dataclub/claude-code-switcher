@@ -888,6 +888,27 @@ public class ApiController {
         return setCooldownOverride(req);
     }
 
+    // ─── Quality-Stats (Library-Component <ki-models-quality-stats> v0.12.0) ──
+
+    /**
+     * Proxy für die Quality-Stats aus llm-cascade ≥ 0.7.2.
+     *
+     * Library-Vertrag: {@code GET /stats/quality?sortBy=<mode>} → {@code QualityStatRow[]}
+     * mit pro Modell: id, provider, modelId, displayName, category, enabled,
+     * score, tier ({@code top|ok|weak|kill|unknown}), tierIcon (★/◐/▽/✗/?),
+     * successRate, avgChars, callsLast30d, kill.
+     *
+     * Default {@code sortBy=worst-first}: KILL-Kandidaten (Score &lt; 0.1)
+     * stehen oben. Switcher hat keinen eigenen llm_call_log — wir delegieren
+     * komplett an die Cascade die sich die Daten aus der gemeinsam genutzten
+     * DB holt. Bei Cascade unreachable: leeres Array (graceful fallback).
+     */
+    @GetMapping("/stats/quality")
+    public JsonNode statsQuality(
+            @org.springframework.web.bind.annotation.RequestParam(name = "sortBy", required = false, defaultValue = "worst-first") String sortBy) {
+        return cascade.getQualityStats(sortBy);
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     private static String mask(String k) {
