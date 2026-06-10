@@ -109,6 +109,7 @@ import {
           [categoryTitles]="categoryTitles"
           [categoryHints]="cascadeHints"
           [categoryOrder]="cascadeOrder"
+          [keylessProviders]="switcherKeylessProviders"
           (modelChanged)="reload()"
           (activeModelChanged)="onSwitchToModel($event)"
         ></ki-models-table>
@@ -214,6 +215,19 @@ export class AppComponent implements OnDestroy {
    * landet automatisch hinten falls überhaupt jemand ein `general`-Modell hat.
    */
   readonly cascadeOrder: string[] = ['cloud', 'free-only', 'general'];
+
+  /**
+   * v0.11.3 — Switcher-spezifischer Override für die ki-models-table.
+   * Anthropic via Switcher braucht NICHT zwingend einen sk-ant-Key,
+   * weil Claude Code via Max-OAuth-Cookie zum nächsten Modell wechselt
+   * (kein direkter api.anthropic.com-Call vom Switcher selbst). Daher
+   * zeigt die Tabelle "Lokal" statt "Key fehlt" — und der "Aktiv setzen"-
+   * Button ist auch ohne Key verfügbar.
+   *
+   * Ollama ist immer keyless (vom Backend markiert), egal ob hier
+   * gelistet oder nicht.
+   */
+  readonly switcherKeylessProviders: string[] = ['anthropic'];
 
   /**
    * Default-Kategorie pro Provider — wird beim Provider-Wechsel im "Neues
