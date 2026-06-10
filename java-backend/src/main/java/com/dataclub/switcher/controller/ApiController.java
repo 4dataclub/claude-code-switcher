@@ -909,6 +909,28 @@ public class ApiController {
         return cascade.getQualityStats(sortBy);
     }
 
+    // ─── Quality Auto-Disable Proxy (Library v0.12.1 / Cascade ≥ 0.7.3) ──────
+
+    /**
+     * Manueller Trigger für den Cascade-eigenen Auto-Disable-Job.
+     * Wird vom Library-Component-Button {@code <ki-models-quality-stats>}
+     * → "Auto-Disable jetzt" aufgerufen.
+     */
+    @PostMapping("/quality/run-auto-disable")
+    public JsonNode qualityRunAutoDisable() {
+        return cascade.runQualityAutoDisable();
+    }
+
+    /**
+     * Config-Endpoint für Auto-Disable: Library nutzt das beim Mount um zu
+     * entscheiden ob der Button überhaupt sichtbar gemacht wird. Bei
+     * Cascade unreachable: enabled=false → Button bleibt versteckt.
+     */
+    @GetMapping("/quality/auto-disable-config")
+    public JsonNode qualityAutoDisableConfig() {
+        return cascade.getQualityAutoDisableConfig();
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     private static String mask(String k) {

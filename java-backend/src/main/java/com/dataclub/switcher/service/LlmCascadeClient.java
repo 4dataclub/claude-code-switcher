@@ -208,5 +208,45 @@ public class LlmCascadeClient {
         }
     }
 
+    /**
+     * Manueller Trigger für den llm-cascade Quality-Auto-Disable-Job
+     * (Library v0.12.1 / Cascade ≥ 0.7.3). Proxy zu POST
+     * /api/quality/run-auto-disable.
+     *
+     * Bei Cascade unreachable/alt: leeres Report-Objekt mit error-Hinweis
+     * — Library-Component zeigt graceful „nicht verfügbar"-Banner.
+     */
+    public JsonNode runQualityAutoDisable() {
+        try {
+            String json = rest.postForObject(
+                cascadeUrl + "/api/quality/run-auto-disable", null, String.class);
+            return json == null ? mapper.createObjectNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            com.fasterxml.jackson.databind.node.ObjectNode n = mapper.createObjectNode();
+            n.put("checked", 0);
+            n.set("disabled", mapper.createArrayNode());
+            n.put("error", "Cascade nicht erreichbar oder Version < 0.7.3");
+            return n;
+        }
+    }
+
+    /**
+     * Config-Endpoint für Auto-Disable: {@code {enabled, minCalls, note}}.
+     * Wird vom Library-Component beim Mount geholt um zu entscheiden ob
+     * der „Auto-Disable jetzt"-Button gerendert wird.
+     */
+    public JsonNode getQualityAutoDisableConfig() {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/quality/auto-disable-config", String.class);
+            return json == null ? mapper.createObjectNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            com.fasterxml.jackson.databind.node.ObjectNode n = mapper.createObjectNode();
+            n.put("enabled", false);
+            n.put("minCalls", 50);
+            n.put("note", "Cascade < 0.7.3");
+            return n;
+        }
+    }
+
     public String url() { return cascadeUrl; }
 }
