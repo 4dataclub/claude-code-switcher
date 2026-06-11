@@ -265,6 +265,34 @@ public class LlmCascadeClient {
     }
 
     /**
+     * Performance-Stats pro (provider, model) der letzten 30 Tage
+     * (Library v0.14.0 / Cascade ≥ 0.7.6).
+     */
+    public JsonNode getPerformance(String sortBy) {
+        try {
+            String url = cascadeUrl + "/api/stats/performance"
+                + (sortBy == null || sortBy.isBlank() ? "" : "?sortBy=" + sortBy);
+            String json = rest.getForObject(url, String.class);
+            return json == null ? mapper.createArrayNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createArrayNode();
+        }
+    }
+
+    /**
+     * Cooldown + Auto-Disable State pro Modell. Wird mit Auto-Refresh
+     * vom <ki-models-cooldown-state> aufgerufen.
+     */
+    public JsonNode getCooldownStateList() {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/cooldown-state", String.class);
+            return json == null ? mapper.createArrayNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createArrayNode();
+        }
+    }
+
+    /**
      * Config-Endpoint für Auto-Disable: {@code {enabled, minCalls, note}}.
      * Wird vom Library-Component beim Mount geholt um zu entscheiden ob
      * der „Auto-Disable jetzt"-Button gerendert wird.

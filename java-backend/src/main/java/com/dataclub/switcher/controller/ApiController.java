@@ -909,6 +909,26 @@ public class ApiController {
         return cascade.getQualityStats(sortBy);
     }
 
+    /**
+     * Performance-Stats pro Modell (Library v0.14.0 / Cascade ≥ 0.7.6).
+     * Wird vom <ki-models-performance>-Component aufgerufen.
+     */
+    @GetMapping("/stats/performance")
+    public JsonNode statsPerformance(
+            @org.springframework.web.bind.annotation.RequestParam(name = "sortBy", required = false, defaultValue = "calls-desc") String sortBy) {
+        return cascade.getPerformance(sortBy);
+    }
+
+    /**
+     * Cooldown + Auto-Disable State pro Modell. Wird vom
+     * <ki-models-cooldown-state>-Component im Auto-Refresh-Intervall
+     * (30s default) aufgerufen.
+     */
+    @GetMapping("/cooldown-state")
+    public JsonNode cooldownState() {
+        return cascade.getCooldownStateList();
+    }
+
     // ─── Quality Auto-Disable Proxy (Library v0.12.1 / Cascade ≥ 0.7.3) ──────
 
     /**
