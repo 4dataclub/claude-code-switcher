@@ -51,6 +51,9 @@ export interface SwitcherAiModel {
   enabled: boolean;
   keyConfigured: boolean;
   autoDisabled?: boolean;
+  /** v0.7.5: Cascade-Kategorie ('cloud', 'free-only', null=general).
+   *  Mode-Panel filtert die Manuell-Picker-Liste danach. */
+  category?: string | null;
 }
 
 @Injectable({ providedIn: 'root' })
