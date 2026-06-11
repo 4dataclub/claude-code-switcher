@@ -276,10 +276,11 @@ export class ModePanelComponent {
    */
   readonly cascadeModePanelLabels = {
     toggleLegend: 'Bereich',
-    hintSemanticRouting: 'Semantic Routing — Cascade entscheidet pro Call.',
+    hintSemanticRouting: 'Auto-Routing — Cascade entscheidet pro Call welcher Bereich.',
     hintOverrideTemplate: 'Override: alle Generate-Calls gehen an „{cat}".',
     autoCardActiveTemplate: 'Auto-Failover läuft via Cascade-Bereich „{cat}". Reihenfolge + Cooldown siehe Card unten.',
-    autoCardSemanticHint: 'Semantic Routing aktiv — wähle einen Bereich oben für gezielten Override.',
+    autoCardSemanticHint: 'Auto-Routing aktiv — wähle einen Bereich oben für gezielten Override.',
     btnScrollToCascade: '↓ Zur Cascade-Konfiguration',
+    offButtonLabel: 'Auto',
   };
 }
