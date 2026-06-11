@@ -98,4 +98,26 @@ export class SwitcherApiService {
   eventsUrl(): string {
     return '/api/events';
   }
+
+  // ─── v0.7.5: Cascade-Bereiche + Preferred-Category Toggle ────────────────
+
+  /** Liste der konfigurierten Cascade-Bereiche (für das Bereich-Toggle im
+   *  Modus-Panel). Proxy zum llm-cascade `/api/cascades`. */
+  listCascades(): Observable<any[]> {
+    return this.http.get<any[]>('/api/cascades');
+  }
+
+  /** Aktuell vom User gewählter Cascade-Override.
+   *  Leerer String = Semantic Routing aktiv. */
+  getPreferredCategory(): Observable<{ category: string; active: boolean; note?: string }> {
+    return this.http.get<{ category: string; active: boolean; note?: string }>('/api/preferred-category');
+  }
+
+  /** Setzt den Cascade-Override. `""` = zurück zu Semantic Routing. */
+  setPreferredCategory(category: string): Observable<{ ok: boolean; category: string }> {
+    return this.http.post<{ ok: boolean; category: string }>(
+      '/api/preferred-category',
+      { category }
+    );
+  }
 }

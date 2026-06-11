@@ -931,6 +931,28 @@ public class ApiController {
         return cascade.getQualityAutoDisableConfig();
     }
 
+    // ─── Preferred Category Toggle (v0.7.5) ─────────────────────────────────
+
+    /**
+     * Liest die aktuell vom User gewählte Kategorie (Switcher-UI Modus-Panel
+     * „Cloud / Free"). Proxied direkt an die Cascade.
+     */
+    @GetMapping("/preferred-category")
+    public JsonNode preferredCategory() {
+        return cascade.getPreferredCategory();
+    }
+
+    /**
+     * Setzt die Kategorie. Body: {@code {"category": "cloud"}} | {@code {"category": "free-only"}}
+     * | {@code {"category": ""}} (Empty = zurueck zu Semantic Routing).
+     */
+    @PostMapping("/preferred-category")
+    public Map<String, Object> setPreferredCategory(@RequestBody Map<String, Object> body) {
+        String value = body == null || !(body.get("category") instanceof String s) ? "" : s;
+        boolean ok = cascade.setPreferredCategory(value);
+        return Map.of("ok", ok, "category", value);
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     private static String mask(String k) {

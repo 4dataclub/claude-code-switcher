@@ -83,10 +83,14 @@ import {
           [activeProvider]="status()?.provider ?? null"
           [activeModel]="activeModel()"
           [availableModels]="availableModels()"
+          [categories]="categoriesList()"
+          [activeCategory]="preferredCategory()"
+          [categoryHintMap]="cascadeHints"
           (modeChanged)="onModeChange($event)"
           (chainChanged)="onChainChange($event)"
           (promoteRequested)="onPromote()"
           (switchTo)="onSwitchTo($event)"
+          (categoryChanged)="onCategoryChange($event)"
         ></sw-mode-panel>
       </section>
 
@@ -274,12 +278,43 @@ export class AppComponent implements OnDestroy {
    */
   readonly availableModels = signal<{ provider: string; modelId: string; displayName: string }[]>([]);
 
+  /** v0.7.5 — Liste der verfügbaren Cascade-Bereiche (cloud, free-only, …).
+   *  Wird beim Init via GET /api/cascades geholt. */
+  readonly categoriesList = signal<string[]>([]);
+  /** v0.7.5 — Aktuell vom User gewählter Override (leer = Semantic Routing). */
+  readonly preferredCategory = signal<string>('');
+
   /** EventSource für SSE-Live-Updates. Wird in ngOnInit aufgemacht + ngOnDestroy geschlossen. */
   private es: EventSource | null = null;
 
   ngOnInit(): void {
     this.reload();
     this.startSse();
+    this.loadCategoriesAndPref();
+  }
+
+  /**
+   * v0.7.5 — Cascade-Bereiche + Preferred-Category beim Mount laden.
+   *  - Bereiche-Liste aus GET /api/cascades (was eh schon im Cascades-View
+   *    rendert) → wir nehmen nur die Namen für das Modus-Panel-Toggle.
+   *  - Preferred-Category aus GET /api/preferred-category → signal-set
+   *    damit der korrekte Toggle vor-gehighlighted ist.
+   *
+   * Fehler werden geschluckt — bei Cascade < 0.7.5 bleibt der Toggle
+   * versteckt (categoriesList leer) und der State leer.
+   */
+  private loadCategoriesAndPref(): void {
+    this.api.listCascades().subscribe({
+      next: (cs: any[]) => {
+        const names = Array.isArray(cs) ? cs.map((c) => c?.name).filter((n): n is string => !!n) : [];
+        this.categoriesList.set(names);
+      },
+      error: () => this.categoriesList.set([]),
+    });
+    this.api.getPreferredCategory().subscribe({
+      next: (resp: any) => this.preferredCategory.set(resp?.category || ''),
+      error: () => this.preferredCategory.set(''),
+    });
   }
 
   ngOnDestroy(): void {
@@ -432,6 +467,24 @@ export class AppComponent implements OnDestroy {
       fallback_chain: this.status()?.fallback_chain,
       chain_position: this.status()?.chain_position,
     }).subscribe(() => this.reload());
+  }
+
+  /**
+   * v0.7.5 — User klickt einen Cascade-Bereich (Cloud / Free Only).
+   * POST /api/preferred-category → bei Success: lokales Signal updaten +
+   * status-bar neu lesen.
+   *
+   * Leer-String setzt zurück auf Semantic Routing.
+   */
+  onCategoryChange(category: string): void {
+    this.api.setPreferredCategory(category).subscribe({
+      next: () => {
+        this.preferredCategory.set(category);
+      },
+      error: () => {
+        // Backend nicht da → Signal nicht updaten, UI bleibt im alten State.
+      },
+    });
   }
 
   onChainChange(chain: ChainEntry[]): void {

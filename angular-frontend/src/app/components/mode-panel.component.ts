@@ -60,30 +60,55 @@ const PROVIDER_MODELS: Record<string, { id: string; name: string }[]> = {
   imports: [CommonModule, FormsModule, FailoverChainComponent],
   template: `
     <div>
-      <!-- Tab-Toggle Manuell / Auto-Failover -->
-      <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
-        <button
-          type="button"
-          (click)="setMode('manual')"
-          class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
-          [class.bg-slate-950]="mode === 'manual'"
-          [class.text-slate-50]="mode === 'manual'"
-          [class.dark:bg-slate-50]="mode === 'manual'"
-          [class.dark:text-slate-950]="mode === 'manual'"
-          [class.text-slate-500]="mode !== 'manual'"
-          [class.dark:text-slate-400]="mode !== 'manual'"
-        >Manuell</button>
-        <button
-          type="button"
-          (click)="setMode('auto')"
-          class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
-          [class.bg-slate-950]="mode === 'auto'"
-          [class.text-slate-50]="mode === 'auto'"
-          [class.dark:bg-slate-50]="mode === 'auto'"
-          [class.dark:text-slate-950]="mode === 'auto'"
-          [class.text-slate-500]="mode !== 'auto'"
-          [class.dark:text-slate-400]="mode !== 'auto'"
-        >Auto-Failover</button>
+      <!-- Row 1: Bereich-Toggle (Cascade-Kategorie) -->
+      <div *ngIf="categories.length > 0" class="mb-3 flex items-center gap-3 flex-wrap">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Bereich</span>
+        <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
+          <button *ngFor="let c of categories"
+                  type="button"
+                  (click)="setCategory(c)"
+                  class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
+                  [class.bg-slate-950]="activeCategory === c"
+                  [class.text-slate-50]="activeCategory === c"
+                  [class.dark:bg-slate-50]="activeCategory === c"
+                  [class.dark:text-slate-950]="activeCategory === c"
+                  [class.text-slate-500]="activeCategory !== c"
+                  [class.dark:text-slate-400]="activeCategory !== c">
+            {{ categoryLabel(c) }}
+          </button>
+        </div>
+        <span class="text-xs text-slate-500 dark:text-slate-400 italic">
+          {{ activeCategoryHint() }}
+        </span>
+      </div>
+
+      <!-- Row 2: Tab-Toggle Manuell / Auto-Failover -->
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Switching</span>
+        <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
+          <button
+            type="button"
+            (click)="setMode('manual')"
+            class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
+            [class.bg-slate-950]="mode === 'manual'"
+            [class.text-slate-50]="mode === 'manual'"
+            [class.dark:bg-slate-50]="mode === 'manual'"
+            [class.dark:text-slate-950]="mode === 'manual'"
+            [class.text-slate-500]="mode !== 'manual'"
+            [class.dark:text-slate-400]="mode !== 'manual'"
+          >Manuell</button>
+          <button
+            type="button"
+            (click)="setMode('auto')"
+            class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
+            [class.bg-slate-950]="mode === 'auto'"
+            [class.text-slate-50]="mode === 'auto'"
+            [class.dark:bg-slate-50]="mode === 'auto'"
+            [class.dark:text-slate-950]="mode === 'auto'"
+            [class.text-slate-500]="mode !== 'auto'"
+            [class.dark:text-slate-400]="mode !== 'auto'"
+          >Auto-Failover</button>
+        </div>
       </div>
 
       <!-- Manuell-Aktiv-Picker -->
@@ -162,11 +187,29 @@ export class ModePanelComponent {
    */
   @Input() availableModels: { provider: string; modelId: string; displayName: string }[] = [];
 
+  /**
+   * v0.7.5 — Bereich-Toggle (Cascade-Kategorie). Liste der verfügbaren Kategorien
+   * (kommt aus AppComponent via Cascades-API). Leer = Toggle wird ausgeblendet.
+   *
+   * UX-Hinweis: Toggle ist KEINE Filterung der Failover-Chain — die Chain
+   * spiegelt unverändert die Provider-Whitelist wider. Das Toggle steuert
+   * NUR welche Cascade-Kategorie generate-Calls bekommen (Setting im
+   * cascade-Backend via POST /api/preferred-category).
+   */
+  @Input() categories: string[] = [];
+  /** Aktuell gewählte Kategorie. Leer = Semantic Routing (kein Override). */
+  @Input() activeCategory: string = '';
+  /** Optional: Hint-Strings pro Kategorie (kommt aus cascades-view) */
+  @Input() categoryHintMap: Record<string, string> = {};
+
   @Output() modeChanged = new EventEmitter<'manual' | 'auto'>();
   @Output() chainChanged = new EventEmitter<ChainEntry[]>();
   @Output() promoteRequested = new EventEmitter<void>();
   /** Manuell-Mode: User klickt „Wechseln" → AppComponent ruft `/api/switch`. */
   @Output() switchTo = new EventEmitter<{ provider: string; model: string }>();
+  /** v0.7.5 — User klickt einen Bereich-Tab → AppComponent ruft
+   *  POST /api/preferred-category. Empty-String bedeutet „zurück zu Semantic Routing". */
+  @Output() categoryChanged = new EventEmitter<string>();
 
   localChain: ChainEntry[] = [];
 
@@ -266,6 +309,37 @@ export class ModePanelComponent {
   setMode(m: 'manual' | 'auto'): void {
     if (this.mode === m) return;
     this.modeChanged.emit(m);
+  }
+
+  /**
+   * v0.7.5 — User klickt einen Bereich-Tab. Idempotent (kein Re-Emit wenn schon
+   * aktiv). AppComponent fängt das Event und ruft das Backend
+   * (POST /api/preferred-category).
+   */
+  setCategory(c: string): void {
+    if (this.activeCategory === c) return;
+    this.categoryChanged.emit(c);
+  }
+
+  /**
+   * Lesbares Label pro Kategorie. Wir lookup'en zuerst {@link categoryHintMap}
+   * (Konsument-konfigurierbar via labels.de.ts), Fallback auf einen
+   * capitalized-Slug ("free-only" → "Free Only").
+   */
+  categoryLabel(c: string): string {
+    const hint = this.categoryHintMap?.[c];
+    if (hint) return hint;
+    return c.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  }
+
+  /**
+   * Untertitel-Hint rechts vom Toggle, erklärt was der aktive Bereich tut.
+   */
+  activeCategoryHint(): string {
+    if (!this.activeCategory) {
+      return 'Semantic Routing — Cascade entscheidet pro Call.';
+    }
+    return `Override: alle Generate-Calls gehen an „${this.categoryLabel(this.activeCategory)}".`;
   }
 
   /** Deutsche Labels für die Library-Component (Switcher hat keinen i18n-Service). */
