@@ -1,6 +1,7 @@
 import { Component, EventEmitter, Input, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { CascadeModePanelComponent } from '@4dataclub/ki-models-ui';
 
 /**
  * Mode-Toggle (Manuell / Auto-Failover) + Aktiv-Picker (Manuell) +
@@ -27,7 +28,7 @@ import { FormsModule } from '@angular/forms';
 @Component({
   selector: 'sw-mode-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, CascadeModePanelComponent],
   template: `
     <div>
       <!-- Row 1: Switching (Manuell / Auto-Failover) — primärer Mode-Toggle -->
@@ -59,27 +60,20 @@ import { FormsModule } from '@angular/forms';
         </div>
       </div>
 
-      <!-- Row 2: Bereich-Toggle (Cascade-Kategorie) — filtert Manuell-Picker
-           und steuert in Auto-Mode welcher Cascade-Bereich das Failover macht -->
-      <div *ngIf="categories.length > 0" class="mt-3 flex items-center gap-3 flex-wrap">
-        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Bereich</span>
-        <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
-          <button *ngFor="let c of categories"
-                  type="button"
-                  (click)="setCategory(c)"
-                  class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
-                  [class.bg-slate-950]="activeCategory === c"
-                  [class.text-slate-50]="activeCategory === c"
-                  [class.dark:bg-slate-50]="activeCategory === c"
-                  [class.dark:text-slate-950]="activeCategory === c"
-                  [class.text-slate-500]="activeCategory !== c"
-                  [class.dark:text-slate-400]="activeCategory !== c">
-            {{ categoryLabel(c) }}
-          </button>
-        </div>
-        <span class="text-xs text-slate-500 dark:text-slate-400 italic">
-          {{ activeCategoryHint() }}
-        </span>
+      <!-- Row 2: Bereich-Toggle (Library-Component v0.13.0). Filtert
+           Manuell-Picker UND steuert in Auto-Mode welcher Cascade-Bereich
+           das Failover macht. Auto-Info-Card wird per [autoMode]-Input
+           gated und nutzt scrollTargetId für den ↓-Button. -->
+      <div class="mt-3">
+        <ki-cascade-mode-panel
+          [categories]="categories"
+          [activeCategory]="activeCategory"
+          [categoryHintMap]="categoryHintMap"
+          [autoMode]="mode === 'auto'"
+          scrollTargetId="cascade-bereiche-section"
+          [labels]="cascadeModePanelLabels"
+          (categoryChanged)="setCategory($event)">
+        </ki-cascade-mode-panel>
       </div>
 
       <!-- Manuell-Mode: Picker mit gefilterten Modellen (nach activeCategory) -->
@@ -130,30 +124,9 @@ import { FormsModule } from '@angular/forms';
         </p>
       </div>
 
-      <!-- Auto-Mode: Info-Card statt Chain-Editor — die Cascade-Bereich-Card
-           unten ist die SoT für Reihenfolge + Cooldown -->
-      <div *ngIf="mode === 'auto'" class="mt-4 rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 sm:p-5 ring-1 ring-slate-200 dark:ring-slate-700">
-        <ng-container *ngIf="activeCategory; else autoNoCategory">
-          <p class="text-sm text-slate-700 dark:text-slate-200 mb-3">
-            <strong class="font-semibold text-slate-900 dark:text-slate-100">Auto-Failover läuft</strong>
-            via Cascade-Bereich
-            <span class="font-mono text-slate-900 dark:text-slate-100">{{ categoryLabel(activeCategory) }}</span>.
-            Reihenfolge + Cooldown-Konfiguration siehe Card unten.
-          </p>
-          <button
-            type="button"
-            (click)="scrollToCascades()"
-            class="px-4 py-1.5 text-xs font-bold rounded-lg bg-slate-900 dark:bg-slate-100 text-slate-50 dark:text-slate-900 hover:opacity-90 transition"
-          >↓ Zur Cascade-Konfiguration</button>
-        </ng-container>
-        <ng-template #autoNoCategory>
-          <p class="text-sm text-slate-600 dark:text-slate-300">
-            <strong class="font-semibold text-slate-900 dark:text-slate-100">Semantic Routing aktiv</strong>
-            — die Cascade entscheidet pro Generate-Call welcher Bereich genutzt wird.
-            Wähle oben einen Bereich (Cloud / Free Only) wenn du das explizit überschreiben willst.
-          </p>
-        </ng-template>
-      </div>
+      <!-- Auto-Mode Info-Card wird jetzt von <ki-cascade-mode-panel> oben
+           gerendert (siehe [autoMode]="mode === 'auto'"). Hier keine eigene
+           Info-Card mehr nötig. -->
     </div>
   `,
 })
@@ -268,9 +241,9 @@ export class ModePanelComponent {
   }
 
   /**
-   * v0.7.5 — User klickt einen Bereich-Tab. Idempotent (kein Re-Emit wenn schon
-   * aktiv). AppComponent fängt das Event und ruft das Backend
-   * (POST /api/preferred-category).
+   * Library-Component `<ki-cascade-mode-panel>` ruft das hier wenn der
+   * User einen Bereich-Tab klickt. Wir propagieren nur nach oben — App-
+   * Component persistiert via POST /api/preferred-category.
    */
   setCategory(c: string): void {
     if (this.activeCategory === c) return;
@@ -278,9 +251,9 @@ export class ModePanelComponent {
   }
 
   /**
-   * Lesbares Label pro Kategorie. Wir lookup'en zuerst {@link categoryHintMap}
-   * (Konsument-konfigurierbar via labels.de.ts), Fallback auf einen
-   * capitalized-Slug ("free-only" → "Free Only").
+   * Lesbares Kategorie-Label für die „Keine Modelle im Bereich"-Meldung.
+   * Identisch zu der Logik in `<ki-cascade-mode-panel>` damit die UX
+   * konsistent bleibt.
    */
   categoryLabel(c: string): string {
     const hint = this.categoryHintMap?.[c];
@@ -289,22 +262,16 @@ export class ModePanelComponent {
   }
 
   /**
-   * Untertitel-Hint rechts vom Toggle, erklärt was der aktive Bereich tut.
+   * Deutsche Labels für die Library-Component `<ki-cascade-mode-panel>`.
+   * Stabil als readonly damit es nicht bei jedem Change-Detection-Tick
+   * neue Referenzen gibt (Performance + verhindert ngOnChanges-Schleifen).
    */
-  activeCategoryHint(): string {
-    if (!this.activeCategory) {
-      return 'Semantic Routing — Cascade entscheidet pro Call.';
-    }
-    return `Override: alle Generate-Calls gehen an „${this.categoryLabel(this.activeCategory)}".`;
-  }
-
-  /**
-   * v0.7.5 — Scroll zur Cascade-Bereiche-Section (Auto-Mode-Info-Card-Button).
-   * Die Section bekommt id="cascade-bereiche-section" im AppComponent-Template.
-   */
-  scrollToCascades(): void {
-    if (typeof document === 'undefined') return;
-    const el = document.getElementById('cascade-bereiche-section');
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
+  readonly cascadeModePanelLabels = {
+    toggleLegend: 'Bereich',
+    hintSemanticRouting: 'Semantic Routing — Cascade entscheidet pro Call.',
+    hintOverrideTemplate: 'Override: alle Generate-Calls gehen an „{cat}".',
+    autoCardActiveTemplate: 'Auto-Failover läuft via Cascade-Bereich „{cat}". Reihenfolge + Cooldown siehe Card unten.',
+    autoCardSemanticHint: 'Semantic Routing aktiv — wähle einen Bereich oben für gezielten Override.',
+    btnScrollToCascade: '↓ Zur Cascade-Konfiguration',
+  };
 }
