@@ -85,6 +85,7 @@ import {
           [availableModels]="availableModels()"
           [categories]="categoriesList()"
           [activeCategory]="preferredCategory()"
+          [categoryTitles]="categoryTitles"
           [categoryHintMap]="cascadeHints"
           (modeChanged)="onModeChange($event)"
           (promoteRequested)="onPromote()"
