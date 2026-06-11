@@ -68,6 +68,7 @@ import { CascadeModePanelComponent } from '@4dataclub/ki-models-ui';
         <ki-cascade-mode-panel
           [categories]="categories"
           [activeCategory]="activeCategory"
+          [categoryTitles]="categoryTitles"
           [categoryHintMap]="categoryHintMap"
           [autoMode]="mode === 'auto'"
           scrollTargetId="cascade-bereiche-section"
@@ -154,7 +155,14 @@ export class ModePanelComponent {
   @Input() categories: string[] = [];
   /** Aktuell gewählte Kategorie. Leer = Semantic Routing (kein Override). */
   @Input() activeCategory: string = '';
-  /** Optional: Hint-Strings pro Kategorie (kommt aus cascades-view) */
+  /**
+   * Kurze Button-Titel pro Kategorie (z.B. „Cloud — Premium-Modelle" /
+   * „Free Only — kostenfrei"). Werden vom Library-Component bevorzugt vor
+   * categoryHintMap genutzt — sodass die Bereich-Toggle-Buttons dieselbe
+   * Bezeichnung tragen wie die Cascade-Bereich-Cards unten.
+   */
+  @Input() categoryTitles: Record<string, string> = {};
+  /** Optional: lange Hint-Strings pro Kategorie (kommt aus cascades-view) */
   @Input() categoryHintMap: Record<string, string> = {};
 
   @Output() modeChanged = new EventEmitter<'manual' | 'auto'>();
