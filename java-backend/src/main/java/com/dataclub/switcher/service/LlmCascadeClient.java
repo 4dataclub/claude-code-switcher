@@ -231,6 +231,40 @@ public class LlmCascadeClient {
     }
 
     /**
+     * Preferred-Category lesen (v0.7.5 — Library-Komponente "Modus-Panel"
+     * im Switcher zeigt die aktive Kategorie als Toggle).
+     */
+    public JsonNode getPreferredCategory() {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/preferred-category", String.class);
+            return json == null ? mapper.createObjectNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            com.fasterxml.jackson.databind.node.ObjectNode n = mapper.createObjectNode();
+            n.put("category", "");
+            n.put("active", false);
+            n.put("note", "Cascade < 0.7.5 oder nicht erreichbar");
+            return n;
+        }
+    }
+
+    /**
+     * Preferred-Category setzen — Body {@code {"category": "cloud"}} oder
+     * {@code {"category": ""}} (Empty = zurueck zu Semantic Routing).
+     */
+    public boolean setPreferredCategory(String category) {
+        try {
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            org.springframework.http.HttpEntity<Map<String, Object>> req =
+                new org.springframework.http.HttpEntity<>(Map.of("category", category == null ? "" : category), headers);
+            rest.postForObject(cascadeUrl + "/api/preferred-category", req, String.class);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
      * Config-Endpoint für Auto-Disable: {@code {enabled, minCalls, note}}.
      * Wird vom Library-Component beim Mount geholt um zu entscheiden ob
      * der „Auto-Disable jetzt"-Button gerendert wird.
