@@ -10,7 +10,7 @@ import {
   CascadesViewLabels,
   FailoverChainLabels,
 } from '@4dataclub/ki-models-ui';
-import { SwitcherApiService, SwitcherStatus, ChainEntry, SwitcherAiModel } from './services/switcher-api.service';
+import { SwitcherApiService, SwitcherStatus, SwitcherAiModel } from './services/switcher-api.service';
 import { StatusBarComponent } from './components/status-bar.component';
 import { BannerComponent } from './components/banner.component';
 import { ModePanelComponent } from './components/mode-panel.component';
@@ -78,8 +78,6 @@ import {
         </h2>
         <sw-mode-panel
           [mode]="status()?.mode ?? 'manual'"
-          [chain]="status()?.fallback_chain ?? []"
-          [chainPosition]="status()?.chain_position ?? 0"
           [activeProvider]="status()?.provider ?? null"
           [activeModel]="activeModel()"
           [availableModels]="availableModels()"
@@ -87,15 +85,15 @@ import {
           [activeCategory]="preferredCategory()"
           [categoryHintMap]="cascadeHints"
           (modeChanged)="onModeChange($event)"
-          (chainChanged)="onChainChange($event)"
           (promoteRequested)="onPromote()"
           (switchTo)="onSwitchTo($event)"
           (categoryChanged)="onCategoryChange($event)"
         ></sw-mode-panel>
       </section>
 
-      <!-- Cascade-Bereiche (Phase S') — N Karten dynamisch, jede mit eigener Failover-Chain + Cooldown -->
-      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
+      <!-- Cascade-Bereiche (Phase S') — N Karten dynamisch, jede mit eigener Failover-Chain + Cooldown.
+           id="cascade-bereiche-section" ist Scroll-Target für den Auto-Mode-Info-Card-Button im sw-mode-panel. -->
+      <section id="cascade-bereiche-section" class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
         <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 mb-4">
           Cascade-Bereiche
         </h2>
@@ -276,7 +274,7 @@ export class AppComponent implements OnDestroy {
    * SSE-Toggle-Events neu geladen. Provider-Namensraum wird hier auf
    * Switcher-UI (`google` statt `gemini`) gemappt.
    */
-  readonly availableModels = signal<{ provider: string; modelId: string; displayName: string }[]>([]);
+  readonly availableModels = signal<{ provider: string; modelId: string; displayName: string; category?: string | null }[]>([]);
 
   /** v0.7.5 — Liste der verfügbaren Cascade-Bereiche (cloud, free-only, …).
    *  Wird beim Init via GET /api/cascades geholt. */
@@ -435,6 +433,9 @@ export class AppComponent implements OnDestroy {
             provider: m.provider === 'gemini' ? 'google' : m.provider,
             modelId: m.modelId,
             displayName: m.displayName || m.modelId,
+            // v0.7.5: Kategorie durchreichen damit das Modus-Panel den
+            // Picker im Manuell-Mode nach aktiver Bereich-Auswahl filtern kann.
+            category: m.category ?? null,
           }));
         this.availableModels.set(usable);
       },
@@ -485,14 +486,6 @@ export class AppComponent implements OnDestroy {
         // Backend nicht da → Signal nicht updaten, UI bleibt im alten State.
       },
     });
-  }
-
-  onChainChange(chain: ChainEntry[]): void {
-    this.api.setAuto({
-      mode: this.status()?.mode ?? 'auto',
-      fallback_chain: chain,
-      chain_position: 0,
-    }).subscribe(() => this.reload());
   }
 
   onPromote(): void {

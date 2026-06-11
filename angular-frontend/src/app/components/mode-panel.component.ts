@@ -1,36 +1,6 @@
 import { Component, EventEmitter, Input, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { FailoverChainComponent } from '@4dataclub/ki-models-ui';
-import { ChainEntry } from '../services/switcher-api.service';
-import { FAILOVER_CHAIN_LABELS_DE } from '../labels.de';
-
-/**
- * Provider/Modell-Whitelist für den Chain-Editor (Auto-Failover).
- *
- * Statisches Mapping — bewusst klein gehalten auf die tatsächlich in der
- * Switcher-Praxis sinnvollen Routen. Erweitern wenn neue Provider eingebunden
- * werden.
- */
-const PROVIDER_MODELS: Record<string, { id: string; name: string }[]> = {
-  anthropic: [
-    { id: 'claude-opus-4-7', name: 'Claude Opus 4.7' },
-    { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
-    { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5' },
-  ],
-  google: [
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
-    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite' },
-    { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro (Preview)' },
-    { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash (Preview)' },
-  ],
-  openrouter: [
-    { id: 'deepseek/deepseek-chat-v3.1', name: 'DeepSeek v3.1' },
-    { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B (free)' },
-    { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B (free)' },
-  ],
-};
 
 /**
  * Mode-Toggle (Manuell / Auto-Failover) + Aktiv-Picker (Manuell) +
@@ -57,32 +27,10 @@ const PROVIDER_MODELS: Record<string, { id: string; name: string }[]> = {
 @Component({
   selector: 'sw-mode-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule, FailoverChainComponent],
+  imports: [CommonModule, FormsModule],
   template: `
     <div>
-      <!-- Row 1: Bereich-Toggle (Cascade-Kategorie) -->
-      <div *ngIf="categories.length > 0" class="mb-3 flex items-center gap-3 flex-wrap">
-        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Bereich</span>
-        <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
-          <button *ngFor="let c of categories"
-                  type="button"
-                  (click)="setCategory(c)"
-                  class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
-                  [class.bg-slate-950]="activeCategory === c"
-                  [class.text-slate-50]="activeCategory === c"
-                  [class.dark:bg-slate-50]="activeCategory === c"
-                  [class.dark:text-slate-950]="activeCategory === c"
-                  [class.text-slate-500]="activeCategory !== c"
-                  [class.dark:text-slate-400]="activeCategory !== c">
-            {{ categoryLabel(c) }}
-          </button>
-        </div>
-        <span class="text-xs text-slate-500 dark:text-slate-400 italic">
-          {{ activeCategoryHint() }}
-        </span>
-      </div>
-
-      <!-- Row 2: Tab-Toggle Manuell / Auto-Failover -->
+      <!-- Row 1: Switching (Manuell / Auto-Failover) — primärer Mode-Toggle -->
       <div class="flex items-center gap-3 flex-wrap">
         <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Switching</span>
         <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
@@ -111,7 +59,30 @@ const PROVIDER_MODELS: Record<string, { id: string; name: string }[]> = {
         </div>
       </div>
 
-      <!-- Manuell-Aktiv-Picker -->
+      <!-- Row 2: Bereich-Toggle (Cascade-Kategorie) — filtert Manuell-Picker
+           und steuert in Auto-Mode welcher Cascade-Bereich das Failover macht -->
+      <div *ngIf="categories.length > 0" class="mt-3 flex items-center gap-3 flex-wrap">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Bereich</span>
+        <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
+          <button *ngFor="let c of categories"
+                  type="button"
+                  (click)="setCategory(c)"
+                  class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
+                  [class.bg-slate-950]="activeCategory === c"
+                  [class.text-slate-50]="activeCategory === c"
+                  [class.dark:bg-slate-50]="activeCategory === c"
+                  [class.dark:text-slate-950]="activeCategory === c"
+                  [class.text-slate-500]="activeCategory !== c"
+                  [class.dark:text-slate-400]="activeCategory !== c">
+            {{ categoryLabel(c) }}
+          </button>
+        </div>
+        <span class="text-xs text-slate-500 dark:text-slate-400 italic">
+          {{ activeCategoryHint() }}
+        </span>
+      </div>
+
+      <!-- Manuell-Mode: Picker mit gefilterten Modellen (nach activeCategory) -->
       <div *ngIf="mode === 'manual'" class="mt-4 rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 sm:p-5 ring-1 ring-slate-200 dark:ring-slate-700">
         <p class="text-sm text-slate-600 dark:text-slate-300 mb-3">
           <strong class="font-semibold text-slate-900 dark:text-slate-100">Aktiver Provider</strong>
@@ -119,34 +90,36 @@ const PROVIDER_MODELS: Record<string, { id: string; name: string }[]> = {
           <span class="font-mono text-slate-900 dark:text-slate-100">{{ activeProvider || '–' }}</span><span *ngIf="activeModel"> · <span class="font-mono text-slate-900 dark:text-slate-100">{{ activeModel }}</span></span>.
         </p>
 
-        <!-- Picker NUR wenn überhaupt aktive Modelle existieren -->
-        <div *ngIf="availableProviders().length > 0; else noActive" class="flex flex-wrap items-center gap-2">
+        <!-- Single-Select Combobox: filtered by activeCategory wenn gesetzt -->
+        <div *ngIf="availableModelsForCategory().length > 0; else noActive" class="flex flex-wrap items-center gap-2">
           <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Wechseln zu:</span>
           <select
-            [(ngModel)]="pickerProvider"
-            (change)="onPickerProviderChange()"
-            class="flex-1 min-w-[10rem] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-sm text-slate-900 dark:text-slate-100"
+            [(ngModel)]="pickerModelKey"
+            class="flex-1 min-w-[16rem] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-sm text-slate-900 dark:text-slate-100"
           >
-            <option *ngFor="let p of availableProviders()" [value]="p">{{ providerLabel(p) }}</option>
-          </select>
-          <select
-            [(ngModel)]="pickerModel"
-            class="flex-1 min-w-[12rem] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-sm text-slate-900 dark:text-slate-100"
-          >
-            <option *ngFor="let m of modelsForActive(pickerProvider)" [value]="m.modelId">{{ m.displayName }}</option>
+            <option *ngFor="let m of availableModelsForCategory()"
+                    [value]="m.provider + ':' + m.modelId">
+              {{ providerLabel(m.provider) }} · {{ m.displayName }}
+            </option>
           </select>
           <button
             type="button"
             (click)="emitSwitch()"
-            [disabled]="!pickerProvider || !pickerModel || isAlreadyActive()"
+            [disabled]="!pickerModelKey || isAlreadyActiveKey()"
             class="px-4 py-1.5 text-xs font-bold rounded-lg bg-slate-950 dark:bg-slate-50 text-slate-50 dark:text-slate-950 hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition"
           >Wechseln</button>
         </div>
 
         <ng-template #noActive>
           <p class="text-sm text-slate-500 dark:text-slate-400 italic">
-            Keine aktiven Modelle. Aktiviere ein Modell in der Tabelle unten (Toggle „Aktiv" pro Zeile),
-            dann kannst du es hier auswählen.
+            <span *ngIf="!activeCategory; else noActiveInCategory">
+              Keine aktiven Modelle. Aktiviere ein Modell in der Tabelle unten (Toggle „Aktiv" pro Zeile),
+              dann kannst du es hier auswählen.
+            </span>
+            <ng-template #noActiveInCategory>
+              Keine aktiven Modelle im Bereich „{{ categoryLabel(activeCategory) }}".
+              Aktiviere eines in der Tabelle unten oder wechsle den Bereich.
+            </ng-template>
           </p>
         </ng-template>
 
@@ -157,44 +130,53 @@ const PROVIDER_MODELS: Record<string, { id: string; name: string }[]> = {
         </p>
       </div>
 
-      <!-- Auto-Chain-Editor (Library-Component) -->
+      <!-- Auto-Mode: Info-Card statt Chain-Editor — die Cascade-Bereich-Card
+           unten ist die SoT für Reihenfolge + Cooldown -->
       <div *ngIf="mode === 'auto'" class="mt-4 rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 sm:p-5 ring-1 ring-slate-200 dark:ring-slate-700">
-        <ki-failover-chain
-          [chain]="localChain"
-          [availableModels]="libAvailableModelsList"
-          [chainPosition]="chainPosition"
-          [showChainPosition]="true"
-          [labels]="failoverChainLabels"
-          (chainChanged)="onLibChainChanged($event)"
-          (promoteRequested)="promoteRequested.emit()"
-        ></ki-failover-chain>
+        <ng-container *ngIf="activeCategory; else autoNoCategory">
+          <p class="text-sm text-slate-700 dark:text-slate-200 mb-3">
+            <strong class="font-semibold text-slate-900 dark:text-slate-100">Auto-Failover läuft</strong>
+            via Cascade-Bereich
+            <span class="font-mono text-slate-900 dark:text-slate-100">{{ categoryLabel(activeCategory) }}</span>.
+            Reihenfolge + Cooldown-Konfiguration siehe Card unten.
+          </p>
+          <button
+            type="button"
+            (click)="scrollToCascades()"
+            class="px-4 py-1.5 text-xs font-bold rounded-lg bg-slate-900 dark:bg-slate-100 text-slate-50 dark:text-slate-900 hover:opacity-90 transition"
+          >↓ Zur Cascade-Konfiguration</button>
+        </ng-container>
+        <ng-template #autoNoCategory>
+          <p class="text-sm text-slate-600 dark:text-slate-300">
+            <strong class="font-semibold text-slate-900 dark:text-slate-100">Semantic Routing aktiv</strong>
+            — die Cascade entscheidet pro Generate-Call welcher Bereich genutzt wird.
+            Wähle oben einen Bereich (Cloud / Free Only) wenn du das explizit überschreiben willst.
+          </p>
+        </ng-template>
       </div>
     </div>
   `,
 })
 export class ModePanelComponent {
   @Input() mode: 'manual' | 'auto' = 'manual';
-  @Input() chain: ChainEntry[] = [];
-  @Input() chainPosition: number | null = 0;
   /** Aktueller Provider (anthropic|google|openrouter), für Manuell-Picker-Defaults. */
   @Input() activeProvider: string | null = null;
   /** Aktuelles Modell, für Manuell-Picker-Defaults. */
   @Input() activeModel: string | null = null;
   /**
-   * Liste der **aktiven** Cascade-Modelle (enabled + Key gesetzt) — speist
-   * die Manuell-Picker-Dropdowns. Bewusst NICHT die gesamte Provider-Whitelist,
-   * damit der User nur das auswählen kann was er auch eingerichtet hat.
+   * Liste der **aktiven** Cascade-Modelle (enabled + Key gesetzt). Wird nach
+   * `activeCategory` gefiltert für den Manuell-Picker.
+   * `category` kommt aus dem cascade-Modell — wird hier zur Filterung benutzt.
    */
-  @Input() availableModels: { provider: string; modelId: string; displayName: string }[] = [];
+  @Input() availableModels: { provider: string; modelId: string; displayName: string; category?: string | null }[] = [];
 
   /**
    * v0.7.5 — Bereich-Toggle (Cascade-Kategorie). Liste der verfügbaren Kategorien
    * (kommt aus AppComponent via Cascades-API). Leer = Toggle wird ausgeblendet.
    *
-   * UX-Hinweis: Toggle ist KEINE Filterung der Failover-Chain — die Chain
-   * spiegelt unverändert die Provider-Whitelist wider. Das Toggle steuert
-   * NUR welche Cascade-Kategorie generate-Calls bekommen (Setting im
-   * cascade-Backend via POST /api/preferred-category).
+   * Im Manuell-Mode filtert das Toggle den Picker. Im Auto-Mode steuert es
+   * welcher Cascade-Bereich das Failover macht (Setting im cascade-Backend
+   * via POST /api/preferred-category).
    */
   @Input() categories: string[] = [];
   /** Aktuell gewählte Kategorie. Leer = Semantic Routing (kein Override). */
@@ -203,7 +185,6 @@ export class ModePanelComponent {
   @Input() categoryHintMap: Record<string, string> = {};
 
   @Output() modeChanged = new EventEmitter<'manual' | 'auto'>();
-  @Output() chainChanged = new EventEmitter<ChainEntry[]>();
   @Output() promoteRequested = new EventEmitter<void>();
   /** Manuell-Mode: User klickt „Wechseln" → AppComponent ruft `/api/switch`. */
   @Output() switchTo = new EventEmitter<{ provider: string; model: string }>();
@@ -211,72 +192,42 @@ export class ModePanelComponent {
    *  POST /api/preferred-category. Empty-String bedeutet „zurück zu Semantic Routing". */
   @Output() categoryChanged = new EventEmitter<string>();
 
-  localChain: ChainEntry[] = [];
-
-  // Manuell-Picker-State: vorbelegt mit aktivem Provider/Modell, vom User
-  // beim Schalten überschrieben.
-  pickerProvider = 'anthropic';
-  pickerModel = '';
+  /** Composite key `provider:modelId` für die Single-Select-Combobox.
+   *  Wird beim Submit gesplittet und als {provider, model} emittiert. */
+  pickerModelKey = '';
 
   ngOnChanges(changes: SimpleChanges): void {
-    // **Wichtig**: `localChain` NUR rebuilden wenn die Chain-Eingabe sich
-    // wirklich geändert hat — nicht bei JEDER Input-Änderung. Sonst überschreiben
-    // SSE-Events die rein nicht-Chain-Felder updaten (z.B. activeProvider nach
-    // einem auto-switch) die mid-edit Eingaben des Users. Genau das fühlt sich
-    // an wie „die Failover-Kette macht kein Refresh" (Eingaben verschwinden).
-    if (changes['chain']) {
-      this.localChain = this.chain.length
-        ? this.chain.map((e) => ({ ...e }))
-        : [
-            { provider: 'anthropic',  model: 'claude-sonnet-4-6' },
-            { provider: 'google',     model: 'gemini-2.5-pro' },
-            { provider: 'openrouter', model: 'deepseek/deepseek-chat-v3.1' },
-          ];
-    }
-
-    // Manuell-Picker-State refreshen wenn relevante Inputs sich änderten.
-    if (changes['availableModels'] || changes['activeProvider'] || changes['activeModel']) {
-      const providers = this.availableProviders();
-      if (providers.length > 0) {
-        if (this.activeProvider && providers.includes(this.activeProvider)) {
-          this.pickerProvider = this.activeProvider;
-        } else if (!providers.includes(this.pickerProvider)) {
-          this.pickerProvider = providers[0];
-        }
-        const candidate = this.activeModel && this.modelsForActive(this.pickerProvider)
-          .some((m) => m.modelId === this.activeModel)
-            ? this.activeModel
-            : this.modelsForActive(this.pickerProvider)[0]?.modelId ?? '';
-        if (!this.pickerModel || !this.modelsForActive(this.pickerProvider).some((m) => m.modelId === this.pickerModel)) {
-          this.pickerModel = candidate;
-        }
-      } else {
-        this.pickerModel = '';
+    // Picker-State refreshen wenn die gefilterte Liste sich geändert hat
+    // (availableModels-Input ODER activeCategory geändert).
+    if (changes['availableModels'] || changes['activeProvider'] || changes['activeModel'] || changes['activeCategory']) {
+      const filtered = this.availableModelsForCategory();
+      if (filtered.length === 0) {
+        this.pickerModelKey = '';
+        return;
+      }
+      // Bevorzugt: aktives Modell wenn es in der gefilterten Liste ist
+      const activeKey = this.activeProvider && this.activeModel
+        ? `${this.activeProvider}:${this.activeModel}` : '';
+      const activeStillInList = activeKey && filtered.some((m) => `${m.provider}:${m.modelId}` === activeKey);
+      const currentStillInList = this.pickerModelKey && filtered.some((m) => `${m.provider}:${m.modelId}` === this.pickerModelKey);
+      if (activeStillInList) {
+        this.pickerModelKey = activeKey;
+      } else if (!currentStillInList) {
+        // Vorherige Wahl ist nach Filter-Wechsel nicht mehr drin → erste Option
+        const first = filtered[0];
+        this.pickerModelKey = `${first.provider}:${first.modelId}`;
       }
     }
   }
 
-  /** Provider die aktive Modelle haben (Quelle: availableModels-Input). */
-  availableProviders(): string[] {
-    const set = new Set<string>();
-    for (const m of this.availableModels) set.add(m.provider);
-    // Stabile Reihenfolge: anthropic, google, openrouter, dann Rest alphabetisch.
-    const order = ['anthropic', 'google', 'openrouter'];
-    const sorted = Array.from(set).sort((a, b) => {
-      const ia = order.indexOf(a), ib = order.indexOf(b);
-      if (ia >= 0 && ib >= 0) return ia - ib;
-      if (ia >= 0) return -1;
-      if (ib >= 0) return 1;
-      return a.localeCompare(b);
-    });
-    return sorted;
-  }
-
-  /** Aktive Modelle für einen Provider (Quelle: availableModels-Input). */
-  modelsForActive(provider: string): { modelId: string; displayName: string }[] {
-    return this.availableModels
-      .filter((m) => m.provider === provider)
-      .map((m) => ({ modelId: m.modelId, displayName: m.displayName }));
+  /**
+   * Aktive Modelle gefiltert nach `activeCategory`. Wenn `activeCategory`
+   * leer ist (Semantic Routing): alle Modelle. Sonst: nur die mit passender
+   * `category` ODER ohne Category-Marker (general/null = überall sichtbar).
+   */
+  availableModelsForCategory(): { provider: string; modelId: string; displayName: string; category?: string | null }[] {
+    if (!this.activeCategory) return this.availableModels;
+    return this.availableModels.filter((m) => m.category === this.activeCategory);
   }
 
   /** Human-readable Provider-Label. */
@@ -285,25 +236,30 @@ export class ModePanelComponent {
       case 'anthropic':  return 'Anthropic';
       case 'google':     return 'Google AI Studio';
       case 'openrouter': return 'OpenRouter';
+      case 'ollama':     return 'Ollama (lokal)';
+      case 'gemini':     return 'Google Gemini';
       default:           return p;
     }
   }
 
-  onPickerProviderChange(): void {
-    // Beim Provider-Wechsel im Picker auf erstes aktives Modell zurücksetzen.
-    const first = this.modelsForActive(this.pickerProvider)[0];
-    this.pickerModel = first ? first.modelId : '';
-  }
-
+  /**
+   * Picker-Submit: splittet den composite Key zurück in {provider, model}
+   * und propagiert nach oben (App-Component ruft `/api/switch`).
+   */
   emitSwitch(): void {
-    if (!this.pickerProvider || !this.pickerModel) return;
-    this.switchTo.emit({ provider: this.pickerProvider, model: this.pickerModel });
+    if (!this.pickerModelKey) return;
+    const idx = this.pickerModelKey.indexOf(':');
+    if (idx < 0) return;
+    const provider = this.pickerModelKey.substring(0, idx);
+    const model = this.pickerModelKey.substring(idx + 1);
+    if (!provider || !model) return;
+    this.switchTo.emit({ provider, model });
   }
 
-  isAlreadyActive(): boolean {
-    return !!this.activeProvider
-        && this.pickerProvider === this.activeProvider
-        && this.pickerModel === this.activeModel;
+  /** True wenn das gewählte Picker-Modell schon das aktive Modell ist. */
+  isAlreadyActiveKey(): boolean {
+    if (!this.activeProvider || !this.activeModel) return false;
+    return this.pickerModelKey === `${this.activeProvider}:${this.activeModel}`;
   }
 
   setMode(m: 'manual' | 'auto'): void {
@@ -342,26 +298,13 @@ export class ModePanelComponent {
     return `Override: alle Generate-Calls gehen an „${this.categoryLabel(this.activeCategory)}".`;
   }
 
-  /** Deutsche Labels für die Library-Component (Switcher hat keinen i18n-Service). */
-  readonly failoverChainLabels = FAILOVER_CHAIN_LABELS_DE;
-
   /**
-   * `<ki-failover-chain>` braucht `availableModels` im Format
-   * `{provider, modelId, displayName}[]`. Switcher führt die statische
-   * `PROVIDER_MODELS`-Whitelist (Provider → Modelle) — hier einmal beim Init
-   * flatten + mappen, **stabile Property** behalten.
-   *
-   * WICHTIG: NICHT als Getter/Methode — bei jedem CD-Tick neue Array-Referenz
-   * würde ngOnChanges in der Library pausenlos feuern (siehe EduPro PR #52
-   * für den identischen Fix dort).
+   * v0.7.5 — Scroll zur Cascade-Bereiche-Section (Auto-Mode-Info-Card-Button).
+   * Die Section bekommt id="cascade-bereiche-section" im AppComponent-Template.
    */
-  readonly libAvailableModelsList: { provider: string; modelId: string; displayName: string }[] =
-    Object.entries(PROVIDER_MODELS).flatMap(([provider, models]) =>
-      models.map((m) => ({ provider, modelId: m.id, displayName: m.name })));
-
-  /** Library hat die Chain editiert → lokal aktualisieren + nach oben propagieren. */
-  onLibChainChanged(c: ChainEntry[]): void {
-    this.localChain = c;
-    this.chainChanged.emit(c);
+  scrollToCascades(): void {
+    if (typeof document === 'undefined') return;
+    const el = document.getElementById('cascade-bereiche-section');
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 }
