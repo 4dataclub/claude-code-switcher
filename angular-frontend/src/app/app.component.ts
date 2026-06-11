@@ -5,8 +5,9 @@ import {
   AddModelFormComponent,
   CascadesViewComponent,
   ApiKeysSectionComponent,
-  RoutingDecisionsComponent,
   ModelsQualityStatsComponent,
+  ModelsPerformanceComponent,
+  ModelsCooldownStateComponent,
   CascadesViewLabels,
   FailoverChainLabels,
 } from '@4dataclub/ki-models-ui';
@@ -47,8 +48,9 @@ import {
     AddModelFormComponent,
     CascadesViewComponent,
     ApiKeysSectionComponent,
-    RoutingDecisionsComponent,
     ModelsQualityStatsComponent,
+    ModelsPerformanceComponent,
+    ModelsCooldownStateComponent,
   ],
   template: `
     <main class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 space-y-6">
@@ -129,13 +131,6 @@ import {
         <ki-api-keys-section [labels]="apiKeysSectionLabels" (keyChanged)="onKeyChanged()"></ki-api-keys-section>
       </section>
 
-      <!-- Semantic-Routing-Cache (Library v0.11.0, llm-cascade ≥ 0.6.0).
-           Zeigt cached purpose → category Entscheidungen + Test-Preview-Input.
-           Bei Backend ohne /routing-Endpoint (Pre-0.6.0): empty state, kein Crash. -->
-      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
-        <ki-routing-decisions></ki-routing-decisions>
-      </section>
-
       <!-- Quality-Stats (Library v0.12.0, llm-cascade ≥ 0.7.2).
            Worst-first: KILL-Kandidaten (✗ Score < 0.1) stehen oben damit der
            User sofort sieht welche Modelle Probleme machen. Switcher delegiert
@@ -147,6 +142,28 @@ import {
           [title]="'Modell-Qualität — letzte 30 Tage'"
           [subtitle]="'Schlechte Modelle stehen oben. KILL-Kandidaten sollten deaktiviert werden.'">
         </ki-models-quality-stats>
+      </section>
+
+      <!-- Performance-Stats (Library v0.14.0, llm-cascade ≥ 0.7.6).
+           Calls, Success-Rate, Cost-Schätzung pro Modell. Switcher hat
+           keinen eigenen costMapping-Input gesetzt → Cost-Spalte versteckt
+           (Switcher wird normalerweise nicht für Bulk-Generate genutzt). -->
+      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
+        <ki-models-performance
+          [title]="'Modell-Performance — letzte 30 Tage'"
+          [subtitle]="'Calls und Erfolgsrate pro Provider/Modell.'">
+        </ki-models-performance>
+      </section>
+
+      <!-- Cooldown-State Live-View (Library v0.14.0, llm-cascade ≥ 0.7.6).
+           Auto-Refresh 30s. Rote Zeilen = auto-disabled, gelb = Cooldown,
+           grün = ready. Zeigt sofort wenn ein Modell Probleme hat. -->
+      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
+        <ki-models-cooldown-state
+          [title]="'Cooldown-State — Live'"
+          [subtitle]="'Auto-Disabled (rot) → Cooldown (gelb) → ready (grün). Auto-Refresh 30s.'"
+          [autoRefreshSec]="30">
+        </ki-models-cooldown-state>
       </section>
 
       <!-- Switcher-spezifisch: Claude-Restart-Trigger -->
