@@ -8,8 +8,10 @@ import {
   ModelsQualityStatsComponent,
   ModelsPerformanceComponent,
   ModelsCooldownStateComponent,
+  ProviderServersComponent,
   CascadesViewLabels,
   FailoverChainLabels,
+  ProviderServersLabels,
 } from '@4dataclub/ki-models-ui';
 import { SwitcherApiService, SwitcherStatus, SwitcherAiModel } from './services/switcher-api.service';
 import { StatusBarComponent } from './components/status-bar.component';
@@ -21,6 +23,7 @@ import {
   CASCADES_VIEW_LABELS_DE,
   FAILOVER_CHAIN_LABELS_DE,
   API_KEYS_SECTION_LABELS_DE,
+  PROVIDER_SERVERS_LABELS_DE,
 } from './labels.de';
 
 /**
@@ -51,6 +54,7 @@ import {
     ModelsQualityStatsComponent,
     ModelsPerformanceComponent,
     ModelsCooldownStateComponent,
+    ProviderServersComponent,
   ],
   template: `
     <main class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 space-y-6">
@@ -130,6 +134,12 @@ import {
       <!-- API-Keys (Library-Component, identisch zu EduPro) -->
       <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
         <ki-api-keys-section [labels]="apiKeysSectionLabels" (keyChanged)="onKeyChanged()"></ki-api-keys-section>
+      </section>
+
+      <!-- Inferenz-Server (Library v0.15.0) — externe Server pro Modell (Ollama),
+           Default localhost. Verwaltung hier; Zuweisung pro Modell in der Tabelle. -->
+      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
+        <ki-provider-servers [labels]="providerServersLabels"></ki-provider-servers>
       </section>
 
       <!-- Quality-Stats (Library v0.12.0, llm-cascade ≥ 0.7.2).
@@ -221,6 +231,7 @@ export class AppComponent implements OnDestroy {
   readonly cascadesViewLabels: Partial<CascadesViewLabels> = CASCADES_VIEW_LABELS_DE;
   readonly failoverChainLabels: Partial<FailoverChainLabels> = FAILOVER_CHAIN_LABELS_DE;
   readonly apiKeysSectionLabels = API_KEYS_SECTION_LABELS_DE;
+  readonly providerServersLabels = PROVIDER_SERVERS_LABELS_DE;
 
   /**
    * Sub-Hints pro Cascade-Name — wird als Untertitel unter dem Cascade-Namen angezeigt.
