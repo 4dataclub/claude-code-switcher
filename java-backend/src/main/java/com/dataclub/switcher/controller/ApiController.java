@@ -558,6 +558,32 @@ public class ApiController {
                   : ResponseEntity.status(502).body(Map.of("ok", false, "error", "llm-cascade upstream failed"));
     }
 
+    // ─── Provider-Server-Proxy (v0.8.0) ──────────────────────────────────────
+    // Externe Inferenz-Server pro Modell. CRUD liegt in llm-cascade; hier nur
+    // durchgereicht, damit <ki-provider-servers> (KI_MODELS_API_BASE='/api')
+    // Server listen/anlegen/löschen kann. Das echte Routing greift erst mit
+    // llm-cascade >= 0.8.0.
+
+    @GetMapping("/provider-servers")
+    public com.fasterxml.jackson.databind.JsonNode providerServers() {
+        return cascade.getProviderServers();
+    }
+
+    @PutMapping("/provider-servers/{name}")
+    public ResponseEntity<Map<String, Object>> providerServerUpsert(@PathVariable String name,
+                                                                    @RequestBody com.fasterxml.jackson.databind.JsonNode body) {
+        boolean ok = cascade.upsertProviderServer(name, body);
+        return ok ? ResponseEntity.ok(Map.of("ok", true))
+                  : ResponseEntity.status(502).body(Map.of("ok", false, "error", "llm-cascade upstream failed"));
+    }
+
+    @DeleteMapping("/provider-servers/{name}")
+    public ResponseEntity<Map<String, Object>> providerServerDelete(@PathVariable String name) {
+        boolean ok = cascade.deleteProviderServer(name);
+        return ok ? ResponseEntity.ok(Map.of("ok", true))
+                  : ResponseEntity.status(502).body(Map.of("ok", false, "error", "llm-cascade upstream failed"));
+    }
+
     // ─── Cascade-Cooldown-Override (Tri-State, analog EduPro PR #37) ─────────
 
     @GetMapping("/cascade-cooldown-override")
