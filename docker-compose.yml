@@ -87,7 +87,11 @@ services:
       start_period: 10s
 
   llm-cascade:
-    image: ghcr.io/4dataclub/llm-cascade:0.7.6
+    # 0.8.0 — per-Modell Inferenz-Server-Routing (externer Server statt nur
+    # localhost). Image lokal gebaut; fuer Anar/Prod nach ghcr pushen:
+    #   docker build -t ghcr.io/4dataclub/llm-cascade:0.8.0 <llm-cascade-repo>
+    #   docker push ghcr.io/4dataclub/llm-cascade:0.8.0
+    image: ghcr.io/4dataclub/llm-cascade:0.8.0
     container_name: claude-switcher-llm-cascade-1
     ports:
       - "127.0.0.1:8091:8090"
