@@ -310,5 +310,44 @@ public class LlmCascadeClient {
         }
     }
 
+    // ─── Provider-Server-Proxy (v0.8.0 — externe Inferenz-Server pro Modell) ──
+    // CRUD liegt in llm-cascade (/api/provider-servers). Hier nur durchgereicht,
+    // damit <ki-provider-servers> (KI_MODELS_API_BASE='/api') funktioniert.
+
+    /** Liste der Inferenz-Server — Proxy zu GET /api/provider-servers. */
+    public JsonNode getProviderServers() {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/provider-servers", String.class);
+            return json == null ? mapper.createArrayNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createArrayNode();
+        }
+    }
+
+    /** Upsert eines Servers — Proxy zu PUT /api/provider-servers/{name}. Body: {baseUrl, isDefault?, description?}. */
+    public boolean upsertProviderServer(String name, JsonNode body) {
+        try {
+            org.springframework.http.HttpHeaders h = new org.springframework.http.HttpHeaders();
+            h.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+            org.springframework.http.HttpEntity<String> req = new org.springframework.http.HttpEntity<>(
+                body == null ? "{}" : mapper.writeValueAsString(body), h);
+            rest.exchange(cascadeUrl + "/api/provider-servers/" + name,
+                org.springframework.http.HttpMethod.PUT, req, String.class);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Löscht einen Server — Proxy zu DELETE /api/provider-servers/{name} (Default nicht löschbar). */
+    public boolean deleteProviderServer(String name) {
+        try {
+            rest.delete(cascadeUrl + "/api/provider-servers/" + name);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public String url() { return cascadeUrl; }
 }
