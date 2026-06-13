@@ -1,0 +1,23 @@
+# ─── GPU-Override für Ollama (nur Linux-Hosts mit NVIDIA-GPU) ───────────────
+#
+# Reicht die GPU in den Ollama-Container durch, damit lokale Modelle dort auf
+# GPU statt CPU rechnen. Greift NUR, wenn der Host eine NVIDIA-GPU + das
+# nvidia-container-toolkit hat.
+#
+# Verwendung (auf einem GPU-Linux-Rechner):
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# ⚠️ NICHT auf macOS verwenden: Docker Desktop auf Apple Silicon reicht die
+# Metal-GPU NICHT in Container durch — der Container bliebe CPU bzw. der Start
+# würde an der GPU-Reservation scheitern. Auf dem Mac einfach das Base-Compose
+# ohne diese Override nutzen (CPU); für echtes GPU einen externen GPU-Server
+# eintragen (das Routing bevorzugt ihn automatisch).
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

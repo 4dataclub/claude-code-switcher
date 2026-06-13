@@ -87,11 +87,12 @@ services:
       start_period: 10s
 
   llm-cascade:
-    # 0.8.0 — per-Modell Inferenz-Server-Routing (externer Server statt nur
-    # localhost). Image lokal gebaut; fuer Anar/Prod nach ghcr pushen:
-    #   docker build -t ghcr.io/4dataclub/llm-cascade:0.8.0 <llm-cascade-repo>
-    #   docker push ghcr.io/4dataclub/llm-cascade:0.8.0
-    image: ghcr.io/4dataclub/llm-cascade:0.8.0
+    # 0.8.1 — per-Modell Inferenz-Server-Routing + Auto-Provision (Modell wird
+    # auf dem zugewiesenen Server automatisch gepullt). Image lokal gebaut; fuer
+    # Anar/Prod nach ghcr pushen:
+    #   docker build -t ghcr.io/4dataclub/llm-cascade:0.8.1 <llm-cascade-repo>
+    #   docker push ghcr.io/4dataclub/llm-cascade:0.8.1
+    image: ghcr.io/4dataclub/llm-cascade:0.8.1
     container_name: claude-switcher-llm-cascade-1
     ports:
       - "127.0.0.1:8091:8090"
@@ -119,23 +120,19 @@ services:
       - switcher_pgdata:/var/lib/postgresql/data
     restart: unless-stopped
 
-  # ─── Optional: Lokales Ollama (Profile `local-llm`) ─────────────────────
-  # NICHT default-an, weil Ollama beim ersten Start mehrere GB Modell-Weights
-  # zieht (gemma3:4b allein ist ~3.3 GB). Wer das will, startet:
+  # ─── Lokales Ollama (immer an, damit der „localhost"-Default sofort lebt) ──
+  # Früher hinter `profiles: ["local-llm"]` — jetzt default-an, damit der
+  # geseedete localhost-Inferenz-Server ohne Extra-Flag funktioniert. Beim ersten
+  # Start zieht es einmalig ~3.3 GB gemma3:4b ins Volume.
   #
-  #   docker compose --profile local-llm up -d
-  #
-  # Dann ist der Service unter `http://ollama:11434/v1` aus dem Cascade-
-  # Container erreichbar und Modelle wie `ollama:gemma3:4b` funktionieren.
-  #
-  # Wer NICHT braucht: einfach den default `docker compose up -d` nutzen —
-  # Ollama startet dann nicht. Modelle die in der DB stehen aber Ollama
-  # brauchen, werfen einen sprechenden "Ollama unreachable"-Fehler im
-  # Test-Result; die anderen Modelle funktionieren weiter.
+  # GPU: Docker-on-Mac kann die Apple-GPU NICHT durchreichen (immer CPU). Auf
+  # einem Linux-Host MIT GPU die Override dazunehmen:
+  #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+  # Für GPU vom Mac aus: einen externen GPU-Server eintragen — das Routing
+  # bevorzugt ihn automatisch für zugewiesene Modelle.
   ollama:
     image: ollama/ollama:latest
     container_name: claude-switcher-ollama-1
-    profiles: ["local-llm"]
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
