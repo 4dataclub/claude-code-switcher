@@ -818,34 +818,35 @@ public class ApiController {
     // Frontend nutzt sie noch) — neu kommen `/ai-models`, `/api-keys`,
     // `/cascade-config` hinzu, die das Library-Format respektieren.
 
-    /** Flaches AiModel[]-Array (Library-Vertrag) statt grouped Object. */
+    /**
+     * Flaches AiModel[]-Array (Library-Vertrag) — v0.8.1 Proxy zur Cascade
+     * GET /api/models. Liefert ALLE Felder inkl. providerServerName,
+     * providerBaseUrl, hardwareCompatible/-Reason, quality (gleiche geteilte DB).
+     * Vorher baute der Switcher die Liste selbst und ließ die Server-/Hardware-
+     * Felder weg → die Server-Spalte + das Hardware-Badge im UI hatten keine Daten.
+     */
     @GetMapping("/ai-models")
-    public List<Map<String, Object>> listAiModels() {
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (AiModelConfig m : modelSvc.listModels()) {
-            Map<String, Object> entry = new LinkedHashMap<>();
-            entry.put("id", m.getId());
-            entry.put("provider", m.getProvider());
-            entry.put("modelId", m.getModelId());
-            entry.put("displayName", m.getDisplayName());
-            entry.put("apiKeySettingKey", m.getApiKeySettingKey());
-            entry.put("enabled", Boolean.TRUE.equals(m.getEnabled()));
-            entry.put("orderIdx", m.getOrderIdx());
-            entry.put("cooldown503OverrideSec", m.getCooldown503OverrideSec());
-            entry.put("autoDisabled", Boolean.TRUE.equals(m.getAutoDisabled()));
-            entry.put("autoDisabledReason", m.getAutoDisabledReason());
-            entry.put("autoDisabledAt", m.getAutoDisabledAt());
-            entry.put("category", m.getCategory());   // Phase S': Cascade-Bereich (null → "general")
-            entry.put("keyConfigured", modelSvc.modelHasKey(m));
-            entry.put("cooldownRemainingSec", 0);
-            out.add(entry);
-        }
-        return out;
+    public com.fasterxml.jackson.databind.JsonNode listAiModels() {
+        return cascade.getModels();
     }
 
     @PostMapping("/ai-models")
     public Map<String, Object> aiModelsCreate(@RequestBody Map<String, Object> body) {
         return createCascadeModel(body);
+    }
+
+    /**
+     * v0.8.1 — Partielles Update (u.a. Server-Zuweisung `providerServerName` über
+     * das Server-Dropdown). Proxy zur Cascade PUT /api/models/{id}, damit das Feld
+     * persistiert UND der Auto-Provision-Trigger (Modell auf dem Server pullen)
+     * greift. Der Switcher-eigene modelSvc kennt das Feld nicht.
+     */
+    @PutMapping("/ai-models/{id}")
+    public Map<String, Object> aiModelsUpdate(@PathVariable long id, @RequestBody Map<String, Object> body) {
+        boolean ok = cascade.patchModel(id, body);
+        sse.broadcast("model-updated", Map.of("id", id, "ok", ok));
+        return ok ? Map.of("ok", true, "id", id)
+                  : Map.of("ok", false, "error", "llm-cascade upstream failed");
     }
 
     @DeleteMapping("/ai-models/{id}")
