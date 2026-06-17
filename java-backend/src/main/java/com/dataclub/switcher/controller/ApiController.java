@@ -370,6 +370,53 @@ public class ApiController {
         return Map.of("success", true);
     }
 
+    // ─── Supermodell-Modus (Opus-Orchestrator + @supermodel-Delegation) ──────
+
+    @GetMapping("/supermodel")
+    public Map<String, Object> getSupermodel() {
+        ObjectNode sw = configs.getSwitcher();
+        return Map.of("enabled", sw.path("supermodel").asBoolean(false));
+    }
+
+    public static class SupermodelRequest { public Boolean enabled; }
+
+    /**
+     * Supermodell-Toggle (2. Achse neben dem Pool/Bereich). AN = Opus bleibt
+     * Orchestrator und delegiert via @supermodel-Agent (siehe ~/.claude/CLAUDE.md);
+     * der gewählte Bereich/Pool bestimmt die Modelle. Pinnt Opus nur, wenn nicht
+     * schon Anthropic aktiv ist (idempotent → kein unnötiger Mid-Session-Restart).
+     */
+    @PostMapping("/supermodel")
+    public synchronized ResponseEntity<?> setSupermodel(@RequestBody SupermodelRequest req) {
+        boolean enable = req != null && Boolean.TRUE.equals(req.enabled);
+        ObjectNode cfg = configs.readConfig();
+        ObjectNode sw = cfg.has("_switcher") && cfg.get("_switcher").isObject()
+            ? (ObjectNode) cfg.get("_switcher") : configs.mapper().createObjectNode();
+        boolean needRestart = false;
+        sw.put("supermodel", enable);
+        if (enable) {
+            sw.put("mode", "manual"); // kein Auto-Failover-Konflikt im Supermodell-Modus
+            if (!"anthropic".equals(sw.path("provider").asText(""))) {
+                // Opus pinnen — analog chain-promote (Anthropic direkt, kein Router)
+                ObjectNode env = cfg.has("env") && cfg.get("env").isObject()
+                    ? (ObjectNode) cfg.get("env") : configs.mapper().createObjectNode();
+                env.remove("ANTHROPIC_API_KEY");
+                env.remove("ANTHROPIC_BASE_URL");
+                cfg.set("env", env);
+                sw.put("provider", "anthropic");
+                sw.put("chain_position", 0);
+                sw.remove("activeRoute");
+                needRestart = true;
+            }
+        }
+        cfg.set("_switcher", sw);
+        configs.writeConfig(cfg);
+        router.writeRouterConfig();
+        if (needRestart) configs.writeRestartMarker("supermodel-on", null);
+        sse.broadcast("supermodel", Map.of("enabled", enable));
+        return ResponseEntity.ok(Map.of("success", true, "enabled", enable, "restart", needRestart));
+    }
+
     // ─── Wrapper-Endpoints (warn / quota-error / recheck-now / restart) ──────
 
     public static class WarnRequest {
