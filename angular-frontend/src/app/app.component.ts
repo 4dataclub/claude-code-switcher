@@ -91,10 +91,12 @@ import {
           [activeCategory]="preferredCategory()"
           [categoryTitles]="categoryTitles"
           [categoryHintMap]="cascadeHints"
+          [supermodel]="supermodel()"
           (modeChanged)="onModeChange($event)"
           (promoteRequested)="onPromote()"
           (switchTo)="onSwitchTo($event)"
           (categoryChanged)="onCategoryChange($event)"
+          (supermodelChanged)="onSupermodelChange($event)"
         ></sw-mode-panel>
       </section>
 
@@ -310,6 +312,8 @@ export class AppComponent implements OnDestroy {
   readonly categoriesList = signal<string[]>([]);
   /** v0.7.5 — Aktuell vom User gewählter Override (leer = Semantic Routing). */
   readonly preferredCategory = signal<string>('');
+  /** v2 — Supermodell-Modus (Orchestrierung-Achse) an/aus. */
+  readonly supermodel = signal<boolean>(false);
 
   /** EventSource für SSE-Live-Updates. Wird in ngOnInit aufgemacht + ngOnDestroy geschlossen. */
   private es: EventSource | null = null;
@@ -341,6 +345,10 @@ export class AppComponent implements OnDestroy {
     this.api.getPreferredCategory().subscribe({
       next: (resp: any) => this.preferredCategory.set(resp?.category || ''),
       error: () => this.preferredCategory.set(''),
+    });
+    this.api.getSupermodel().subscribe({
+      next: (resp) => this.supermodel.set(!!resp?.enabled),
+      error: () => this.supermodel.set(false),
     });
   }
 
@@ -416,6 +424,13 @@ export class AppComponent implements OnDestroy {
     reloadOn('model-reenabled');
     reloadOn('setting-updated');
     reloadOn('cooldown-override');
+    // v2: Supermodell-Toggle live spiegeln (Wrapper/anderer Tab schaltet um)
+    this.es?.addEventListener('supermodel', () => {
+      this.api.getSupermodel().subscribe({
+        next: (r) => this.supermodel.set(!!r?.enabled),
+        error: () => {},
+      });
+    });
   }
 
   /**
@@ -513,6 +528,22 @@ export class AppComponent implements OnDestroy {
       },
       error: () => {
         // Backend nicht da → Signal nicht updaten, UI bleibt im alten State.
+      },
+    });
+  }
+
+  /** v2 — Supermodell-Achse an/aus. Backend pinnt Opus, wenn AN. */
+  onSupermodelChange(on: boolean): void {
+    this.supermodel.set(on); // optimistisch
+    this.api.setSupermodel(on).subscribe({
+      next: (r) => {
+        this.supermodel.set(!!r?.enabled);
+        this.toast.set({ msg: on ? 'Supermodell AN — Opus orchestriert' : 'Supermodell AUS', type: 'ok' });
+        if (r?.restart) this.reload();
+      },
+      error: () => {
+        this.supermodel.set(!on); // rollback
+        this.toast.set({ msg: 'Supermodell-Umschaltung fehlgeschlagen', type: 'err' });
       },
     });
   }

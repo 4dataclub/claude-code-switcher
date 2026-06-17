@@ -31,6 +31,34 @@ import { CascadeModePanelComponent } from '@4dataclub/ki-models-ui';
   imports: [CommonModule, FormsModule, CascadeModePanelComponent],
   template: `
     <div>
+      <!-- Row 0: Supermodell (Orchestrierung an/aus) — die 2. Achse, gilt in JEDEM Bereich/Pool -->
+      <div class="flex items-center gap-3 flex-wrap mb-3">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Supermodell</span>
+        <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
+          <button
+            type="button"
+            (click)="setSupermodel(false)"
+            class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
+            [class.bg-slate-950]="!supermodel"
+            [class.text-slate-50]="!supermodel"
+            [class.dark:bg-slate-50]="!supermodel"
+            [class.dark:text-slate-950]="!supermodel"
+            [class.text-slate-500]="supermodel"
+            [class.dark:text-slate-400]="supermodel"
+          >Aus</button>
+          <button
+            type="button"
+            (click)="setSupermodel(true)"
+            class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
+            [class.bg-indigo-600]="supermodel"
+            [class.text-white]="supermodel"
+            [class.text-slate-500]="!supermodel"
+            [class.dark:text-slate-400]="!supermodel"
+          >An — Opus orchestriert</button>
+        </div>
+        <span *ngIf="supermodel" class="text-xs text-slate-500 dark:text-slate-400">Opus plant &amp; verteilt im gewählten Bereich, prüft am Ende.</span>
+      </div>
+
       <!-- Row 1: Switching (Manuell / Auto-Failover) — primärer Mode-Toggle -->
       <div class="flex items-center gap-3 flex-wrap">
         <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Switching</span>
@@ -164,6 +192,8 @@ export class ModePanelComponent {
   @Input() categoryTitles: Record<string, string> = {};
   /** Optional: lange Hint-Strings pro Kategorie (kommt aus cascades-view) */
   @Input() categoryHintMap: Record<string, string> = {};
+  /** v2: Supermodell-Modus aktiv? (Orchestrierung-Achse, unabhängig vom Bereich/Pool). */
+  @Input() supermodel = false;
 
   @Output() modeChanged = new EventEmitter<'manual' | 'auto'>();
   @Output() promoteRequested = new EventEmitter<void>();
@@ -172,6 +202,8 @@ export class ModePanelComponent {
   /** v0.7.5 — User klickt einen Bereich-Tab → AppComponent ruft
    *  POST /api/preferred-category. Empty-String bedeutet „zurück zu Semantic Routing". */
   @Output() categoryChanged = new EventEmitter<string>();
+  /** v2: Supermodell an/aus → AppComponent ruft POST /api/supermodel. */
+  @Output() supermodelChanged = new EventEmitter<boolean>();
 
   /** Composite key `provider:modelId` für die Single-Select-Combobox.
    *  Wird beim Submit gesplittet und als {provider, model} emittiert. */
@@ -246,6 +278,12 @@ export class ModePanelComponent {
   setMode(m: 'manual' | 'auto'): void {
     if (this.mode === m) return;
     this.modeChanged.emit(m);
+  }
+
+  /** Supermodell-Achse: an/aus. Propagiert nach oben (AppComponent → POST /api/supermodel). */
+  setSupermodel(on: boolean): void {
+    if (this.supermodel === on) return;
+    this.supermodelChanged.emit(on);
   }
 
   /**

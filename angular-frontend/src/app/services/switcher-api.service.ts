@@ -123,4 +123,19 @@ export class SwitcherApiService {
       { category }
     );
   }
+
+  // ─── Supermodell-Modus (2. Achse: Orchestrierung an/aus) ─────────────────
+
+  /** Ist der Supermodell-Modus (Opus orchestriert + @supermodel-Delegation) aktiv? */
+  getSupermodel(): Observable<{ enabled: boolean }> {
+    return this.http.get<{ enabled: boolean }>('/api/supermodel');
+  }
+
+  /** Supermodell an/aus. AN pinnt Opus (Anthropic) als Orchestrator. */
+  setSupermodel(enabled: boolean): Observable<{ success: boolean; enabled: boolean; restart: boolean }> {
+    return this.http.post<{ success: boolean; enabled: boolean; restart: boolean }>(
+      '/api/supermodel',
+      { enabled }
+    );
+  }
 }
