@@ -58,8 +58,12 @@ import { FormsModule } from '@angular/forms';
         <span *ngIf="supermodel" class="text-xs text-slate-500 dark:text-slate-400">Opus plant &amp; verteilt im gewählten Bereich, prüft am Ende.</span>
       </div>
 
-      <!-- Row 1: Switching (Manuell / Auto-Failover) — primärer Mode-Toggle -->
-      <div class="flex items-center gap-3 flex-wrap">
+      <!-- Row 1: Switching (Manuell / Auto-Failover) — NUR im klassischen Modus.
+           Bei Supermodell AN orchestriert Opus (gepinnt) + die Cascade macht das
+           Rollen-Failover via Cooldown; ein Session-Auto-Failover würde Opus
+           entpinnen → die Achse ist dann widersprüchlich + ausgeblendet
+           (Backend erzwingt ohnehin mode=manual). -->
+      <div *ngIf="!supermodel" class="flex items-center gap-3 flex-wrap">
         <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Switching</span>
         <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
           <button
@@ -110,8 +114,9 @@ import { FormsModule } from '@angular/forms';
         <span class="text-xs text-slate-500 dark:text-slate-400">{{ categoryHintMap[activeCategory] || '' }}</span>
       </div>
 
-      <!-- Manuell-Mode: Picker mit gefilterten Modellen (nach activeCategory) -->
-      <div *ngIf="mode === 'manual'" class="mt-4 rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 sm:p-5 ring-1 ring-slate-200 dark:ring-slate-700">
+      <!-- Manuell-Mode: Einzelmodell-Picker — nur klassisch (bei Supermodell AN
+           wählt nicht der User EIN Modell, sondern Opus delegiert an die Rollen). -->
+      <div *ngIf="mode === 'manual' && !supermodel" class="mt-4 rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 sm:p-5 ring-1 ring-slate-200 dark:ring-slate-700">
         <p class="text-sm text-slate-600 dark:text-slate-300 mb-3">
           <strong class="font-semibold text-slate-900 dark:text-slate-100">Aktiver Provider</strong>
           — Claude Code läuft auf
