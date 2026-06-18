@@ -1,7 +1,6 @@
 import { Component, EventEmitter, Input, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { CascadeModePanelComponent } from '@4dataclub/ki-models-ui';
 
 /**
  * Mode-Toggle (Manuell / Auto-Failover) + Aktiv-Picker (Manuell) +
@@ -28,7 +27,7 @@ import { CascadeModePanelComponent } from '@4dataclub/ki-models-ui';
 @Component({
   selector: 'sw-mode-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule, CascadeModePanelComponent],
+  imports: [CommonModule, FormsModule],
   template: `
     <div>
       <!-- Row 0: Supermodell (Orchestrierung an/aus) — die 2. Achse, gilt in JEDEM Bereich/Pool -->
@@ -88,21 +87,27 @@ import { CascadeModePanelComponent } from '@4dataclub/ki-models-ui';
         </div>
       </div>
 
-      <!-- Row 2: Bereich-Toggle (Library-Component v0.13.0). Filtert
-           Manuell-Picker UND steuert in Auto-Mode welcher Cascade-Bereich
-           das Failover macht. Auto-Info-Card wird per [autoMode]-Input
-           gated und nutzt scrollTargetId für den ↓-Button. -->
-      <div class="mt-3">
-        <ki-cascade-mode-panel
-          [categories]="categories"
-          [activeCategory]="activeCategory"
-          [categoryTitles]="categoryTitles"
-          [categoryHintMap]="categoryHintMap"
-          [autoMode]="mode === 'auto'"
-          scrollTargetId="cascade-bereiche-section"
-          [labels]="cascadeModePanelLabels"
-          (categoryChanged)="setCategory($event)">
-        </ki-cascade-mode-panel>
+      <!-- Row 2: Bereich/Pool-Toggle — NUR die 3 Pools (cloud/free/local).
+           KEIN „Auto"/Off-Zustand: ein Pool ist immer gewählt (Default cloud).
+           Eigene Pill-Reihe statt der Library-Component, die zwingend einen
+           Off-Button rendert. -->
+      <div class="flex items-center gap-3 flex-wrap mt-3">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Bereich</span>
+        <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
+          <button
+            *ngFor="let p of categories"
+            type="button"
+            (click)="setCategory(p)"
+            class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
+            [class.bg-slate-950]="activeCategory === p"
+            [class.text-slate-50]="activeCategory === p"
+            [class.dark:bg-slate-50]="activeCategory === p"
+            [class.dark:text-slate-950]="activeCategory === p"
+            [class.text-slate-500]="activeCategory !== p"
+            [class.dark:text-slate-400]="activeCategory !== p"
+          >{{ poolButtonLabel(p) }}</button>
+        </div>
+        <span class="text-xs text-slate-500 dark:text-slate-400">{{ categoryHintMap[activeCategory] || '' }}</span>
       </div>
 
       <!-- Manuell-Mode: Picker mit gefilterten Modellen (nach activeCategory) -->
@@ -318,18 +323,9 @@ export class ModePanelComponent {
     return c.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   }
 
-  /**
-   * Deutsche Labels für die Library-Component `<ki-cascade-mode-panel>`.
-   * Stabil als readonly damit es nicht bei jedem Change-Detection-Tick
-   * neue Referenzen gibt (Performance + verhindert ngOnChanges-Schleifen).
-   */
-  readonly cascadeModePanelLabels = {
-    toggleLegend: 'Bereich',
-    hintSemanticRouting: 'Auto-Routing — Cascade entscheidet pro Call welcher Bereich.',
-    hintOverrideTemplate: 'Override: alle Generate-Calls gehen an „{cat}".',
-    autoCardActiveTemplate: 'Auto-Failover läuft via Cascade-Bereich „{cat}". Reihenfolge + Cooldown siehe Card unten.',
-    autoCardSemanticHint: 'Auto-Routing aktiv — wähle einen Bereich oben für gezielten Override.',
-    btnScrollToCascade: '↓ Zur Cascade-Konfiguration',
-    offButtonLabel: 'Auto',
-  };
+  /** Kurzes Button-Label pro Pool (Cloud / Free / Lokal). */
+  poolButtonLabel(p: string): string {
+    const short: Record<string, string> = { cloud: 'Cloud', free: 'Free', local: 'Lokal' };
+    return short[p] || this.categoryTitles[p] || p;
+  }
 }
