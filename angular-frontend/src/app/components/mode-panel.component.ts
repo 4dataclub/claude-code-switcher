@@ -234,13 +234,22 @@ export class ModePanelComponent {
   }
 
   /**
-   * Aktive Modelle gefiltert nach `activeCategory`. Wenn `activeCategory`
-   * leer ist (Semantic Routing): alle Modelle. Sonst: nur die mit passender
-   * `category` ODER ohne Category-Marker (general/null = überall sichtbar).
+   * Aktive Modelle gefiltert nach dem aktiven **Pool** (`activeCategory` ist
+   * jetzt cloud|free|local). Ein Modell gehört zu einem Pool, wenn seine
+   * Kategorie der Pool ist ODER auf `-{pool}` endet (Compound-Matrix
+   * Rolle×Pool). `free` matcht zusätzlich die Legacy-Kategorie `free-only`.
+   * Leerer Pool = alle Modelle.
    */
   availableModelsForCategory(): { provider: string; modelId: string; displayName: string; category?: string | null }[] {
     if (!this.activeCategory) return this.availableModels;
-    return this.availableModels.filter((m) => m.category === this.activeCategory);
+    return this.availableModels.filter((m) => this.matchesPool(m.category, this.activeCategory));
+  }
+
+  /** True wenn die Kategorie zum Pool gehört (exakt, Compound `-pool` oder free-only). */
+  matchesPool(cat: string | null | undefined, pool: string): boolean {
+    if (!cat) return pool === 'cloud'; // null/general → Cloud-Lane
+    if (pool === 'free') return cat === 'free' || cat === 'free-only' || cat.endsWith('-free');
+    return cat === pool || cat.endsWith('-' + pool);
   }
 
   /** Human-readable Provider-Label. */
@@ -302,6 +311,8 @@ export class ModePanelComponent {
    * konsistent bleibt.
    */
   categoryLabel(c: string): string {
+    const pools: Record<string, string> = { cloud: 'Cloud', free: 'Free', local: 'Lokal' };
+    if (pools[c]) return pools[c];
     const hint = this.categoryHintMap?.[c];
     if (hint) return hint;
     return c.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');

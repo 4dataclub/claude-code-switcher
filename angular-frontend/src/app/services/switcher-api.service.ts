@@ -13,6 +13,10 @@ export interface SwitcherStatus {
   provider: string;
   model?: string | null;
   mode: 'manual' | 'auto';
+  /** 2-Achsen-Supermodell: Pool + Schalter + Local-Orchestrator-Pending. */
+  pool?: string;
+  supermodel?: boolean;
+  localOrchestratorPending?: boolean;
   fallback_chain?: ChainEntry[];
   chain_position?: number;
   activeRoute?: { model?: string };
@@ -124,18 +128,35 @@ export class SwitcherApiService {
     );
   }
 
-  // ─── Supermodell-Modus (2. Achse: Orchestrierung an/aus) ─────────────────
+  // ─── 2-Achsen-Modus: Pool (cloud|free|local) × Supermodell ───────────────
 
-  /** Ist der Supermodell-Modus (Opus orchestriert + @supermodel-Delegation) aktiv? */
-  getSupermodel(): Observable<{ enabled: boolean }> {
-    return this.http.get<{ enabled: boolean }>('/api/supermodel');
+  /** Aktueller Supermodell-State inkl. Pool + Local-Orchestrator-Pending-Flag. */
+  getSupermodel(): Observable<{ enabled: boolean; pool?: string; localOrchestratorPending?: boolean }> {
+    return this.http.get<{ enabled: boolean; pool?: string; localOrchestratorPending?: boolean }>('/api/supermodel');
   }
 
-  /** Supermodell an/aus. AN pinnt Opus (Anthropic) als Orchestrator. */
+  /** Back-compat: nur die Supermodell-Achse togglen (Pool unverändert). */
   setSupermodel(enabled: boolean): Observable<{ success: boolean; enabled: boolean; restart: boolean }> {
     return this.http.post<{ success: boolean; enabled: boolean; restart: boolean }>(
       '/api/supermodel',
       { enabled }
     );
+  }
+
+  /**
+   * Pool-bewusster 2-Achsen-Modus. Beide Felder optional (partielles Update).
+   * `pool=local` ist fail-closed (kein Cloud-Ausweich) — siehe Backend.
+   */
+  setMode(body: { pool?: string; supermodel?: boolean }): Observable<{
+    success: boolean; pool: string; supermodel: boolean; restart: boolean;
+    localOrchestratorPending?: boolean; note?: string;
+  }> {
+    return this.http.post<any>('/api/mode', body);
+  }
+
+  /** Kategorie-Metadaten (displayName/description/orderIdx) — Quelle für die
+   *  dynamischen categoryTitles (Renames propagieren ohne Hardcode). */
+  listCategoryMetas(): Observable<{ name: string; displayName?: string | null; description?: string | null; orderIdx?: number | null }[]> {
+    return this.http.get<any[]>('/api/categories');
   }
 }

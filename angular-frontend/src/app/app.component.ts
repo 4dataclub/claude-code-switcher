@@ -87,17 +87,60 @@ import {
           [activeProvider]="status()?.provider ?? null"
           [activeModel]="activeModel()"
           [availableModels]="availableModels()"
-          [categories]="categoriesList()"
-          [activeCategory]="preferredCategory()"
-          [categoryTitles]="categoryTitles"
-          [categoryHintMap]="cascadeHints"
+          [categories]="POOLS"
+          [activeCategory]="activePool()"
+          [categoryTitles]="poolTitles"
+          [categoryHintMap]="poolHints"
           [supermodel]="supermodel()"
           (modeChanged)="onModeChange($event)"
           (promoteRequested)="onPromote()"
           (switchTo)="onSwitchTo($event)"
-          (categoryChanged)="onCategoryChange($event)"
+          (categoryChanged)="onPoolChange($event)"
           (supermodelChanged)="onSupermodelChange($event)"
         ></sw-mode-panel>
+      </section>
+
+      <!-- Rollen pro Pool — erscheinen NUR bei Supermodell AN (additiv, im aktiven
+           Pool), verschwinden bei AUS. Jede Rolle = Compound-Kategorie {rolle}-{pool}
+           mit ihrer Failover-Kette ① ②. -->
+      <section *ngIf="supermodel()" class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
+        <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 mb-1">
+          Rollen im Pool „{{ poolTitles[activePool()] }}"
+        </h2>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">
+          Opus plant, delegiert pro Schritt an die günstigste Rolle (über <code class="px-1 rounded bg-slate-100 dark:bg-slate-800">&#64;supermodel</code>) und prüft am Ende. ① ② = Failover-Kette mit Cooldown.
+        </p>
+
+        <p *ngIf="activePool() === 'local' && localOrchestratorPending()"
+           class="mb-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 ring-1 ring-amber-300 dark:ring-amber-800 px-4 py-3 text-xs font-semibold text-amber-700 dark:text-amber-300">
+          ⚠ Lokaler Orchestrator gewählt, aber kein lokales Modell aktiv — <strong>fail-closed</strong> (kein automatischer Cloud-Ausweich). Ollama-Modell ziehen + aktivieren.
+        </p>
+
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div *ngFor="let role of ROLES" class="rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 ring-1 ring-slate-200 dark:ring-slate-700">
+            <div class="flex items-baseline justify-between gap-2">
+              <strong class="text-sm font-bold text-slate-900 dark:text-slate-100">{{ roleMeta[role].label }}</strong>
+              <code class="text-[10px] text-slate-400">{{ role }}-{{ activePool() }}</code>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mb-2">{{ roleMeta[role].desc }}</p>
+            <ng-container *ngIf="cellModels(role).length; else emptyCell">
+              <div *ngFor="let m of cellModels(role); let i = index" class="text-xs font-mono text-slate-700 dark:text-slate-300">
+                {{ i + 1 }}. {{ m.displayName }}
+                <span class="text-slate-400">· {{ m.provider }}</span>
+                <span *ngIf="!m.enabled" class="text-amber-500"> · aus</span>
+              </div>
+            </ng-container>
+            <ng-template #emptyCell>
+              <p class="text-xs italic text-slate-400">
+                <ng-container *ngIf="role === 'research'; else genericEmpty">
+                  <span *ngIf="activePool() === 'local'">Nicht im Local-Pool (Web = Cloud, fail-closed).</span>
+                  <span *ngIf="activePool() !== 'local'">Über Gemini-MCP (Grounding) — kein Cascade-Modell nötig.</span>
+                </ng-container>
+                <ng-template #genericEmpty>Kein Modell — unten in der Tabelle anlegen (Kategorie <code>{{ role }}-{{ activePool() }}</code>).</ng-template>
+              </p>
+            </ng-template>
+          </div>
+        </div>
       </section>
 
       <!-- Cascade-Bereiche (Phase S') — N Karten dynamisch, jede mit eigener Failover-Chain + Cooldown.
@@ -119,7 +162,7 @@ import {
           [labels]="modelsTableLabels"
           [showActiveAction]="true"
           [activeModelId]="activeModel()"
-          [categoryTitles]="categoryTitles"
+          [categoryTitles]="categoryTitles()"
           [categoryHints]="cascadeHints"
           [categoryOrder]="cascadeOrder"
           [keylessProviders]="switcherKeylessProviders"
@@ -247,22 +290,47 @@ export class AppComponent implements OnDestroy {
   };
 
   /**
-   * Anzeige-Titel pro Kategorie in der Modelle-Tabelle. Ohne diesen Input würde
-   * die Library ab v0.10.0 die Kategorie-Strings capitalizen (`free-only` →
-   * `Free Only`); wir wollen explizite, sprechende Labels.
+   * Anzeige-Titel pro Kategorie in der Modelle-Tabelle — jetzt **dynamisch**
+   * aus `/api/categories` (displayName || humanize). Bugfix: Renames der
+   * Kategorie-DisplayNames propagieren live an Tabelle + Toggle, kein Hardcode
+   * mehr (vorher fest auf cloud/free-only/general → Compound-Kategorien +
+   * Umbenennungen erschienen nie). Wird bei jedem reload() neu gebaut.
    */
-  readonly categoryTitles: Record<string, string> = {
-    cloud:       'Cloud — Premium-Modelle',
-    'free-only': 'Free Only — kostenfrei',
-    general:     'General — Fallback',
+  readonly categoryTitles = signal<Record<string, string>>({});
+
+  /** Die 3 Pools — der Bereich-Toggle zeigt NUR diese (nie Rollen, nie „Auto"). */
+  readonly POOLS = ['cloud', 'free', 'local'];
+  /** Die 4 Rollen — erscheinen pro Pool NUR wenn Supermodell AN ist. */
+  readonly ROLES = ['implement', 'review', 'research', 'dispatch'];
+
+  readonly poolTitles: Record<string, string> = {
+    cloud: 'Cloud — Premium (bezahlt)',
+    free:  'Free — OpenRouter :free',
+    local: 'Lokal — Ollama (privat)',
+  };
+  readonly poolHints: Record<string, string> = {
+    cloud: 'Beste Qualität (DeepSeek/GPT/Gemini), kostet.',
+    free:  '€0, stark rate-limited, NICHT privat (Daten ggf. fürs Training).',
+    local: 'Eigene Infra, privat, fail-closed — nichts verlässt den Rechner.',
+  };
+  readonly roleMeta: Record<string, { label: string; desc: string }> = {
+    implement: { label: 'Implement', desc: 'Bulk-Code, Backend, Boilerplate, CRUD' },
+    review:    { label: 'Review',    desc: 'Korrektheit, Sicherheit, Tests' },
+    research:  { label: 'Research',  desc: 'Web/Google, große Docs' },
+    dispatch:  { label: 'Dispatch',  desc: 'Triviales: Commit-Msgs, Summaries' },
   };
 
   /**
-   * Reihenfolge der Kategorie-Sektionen in der Modelle-Tabelle. Cloud zuerst
-   * (Default für den Switcher), Free-Only danach. `general` ist Fallback und
-   * landet automatisch hinten falls überhaupt jemand ein `general`-Modell hat.
+   * Reihenfolge der Kategorie-Sektionen in der Modelle-Tabelle: Pools zuerst,
+   * dann die Compound-Matrix Rolle×Pool, `general` ganz hinten.
    */
-  readonly cascadeOrder: string[] = ['cloud', 'free-only', 'general'];
+  readonly cascadeOrder: string[] = [
+    'cloud', 'free-only', 'local',
+    'implement-cloud', 'review-cloud', 'research-cloud', 'dispatch-cloud',
+    'implement-free', 'review-free', 'dispatch-free',
+    'implement-local', 'review-local', 'dispatch-local',
+    'general',
+  ];
 
   /**
    * v0.11.3 — Switcher-spezifischer Override für die ki-models-table.
@@ -307,13 +375,14 @@ export class AppComponent implements OnDestroy {
    */
   readonly availableModels = signal<{ provider: string; modelId: string; displayName: string; category?: string | null }[]>([]);
 
-  /** v0.7.5 — Liste der verfügbaren Cascade-Bereiche (cloud, free-only, …).
-   *  Wird beim Init via GET /api/cascades geholt. */
-  readonly categoriesList = signal<string[]>([]);
-  /** v0.7.5 — Aktuell vom User gewählter Override (leer = Semantic Routing). */
-  readonly preferredCategory = signal<string>('');
   /** v2 — Supermodell-Modus (Orchestrierung-Achse) an/aus. */
   readonly supermodel = signal<boolean>(false);
+  /** v2 — Aktiver Pool (Bereich-Achse): cloud | free | local. */
+  readonly activePool = signal<string>('cloud');
+  /** v2 — Local-Orchestrator gewählt, aber kein lokales Modell aktiv (fail-closed). */
+  readonly localOrchestratorPending = signal<boolean>(false);
+  /** v2 — Alle Modelle gruppiert nach Compound-Kategorie {rolle}-{pool} (Rollen-Panel). */
+  readonly matrixModels = signal<Record<string, { provider: string; modelId: string; displayName: string; enabled: boolean }[]>>({});
 
   /** EventSource für SSE-Live-Updates. Wird in ngOnInit aufgemacht + ngOnDestroy geschlossen. */
   private es: EventSource | null = null;
@@ -325,31 +394,45 @@ export class AppComponent implements OnDestroy {
   }
 
   /**
-   * v0.7.5 — Cascade-Bereiche + Preferred-Category beim Mount laden.
-   *  - Bereiche-Liste aus GET /api/cascades (was eh schon im Cascades-View
-   *    rendert) → wir nehmen nur die Namen für das Modus-Panel-Toggle.
-   *  - Preferred-Category aus GET /api/preferred-category → signal-set
-   *    damit der korrekte Toggle vor-gehighlighted ist.
-   *
-   * Fehler werden geschluckt — bei Cascade < 0.7.5 bleibt der Toggle
-   * versteckt (categoriesList leer) und der State leer.
+   * Beim Mount: dynamische Kategorie-Titel + 2-Achsen-State (Pool + Supermodell)
+   * laden. Fehler werden geschluckt (Cascade ohne Feature → Defaults).
    */
   private loadCategoriesAndPref(): void {
-    this.api.listCascades().subscribe({
-      next: (cs: any[]) => {
-        const names = Array.isArray(cs) ? cs.map((c) => c?.name).filter((n): n is string => !!n) : [];
-        this.categoriesList.set(names);
-      },
-      error: () => this.categoriesList.set([]),
-    });
-    this.api.getPreferredCategory().subscribe({
-      next: (resp: any) => this.preferredCategory.set(resp?.category || ''),
-      error: () => this.preferredCategory.set(''),
-    });
+    this.reloadCategoryTitles();
     this.api.getSupermodel().subscribe({
-      next: (resp) => this.supermodel.set(!!resp?.enabled),
-      error: () => this.supermodel.set(false),
+      next: (resp) => {
+        this.supermodel.set(!!resp?.enabled);
+        this.activePool.set(resp?.pool || 'cloud');
+        this.localOrchestratorPending.set(!!resp?.localOrchestratorPending);
+      },
+      error: () => { this.supermodel.set(false); this.activePool.set('cloud'); },
     });
+  }
+
+  /** Baut categoryTitles dynamisch aus /api/categories (displayName || humanize). */
+  private reloadCategoryTitles(): void {
+    this.api.listCategoryMetas().subscribe({
+      next: (metas) => {
+        const titles: Record<string, string> = {};
+        for (const m of metas || []) {
+          if (!m?.name) continue;
+          const dn = (m.displayName ?? '').trim();
+          titles[m.name] = dn || this.humanizeCategory(m.name);
+        }
+        this.categoryTitles.set(titles);
+      },
+      error: () => { /* Cascade ohne Feature → Library humanized selbst */ },
+    });
+  }
+
+  /** `implement-cloud` → `Implement · Cloud` (Fallback ohne displayName). */
+  private humanizeCategory(name: string): string {
+    return name.split(/[-_]/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' · ');
+  }
+
+  /** Modelle der Compound-Zelle {role}-{activePool} (für das Rollen-Panel). */
+  cellModels(role: string): { provider: string; modelId: string; displayName: string; enabled: boolean }[] {
+    return this.matrixModels()[`${role}-${this.activePool()}`] ?? [];
   }
 
   ngOnDestroy(): void {
@@ -427,10 +510,25 @@ export class AppComponent implements OnDestroy {
     // v2: Supermodell-Toggle live spiegeln (Wrapper/anderer Tab schaltet um)
     this.es?.addEventListener('supermodel', () => {
       this.api.getSupermodel().subscribe({
-        next: (r) => this.supermodel.set(!!r?.enabled),
+        next: (r) => {
+          this.supermodel.set(!!r?.enabled);
+          if (r?.pool) this.activePool.set(r.pool);
+          this.localOrchestratorPending.set(!!r?.localOrchestratorPending);
+        },
         error: () => {},
       });
     });
+    // 2-Achsen 'mode'-Event: Pool + Supermodell direkt aus dem Payload.
+    this.es?.addEventListener('mode', (e: MessageEvent) => {
+      try {
+        const d = JSON.parse(e.data);
+        if (d.pool) this.activePool.set(d.pool);
+        if (typeof d.supermodel === 'boolean') this.supermodel.set(d.supermodel);
+        this.localOrchestratorPending.set(!!d.localOrchestratorPending);
+      } catch {}
+    });
+    // Kategorie-Rename/-Delete → categoryTitles + Tabelle dynamisch neu.
+    reloadOn('category-updated');
   }
 
   /**
@@ -452,6 +550,9 @@ export class AppComponent implements OnDestroy {
     this.api.status().subscribe({
       next: (s) => {
         this.status.set(s);
+        if (s.pool) this.activePool.set(s.pool);
+        if (typeof s.supermodel === 'boolean') this.supermodel.set(s.supermodel);
+        this.localOrchestratorPending.set(!!s.localOrchestratorPending);
         if (s.lastWarn && Date.now() - s.lastWarn.at < 5 * 60_000) {
           this.warn.set({ percent: s.lastWarn.percent, project: s.lastWarn.project });
         }
@@ -459,6 +560,7 @@ export class AppComponent implements OnDestroy {
       error: (e) => this.error.set('Status nicht erreichbar: ' + (e?.message ?? e)),
     });
     this.reloadAvailableModels();
+    this.reloadCategoryTitles();
   }
 
   /**
@@ -482,8 +584,22 @@ export class AppComponent implements OnDestroy {
             category: m.category ?? null,
           }));
         this.availableModels.set(usable);
+        // Matrix: ALLE Modelle (auch disabled) nach Compound-Kategorie gruppieren,
+        // damit das Rollen-Panel die Zellen (inkl. noch nicht aktivierter Local-
+        // Modelle) zeigt. API-Reihenfolge = orderIdx (Failover-Kette).
+        const matrix: Record<string, { provider: string; modelId: string; displayName: string; enabled: boolean }[]> = {};
+        for (const m of models) {
+          const cat = m.category || 'general';
+          (matrix[cat] ??= []).push({
+            provider: m.provider === 'gemini' ? 'google' : m.provider,
+            modelId: m.modelId,
+            displayName: m.displayName || m.modelId,
+            enabled: !!m.enabled,
+          });
+        }
+        this.matrixModels.set(matrix);
       },
-      error: () => this.availableModels.set([]),
+      error: () => { this.availableModels.set([]); this.matrixModels.set({}); },
     });
   }
 
@@ -515,31 +631,44 @@ export class AppComponent implements OnDestroy {
   }
 
   /**
-   * v0.7.5 — User klickt einen Cascade-Bereich (Cloud / Free Only).
-   * POST /api/preferred-category → bei Success: lokales Signal updaten +
-   * status-bar neu lesen.
-   *
-   * Leer-String setzt zurück auf Semantic Routing.
+   * User klickt einen Pool-Tab (Cloud / Free / Lokal). POST /api/mode {pool}
+   * persistiert die Bereich-Achse. `local` ist fail-closed: das Backend pinnt
+   * NIE auf Cloud/Opus; fehlt ein lokales Modell, kommt eine Pending-Warnung.
    */
-  onCategoryChange(category: string): void {
-    this.api.setPreferredCategory(category).subscribe({
-      next: () => {
-        this.preferredCategory.set(category);
+  onPoolChange(pool: string): void {
+    const prev = this.activePool();
+    this.activePool.set(pool); // optimistisch
+    this.api.setMode({ pool }).subscribe({
+      next: (r) => {
+        this.activePool.set(r.pool || pool);
+        this.localOrchestratorPending.set(!!r.localOrchestratorPending);
+        this.showToast(r.note ? r.note : 'Pool: ' + (this.poolTitles[pool] || pool), r.note ? 'err' : 'ok');
+        if (r.restart) this.reload();
       },
       error: () => {
-        // Backend nicht da → Signal nicht updaten, UI bleibt im alten State.
+        this.activePool.set(prev); // rollback
+        this.showToast('Pool-Wechsel fehlgeschlagen', 'err');
       },
     });
   }
 
-  /** v2 — Supermodell-Achse an/aus. Backend pinnt Opus, wenn AN. */
+  /**
+   * v2 — Supermodell-Achse an/aus (Pool unverändert). Backend pinnt Opus nur
+   * bei Pool cloud/free; bei Pool=local bleibt der Orchestrator lokal (fail-closed).
+   */
   onSupermodelChange(on: boolean): void {
+    const localPool = this.activePool() === 'local';
     this.supermodel.set(on); // optimistisch
     this.api.setSupermodel(on).subscribe({
       next: (r) => {
         this.supermodel.set(!!r?.enabled);
-        this.toast.set({ msg: on ? 'Supermodell AN — Opus orchestriert' : 'Supermodell AUS', type: 'ok' });
-        if (r?.restart) this.reload();
+        this.toast.set({
+          msg: on
+            ? (localPool ? 'Supermodell AN — lokaler Orchestrator (fail-closed)' : 'Supermodell AN — Opus orchestriert')
+            : 'Supermodell AUS',
+          type: 'ok',
+        });
+        this.reload(); // Rollen-Panel + Pending-State auffrischen
       },
       error: () => {
         this.supermodel.set(!on); // rollback

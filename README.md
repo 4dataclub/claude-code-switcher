@@ -6,6 +6,8 @@
 
 *Web-UI auf `http://localhost:2000` — Failover-Chain editierbar, Provider/Modell jederzeit manuell wechselbar.*
 
+> **🧠 Supermodell-Modus** (Opus orchestriert + delegiert Fleißarbeit an günstigere/lokale Modelle; 2 Achsen Pool × Supermodell, Local fail-closed): siehe **[SUPERMODELL.md](SUPERMODELL.md)** — self-contained Anleitung inkl. Laien-Erklärung, 2D-Matrix, Setup (Mac/Ubuntu), Hardware-Stufen und Privacy-Garantie.
+
 ### UI-Bereiche
 
 <table>

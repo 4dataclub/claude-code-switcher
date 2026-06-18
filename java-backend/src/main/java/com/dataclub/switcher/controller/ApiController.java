@@ -98,6 +98,10 @@ public class ApiController {
         out.put("model", cfg.path("model").isTextual() ? cfg.get("model").asText() : null);
         out.put("activeRoute", sw.has("activeRoute") ? sw.get("activeRoute") : null);
         out.put("mode", sw.path("mode").asText("manual"));
+        // 2-Achsen-Supermodell: Pool (cloud|free|local) + Supermodell-Schalter.
+        out.put("pool", sw.path("pool").asText("cloud"));
+        out.put("supermodel", sw.path("supermodel").asBoolean(false));
+        out.put("localOrchestratorPending", sw.path("localOrchestratorPending").asBoolean(false));
         out.put("fallback_chain", chain);
         out.put("chain_position", position);
         out.put("chain_exhausted", position >= chain.size());
@@ -370,51 +374,158 @@ public class ApiController {
         return Map.of("success", true);
     }
 
-    // ─── Supermodell-Modus (Opus-Orchestrator + @supermodel-Delegation) ──────
+    // ─── Supermodell-Modus — 2 Achsen: Pool (cloud|free|local) × Supermodell ──
+    // Pool wählt das Modellset + Privacy-Lane; Supermodell schaltet die
+    // Opus-Orchestrierung (@supermodel-Delegation, siehe ~/.claude/CLAUDE.md)
+    // darüber an/aus. KRITISCH: Pool=local ist FAIL-CLOSED — der Orchestrator
+    // bleibt lokal, NIE wird automatisch auf Opus/Anthropic/Cloud gepinnt.
+
+    private static final Set<String> POOLS = Set.of("cloud", "free", "local");
 
     @GetMapping("/supermodel")
     public Map<String, Object> getSupermodel() {
         ObjectNode sw = configs.getSwitcher();
-        return Map.of("enabled", sw.path("supermodel").asBoolean(false));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("enabled", sw.path("supermodel").asBoolean(false));
+        out.put("pool", sw.path("pool").asText("cloud"));
+        out.put("localOrchestratorPending", sw.path("localOrchestratorPending").asBoolean(false));
+        return out;
     }
 
     public static class SupermodelRequest { public Boolean enabled; }
 
     /**
-     * Supermodell-Toggle (2. Achse neben dem Pool/Bereich). AN = Opus bleibt
-     * Orchestrator und delegiert via @supermodel-Agent (siehe ~/.claude/CLAUDE.md);
-     * der gewählte Bereich/Pool bestimmt die Modelle. Pinnt Opus nur, wenn nicht
-     * schon Anthropic aktiv ist (idempotent → kein unnötiger Mid-Session-Restart).
+     * Back-compat-Endpoint: nur die Supermodell-Achse umschalten, Pool unverändert.
+     * Delegiert an {@link #setMode}. Antwortform der alten API bleibt
+     * {@code {success, enabled, restart}}.
      */
     @PostMapping("/supermodel")
     public synchronized ResponseEntity<?> setSupermodel(@RequestBody SupermodelRequest req) {
-        boolean enable = req != null && Boolean.TRUE.equals(req.enabled);
+        ModeRequest m = new ModeRequest();
+        m.supermodel = req != null && Boolean.TRUE.equals(req.enabled);
+        ResponseEntity<?> resp = setMode(m);
+        if (resp.getStatusCode().is2xxSuccessful() && resp.getBody() instanceof Map<?, ?> body) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("success", body.get("success"));
+            out.put("enabled", body.get("supermodel"));
+            out.put("restart", body.get("restart"));
+            return ResponseEntity.ok(out);
+        }
+        return resp;
+    }
+
+    public static class ModeRequest {
+        public String pool;        // cloud | free | local
+        public Boolean supermodel; // null = unverändert lassen
+    }
+
+    /**
+     * Pool-bewusster 2-Achsen-Modus. Body {@code {pool?, supermodel?}} (beide
+     * optional → partielle Updates). Persistiert {@code _switcher.pool} +
+     * {@code _switcher.supermodel}.
+     *
+     * Orchestrator-Pinning (nur wenn supermodel=true):
+     * <ul>
+     *   <li><b>cloud/free</b> → Opus (Anthropic direkt) pinnen, Opus→Sonnet-Failover
+     *       bleibt erhalten. Idempotent (kein Restart wenn schon Anthropic).</li>
+     *   <li><b>local</b> → FAIL-CLOSED: NIE Opus/Anthropic/Cloud pinnen. Der
+     *       Orchestrator muss lokal sein; solange kein lokales Modell aktiv ist,
+     *       wird {@code localOrchestratorPending=true} gesetzt — aber niemals als
+     *       „keep-alive" auf die Cloud ausgewichen. Lieber STOPP als Leak.</li>
+     * </ul>
+     */
+    @PostMapping("/mode")
+    public synchronized ResponseEntity<?> setMode(@RequestBody ModeRequest req) {
         ObjectNode cfg = configs.readConfig();
         ObjectNode sw = cfg.has("_switcher") && cfg.get("_switcher").isObject()
             ? (ObjectNode) cfg.get("_switcher") : configs.mapper().createObjectNode();
-        boolean needRestart = false;
-        sw.put("supermodel", enable);
-        if (enable) {
-            sw.put("mode", "manual"); // kein Auto-Failover-Konflikt im Supermodell-Modus
-            if (!"anthropic".equals(sw.path("provider").asText(""))) {
-                // Opus pinnen — analog chain-promote (Anthropic direkt, kein Router)
-                ObjectNode env = cfg.has("env") && cfg.get("env").isObject()
-                    ? (ObjectNode) cfg.get("env") : configs.mapper().createObjectNode();
-                env.remove("ANTHROPIC_API_KEY");
-                env.remove("ANTHROPIC_BASE_URL");
-                cfg.set("env", env);
-                sw.put("provider", "anthropic");
-                sw.put("chain_position", 0);
-                sw.remove("activeRoute");
-                needRestart = true;
-            }
+
+        // 1) Pool (validiert + persistiert; Default cloud)
+        String pool = sw.path("pool").asText("cloud");
+        if (req != null && req.pool != null && !req.pool.isBlank()) {
+            if (!POOLS.contains(req.pool))
+                return ResponseEntity.badRequest().body(Map.of("error", "pool must be cloud|free|local"));
+            pool = req.pool;
         }
+        sw.put("pool", pool);
+
+        // 2) Supermodell (null = unverändert)
+        boolean superOn = req != null && req.supermodel != null
+            ? req.supermodel : sw.path("supermodel").asBoolean(false);
+        sw.put("supermodel", superOn);
+
+        // 3) Orchestrator pool-bewusst pinnen
+        boolean needRestart = false;
+        if (superOn) {
+            sw.put("mode", "manual"); // kein Auto-Failover-Konflikt im Supermodell-Modus
+            needRestart = pinOrchestratorForPool(cfg, sw, pool);
+        } else {
+            sw.remove("localOrchestratorPending");
+        }
+
         cfg.set("_switcher", sw);
         configs.writeConfig(cfg);
         router.writeRouterConfig();
-        if (needRestart) configs.writeRestartMarker("supermodel-on", null);
-        sse.broadcast("supermodel", Map.of("enabled", enable));
-        return ResponseEntity.ok(Map.of("success", true, "enabled", enable, "restart", needRestart));
+        if (needRestart) {
+            configs.writeRestartMarker("local".equals(pool) ? "supermodel-local" : "supermodel-on", null);
+        }
+
+        boolean pending = sw.path("localOrchestratorPending").asBoolean(false);
+        Map<String, Object> ev = new LinkedHashMap<>();
+        ev.put("pool", pool);
+        ev.put("supermodel", superOn);
+        ev.put("localOrchestratorPending", pending);
+        sse.broadcast("mode", ev);
+        // Back-compat: das Frontend hört noch auf 'supermodel'.
+        sse.broadcast("supermodel", Map.of("enabled", superOn, "pool", pool));
+
+        Map<String, Object> out = new LinkedHashMap<>(ev);
+        out.put("success", true);
+        out.put("restart", needRestart);
+        if (superOn && "local".equals(pool) && pending) {
+            out.put("note", "Lokaler Orchestrator gewählt, aber kein lokales Modell aktiv. "
+                + "Fail-closed: kein Cloud-Ausweich. Ollama-Modell ziehen + aktivieren.");
+        }
+        return ResponseEntity.ok(out);
+    }
+
+    /**
+     * Pool-bewusstes Orchestrator-Pinning. cloud/free → Opus; local → fail-closed
+     * (nie Cloud). Gibt zurück, ob ein Wrapper-Restart nötig ist.
+     */
+    private boolean pinOrchestratorForPool(ObjectNode cfg, ObjectNode sw, String pool) {
+        if ("local".equals(pool)) {
+            // FAIL-CLOSED: in Local NIE auf Anthropic/Cloud pinnen. Wir lösen
+            // keinen Cloud-Pin aus; ob ein lokales Orchestrator-Modell verfügbar
+            // ist, signalisiert localOrchestratorPending (echtes ccr-Routing aufs
+            // lokale Main-Loop-Modell ist Phase E, sobald Ollama-Modelle da sind).
+            sw.put("localOrchestratorPending", !hasEnabledLocalOrchestrator());
+            return false;
+        }
+        // cloud/free → Opus pinnen (idempotent, analog chain-promote)
+        sw.remove("localOrchestratorPending");
+        if (!"anthropic".equals(sw.path("provider").asText(""))) {
+            ObjectNode env = cfg.has("env") && cfg.get("env").isObject()
+                ? (ObjectNode) cfg.get("env") : configs.mapper().createObjectNode();
+            env.remove("ANTHROPIC_API_KEY");
+            env.remove("ANTHROPIC_BASE_URL");
+            cfg.set("env", env);
+            sw.put("provider", "anthropic");
+            sw.put("chain_position", 0);
+            sw.remove("activeRoute");
+            return true;
+        }
+        return false;
+    }
+
+    /** Existiert ein aktiviertes lokales (Ollama/openai_compat) Modell als Orchestrator? */
+    private boolean hasEnabledLocalOrchestrator() {
+        for (AiModelConfig m : modelSvc.listModels()) {
+            if (!Boolean.TRUE.equals(m.getEnabled())) continue;
+            String p = m.getProvider() == null ? "" : m.getProvider().toLowerCase();
+            if (p.equals("ollama") || p.equals("openai_compat")) return true;
+        }
+        return false;
     }
 
     // ─── Wrapper-Endpoints (warn / quota-error / recheck-now / restart) ──────
@@ -594,6 +705,9 @@ public class ApiController {
     public ResponseEntity<Map<String, Object>> categoryUpsert(@PathVariable String name,
                                                               @RequestBody com.fasterxml.jackson.databind.JsonNode body) {
         boolean ok = cascade.updateCategory(name, body);
+        // Rename/Description-Edit live ans Frontend broadcasten → categoryTitles
+        // (dynamisch aus /api/categories) + Bereich-Toggle aktualisieren sich.
+        if (ok) sse.broadcast("category-updated", Map.of("name", name));
         return ok ? ResponseEntity.ok(Map.of("ok", true))
                   : ResponseEntity.status(502).body(Map.of("ok", false, "error", "llm-cascade upstream failed"));
     }
@@ -601,6 +715,7 @@ public class ApiController {
     @DeleteMapping("/categories/{name}")
     public ResponseEntity<Map<String, Object>> categoryDeleteMeta(@PathVariable String name) {
         boolean ok = cascade.deleteCategoryMeta(name);
+        if (ok) sse.broadcast("category-updated", Map.of("name", name, "deleted", true));
         return ok ? ResponseEntity.ok(Map.of("ok", true))
                   : ResponseEntity.status(502).body(Map.of("ok", false, "error", "llm-cascade upstream failed"));
     }
