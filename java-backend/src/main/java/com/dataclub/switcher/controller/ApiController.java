@@ -687,7 +687,29 @@ public class ApiController {
      */
     @GetMapping("/cascades")
     public com.fasterxml.jackson.databind.JsonNode cascades() {
-        return cascade.getCascades();
+        JsonNode all = cascade.getCascades();
+        if (all == null || !all.isArray()) return all;
+        // Nur die Cascaden des aktiven Pools zeigen (Übersichtlichkeit) — der
+        // Bereich-Toggle wählt cloud|free|local, die Cascade-Bereiche-View
+        // spiegelt nur diesen Pool. Compound-Kategorien {rolle}-{pool} + die
+        // Pool-Kategorie selbst zählen dazu.
+        String pool = configs.getSwitcher().path("pool").asText("cloud");
+        ArrayNode out = configs.mapper().createArrayNode();
+        for (JsonNode c : all) {
+            if (matchesPool(c.path("name").asText(""), pool)) out.add(c);
+        }
+        return out;
+    }
+
+    /** Backend-Spiegel der Frontend-matchesPool: Kategorie == Pool ODER endet auf
+     *  -pool; free matcht zusätzlich die Legacy-Kategorie free-only. */
+    private static boolean matchesPool(String cat, String pool) {
+        if (cat == null || cat.isBlank()) return false;
+        return switch (pool) {
+            case "free"  -> cat.equals("free") || cat.equals("free-only") || cat.endsWith("-free");
+            case "local" -> cat.equals("local") || cat.endsWith("-local");
+            default      -> cat.equals("cloud") || cat.endsWith("-cloud");
+        };
     }
 
     /**

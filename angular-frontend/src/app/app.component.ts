@@ -147,7 +147,7 @@ import {
            id="cascade-bereiche-section" ist Scroll-Target für den Auto-Mode-Info-Card-Button im sw-mode-panel. -->
       <section id="cascade-bereiche-section" class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
         <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 mb-4">
-          Cascade-Bereiche
+          Cascade-Bereiche <span class="text-slate-400 dark:text-slate-500 normal-case tracking-normal font-semibold">— nur Pool „{{ poolTitles[activePool()] }}"</span>
         </h2>
         <ki-cascades-view
           [labels]="cascadesViewLabels"
@@ -269,6 +269,13 @@ export class AppComponent implements OnDestroy {
    * Library hört nicht selbst auf SSE und hat keinen [refreshTrigger]-Input.
    */
   @ViewChild(ModelsTableComponent) modelsTable?: ModelsTableComponent;
+
+  /**
+   * Cascade-Bereiche-View. Das Backend filtert `/api/cascades` nach dem aktiven
+   * Pool → bei Pool-Wechsel rufen wir hier `reload()`, damit nur die Cascaden
+   * des gewählten Pools angezeigt werden (Übersichtlichkeit).
+   */
+  @ViewChild(CascadesViewComponent) cascadesView?: CascadesViewComponent;
 
   // Deutsche Labels für die Library-Components (analog zu EduPros i18n-Pipe).
   readonly modelsTableLabels = MODELS_TABLE_LABELS_DE;
@@ -522,7 +529,10 @@ export class AppComponent implements OnDestroy {
     this.es?.addEventListener('mode', (e: MessageEvent) => {
       try {
         const d = JSON.parse(e.data);
-        if (d.pool) this.activePool.set(d.pool);
+        if (d.pool && d.pool !== this.activePool()) {
+          this.activePool.set(d.pool);
+          this.cascadesView?.reload(); // anderer Pool → Cascade-Bereiche neu filtern
+        }
         if (typeof d.supermodel === 'boolean') this.supermodel.set(d.supermodel);
         this.localOrchestratorPending.set(!!d.localOrchestratorPending);
       } catch {}
@@ -643,6 +653,8 @@ export class AppComponent implements OnDestroy {
         this.activePool.set(r.pool || pool);
         this.localOrchestratorPending.set(!!r.localOrchestratorPending);
         this.showToast(r.note ? r.note : 'Pool: ' + (this.poolTitles[pool] || pool), r.note ? 'err' : 'ok');
+        // Backend filtert /api/cascades jetzt nach dem neuen Pool → View neu laden.
+        this.cascadesView?.reload();
         if (r.restart) this.reload();
       },
       error: () => {
