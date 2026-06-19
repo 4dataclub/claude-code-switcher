@@ -461,11 +461,12 @@ public class ApiController {
                 // Local = fail-closed: KEIN Auto-Failover (sonst Cloud-Ausweich).
                 sw.put("mode", "manual");
             } else {
-                // cloud/free: Switcher-Quota-Failover als Orchestrator-Failover scharf
-                // stellen → Opus am Limit schaltet automatisch weiter. Kette: Sonnet
-                // (Anthropic-nativ, Supermodell intakt) → Cloud (ccr, degradiert).
+                // cloud/free: Orchestrator-Failover scharf stellen → Opus am Limit
+                // schaltet automatisch durch die orchestrator-{pool}-Zelle — DATENGETRIEBEN
+                // (editierbar wie die anderen Rollen, mit Reihenfolge); Cooldown-AutoPromote
+                // (AutoPromoteService, 30 min) holt Opus zurück.
                 sw.put("mode", "auto");
-                sw.set("fallback_chain", supermodelFailoverChain());
+                sw.set("fallback_chain", orchestratorFailoverChain(pool));
                 sw.put("chain_position", 0);
             }
             needRestart = pinOrchestratorForPool(cfg, sw, pool);
@@ -511,6 +512,34 @@ public class ApiController {
         ObjectNode g = configs.mapper().createObjectNode(); g.put("provider", "google");    g.put("model", "gemini-2.5-pro");   chain.add(g);
         ObjectNode f = configs.mapper().createObjectNode(); f.put("provider", "google");    f.put("model", "gemini-2.5-flash"); chain.add(f);
         return chain;
+    }
+
+    /**
+     * DATENGETRIEBENE Orchestrator-Failover-Kette aus der {@code orchestrator-{pool}}-Zelle
+     * — editierbar wie jede andere Rolle (Modelle hinzufügen/entfernen/umsortieren = orderIdx).
+     * Opus am Limit schaltet der Reihe nach durch genau diese Modelle (Cooldown-Failover),
+     * {@code AutoPromoteService} holt Opus nach 30-min-Cooldown zurück. Nur Cloud-fähige
+     * Provider (anthropic/google/openrouter); Ollama/lokal wird übersprungen (lokaler
+     * Hauptloop = Phase E, kein Cloud-Failover-Ziel — fail-closed bleibt). Leere/keine Zelle
+     * → {@link #supermodelFailoverChain()} als Sicherheitsnetz (Opus nie ganz ohne Fallback).
+     */
+    private ArrayNode orchestratorFailoverChain(String pool) {
+        String cat = "orchestrator-" + pool;
+        java.util.List<AiModelConfig> ms = new java.util.ArrayList<>();
+        for (AiModelConfig m : modelSvc.listModels()) {
+            if (cat.equals(m.getCategory()) && Boolean.TRUE.equals(m.getEnabled())) ms.add(m);
+        }
+        ms.sort(java.util.Comparator.comparingInt(m -> m.getOrderIdx() == null ? Integer.MAX_VALUE : m.getOrderIdx()));
+        ArrayNode chain = configs.mapper().createArrayNode();
+        for (AiModelConfig m : ms) {
+            String swProv = CASCADE_TO_SWITCHER.getOrDefault(m.getProvider(), m.getProvider());
+            if (!CASCADE_TO_SWITCHER.containsValue(swProv)) continue; // ollama/openai_compat = lokal → kein Cloud-Failover
+            ObjectNode e = configs.mapper().createObjectNode();
+            e.put("provider", swProv);
+            e.put("model", m.getModelId());
+            chain.add(e);
+        }
+        return chain.isEmpty() ? supermodelFailoverChain() : chain;
     }
 
     /**

@@ -181,6 +181,12 @@ Es gibt **zwei** Failover-Ebenen — eine läuft schon immer, eine fängt das Op
   Auto-Promote → zurück auf Opus + volles Supermodell   (alle 30 min geprüft)
 ```
 
+- **Diese Kette IST die `orchestrator-{pool}`-Zelle** (Rollen-Panel/Matrix) — editierbar wie jede
+  andere Rolle: Modelle hinzufügen/entfernen/umsortieren ändert das Opus-Failover direkt
+  (Reihenfolge der Zelle = Failover-Reihenfolge, `orderIdx`). `setMode` liest sie beim Scharfstellen,
+  der Cooldown-AutoPromote (30 min) holt Opus zurück. Default **cloud**: Sonnet 4.6 → Gemini 2.5 Flash;
+  **free**: Hermes-3 405B. Leere Zelle → internes Sicherheitsnetz (Sonnet → Gemini-Pro → Flash), damit
+  Opus nie ganz ohne Fallback ist. (Ollama/lokal in der Zelle wird übersprungen — kein Cloud-Leak.)
 - **Warum Sonnet zuerst?** Sonnet läuft **Anthropic-direkt (kein ccr)** → die nativen Claude-Code-
   Subagents + die `@supermodel`-Delegation bleiben funktionsfähig. Erst wenn *alle* Anthropic-
   Modelle aus sind, fällt es auf die Cloud-Lane (ccr = degradiert, aber kein Stillstand).

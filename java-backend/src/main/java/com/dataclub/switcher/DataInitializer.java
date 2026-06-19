@@ -81,8 +81,10 @@ public class DataInitializer {
         List<Default> defaults = List.of(
             // ── cloud-Pool: Opus als Primary / Manuell-Option ──
             new Default("anthropic",  "claude-opus-4-7",                        "Claude Opus 4.7 (Orchestrator)", "anthropicApiKey",  "cloud",           true),
-            // ── orchestrator: läuft Claude Code selbst (Failover-Stufe / lokaler Hauptloop) ──
+            // ── orchestrator: läuft Claude Code selbst — Failover-Kette bei Opus-Limit
+            //    (datengetrieben: setMode liest orchestrator-{pool} der Reihe nach) ──
             new Default("anthropic",  "claude-sonnet-4-6",                      "Claude Sonnet 4.6 (Orchestrator-Failover)", "anthropicApiKey", "orchestrator-cloud", true),
+            new Default("gemini",     "gemini-2.5-flash",                       "Gemini 2.5 Flash (Orchestrator-Failover #2)", "geminiApiKey",  "orchestrator-cloud", true),
             new Default("ollama",     "qwen2.5:14b",                            "Qwen2.5 14B (lokaler Orchestrator)",        "ollamaApiKey",    "orchestrator-local", false),
             new Default("openrouter", "nousresearch/hermes-3-llama-3.1-405b:free", "Hermes-3 405B (free · Orchestrator)",   "openrouterApiKey", "orchestrator-free",  true),
             // ── implement (Bulk-Code) ──
