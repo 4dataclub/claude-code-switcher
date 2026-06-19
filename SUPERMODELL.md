@@ -88,6 +88,55 @@ das nächste nach — der Plan läuft weiter. Modelle/Reihenfolge jederzeit in d
 > `localOrchestratorPending` (gelbe Warnung). Das Live-Routing des Main-Loops aufs lokale Modell
 > (ccr → Ollama) ist **Phase E**.
 
+## Routing — woher weiß er, welche Aufgabe in welchen Bereich?
+
+**Keine fest verdrahtete Regel** — die Zuordnung ist eine *semantische* Entscheidung anhand der
+**Beschreibungen** (Single Source of Truth). Drei Schichten, ein Prinzip (wie in EduPro):
+
+1. **Semantic — Opus wählt das `kind`.** Opus liest die Teilaufgabe + die Rollen-Beschreibungen
+   und ordnet sie der best-passenden Rolle zu. Kein Keyword-Match: „implementier", „bau",
+   „fix den Endpoint" landen alle bei `implement`. Opus gibt das `kind` an `@supermodel` weiter
+   (oder der Agent leitet es ab — *„or you infer it"*).
+2. **Lane — der aktive Pool.** `@supermodel` liest `/api/supermodel` → Pool (= Spalte der Matrix)
+   und baut die Compound-Kategorie `{kind}-{pool}` (z.B. `implement-cloud`).
+3. **Cooldown/Failover — die Cascade wählt das Modell.** `:8091` nimmt das live Modell aus der
+   Failover-Kette der Kategorie; fällt eins aus, rückt das nächste nach.
+
+| `kind` | Opus wählt es bei … | cloud-Modell |
+|---|---|---|
+| `implement` | bulk code, backend, boilerplate, CRUD | DeepSeek V3.1 → Gemini Flash |
+| `review` | Korrektheit, Sicherheit, Tests | GPT-4o-mini |
+| `research` | Web/Google, große externe Docs | **Gemini-MCP** (kein Cascade-Modell) |
+| `dispatch` | Commit-Msgs, Summaries, Triviales | Gemini Flash-Lite |
+| `orchestrator` | Planung / Architektur | Opus selbst (nicht delegiert) |
+
+```
+ Aufgabe ("implementier den /login-Endpoint")
+        │
+        ▼   Schicht 1 — SEMANTIC (Opus)
+ ┌──────────────────────────────────────────────┐
+ │ Opus liest Aufgabe + Rollen-Beschreibungen   │
+ │  → wählt kind = implement                     │
+ └───────────────────┬──────────────────────────┘
+        ▼   Schicht 2 — LANE (@supermodel)
+ ┌──────────────────────────────────────────────┐
+ │ aktiver Pool = Spalte  →  {kind}-{pool}       │
+ │  = implement-cloud                            │
+ └───────────────────┬──────────────────────────┘
+        ▼   Schicht 3 — COOLDOWN/FAILOVER (Cascade :8091)
+ ┌──────────────────────────────────────────────┐
+ │ live Modell der Kategorie                     │
+ │  implement-cloud → DeepSeek V3.1 (→ Flash)    │
+ └───────────────────┬──────────────────────────┘
+        ▼
+ Ergebnis → zurück an Opus → prüft + integriert (finale Synthese)
+```
+
+**Daraus folgt:** Rollen + Pools sind `Kategorien = Daten` (voll CRUD-bar) — änderst du eine
+Beschreibung oder ein Modell, folgt das Routing, **kein Code-Eingriff**. `research` verlässt die
+Cascade (Gemini-MCP/Grounding; im Local-Pool verweigert = Web=Cloud, fail-closed). Delegation-Fehler:
+**cloud/free = fail-open** (Opus macht's selbst), **local = fail-closed** (Stopp, nie Cloud).
+
 ## 🔒 Lokal = fail-closed (die wichtigste Garantie)
 
 Im **Local-Pool** verlässt **nichts** automatisch den Rechner — auch nicht „um die Funktion
