@@ -95,6 +95,43 @@ am Leben zu halten". **Lieber STOPP als Leak.**
 
 **Beweis-Test:** Local aktiv + Ollama killen → **0** OpenRouter/Gemini/Anthropic-Calls (Stats prüfen).
 
+## Was passiert, wenn Opus selbst am Limit ist?
+
+Es gibt **zwei** Failover-Ebenen — eine läuft schon immer, eine fängt das Opus-Limit ab:
+
+- **Ebene ① Rollen-Failover (immer automatisch):** Innerhalb jeder Rolle (`implement-cloud` …)
+  rückt die Cascade bei Cooldown/Limit automatisch aufs nächste Modell ① → ② vor. Braucht
+  keinen Schalter — der häufige Fall (ein Kollegen-Modell limitiert) ist damit abgedeckt.
+- **Ebene ② Orchestrator-Failover (Opus am Limit):** Opus plant nur + synthetisiert → verbrennt
+  sein Limit langsam, aber wenn die rollierende ~5-Std-Sperre doch greift, schaltet der Switcher
+  (in **cloud/free**) automatisch weiter — **pool-bewusst**:
+
+```
+ Opus 4.8 (Orchestrator) ── Limit erreicht ──┐
+                                             ▼
+  ① Sonnet 4.6  (Anthropic-DIREKT, ohne ccr) ──► Supermodell bleibt INTAKT:
+     └─ Subagents + @supermodel laufen weiter     nur ein schwächerer Planer
+                                             │
+           Sonnet auch leer / Anthropic ganz aus
+                                             ▼
+  ② Cloud-Lane via ccr  (Gemini → OpenRouter) ─► DEGRADIERT: ein Modell,
+     └─ keine Subagents/MCP, aber LÄUFT WEITER     kein Rollen-Plan (statt 5h Stillstand)
+                                             │
+           Anthropic-Fenster resettet (~5 h)
+                                             ▼
+  Auto-Promote → zurück auf Opus + volles Supermodell   (alle 30 min geprüft)
+```
+
+- **Warum Sonnet zuerst?** Sonnet läuft **Anthropic-direkt (kein ccr)** → die nativen Claude-Code-
+  Subagents + die `@supermodel`-Delegation bleiben funktionsfähig. Erst wenn *alle* Anthropic-
+  Modelle aus sind, fällt es auf die Cloud-Lane (ccr = degradiert, aber kein Stillstand).
+- **Pool = Lokal → STOPP, kein Failover.** Sonnet/Gemini sind Cloud — im Local-Pool wäre das ein
+  Leak. Stattdessen Banner/Notiz, du entscheidest bewusst (siehe fail-closed oben).
+- **Ehrlich:** Opus & Sonnet teilen sich grob das Anthropic-Budget, aber Opus verbrennt es schneller
+  → Sonnet hat meist noch Spielraum, wenn Opus gekappt ist. **Garantiert** ist nur die Cloud-Lane
+  (nicht-Anthropic). Und: das Failover feuert nur, wenn der Wrapper **`claude-auto`** das Limit per
+  stderr-Parsing erkennt (fragil — keine offizielle Pre-Quota-API für Max/Pro). Nacktes `claude` → kein Auto-Switch.
+
 ## Setup
 
 ### 1. Cascade-Matrix (Modelle)

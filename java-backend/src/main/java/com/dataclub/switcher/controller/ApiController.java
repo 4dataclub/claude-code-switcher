@@ -457,9 +457,20 @@ public class ApiController {
         // 3) Orchestrator pool-bewusst pinnen
         boolean needRestart = false;
         if (superOn) {
-            sw.put("mode", "manual"); // kein Auto-Failover-Konflikt im Supermodell-Modus
+            if ("local".equals(pool)) {
+                // Local = fail-closed: KEIN Auto-Failover (sonst Cloud-Ausweich).
+                sw.put("mode", "manual");
+            } else {
+                // cloud/free: Switcher-Quota-Failover als Orchestrator-Failover scharf
+                // stellen → Opus am Limit schaltet automatisch weiter. Kette: Sonnet
+                // (Anthropic-nativ, Supermodell intakt) → Cloud (ccr, degradiert).
+                sw.put("mode", "auto");
+                sw.set("fallback_chain", supermodelFailoverChain());
+                sw.put("chain_position", 0);
+            }
             needRestart = pinOrchestratorForPool(cfg, sw, pool);
         } else {
+            // Supermodell aus: Mode unberührt lassen (User-Einstellung), nur Pending räumen.
             sw.remove("localOrchestratorPending");
         }
 
@@ -487,6 +498,19 @@ public class ApiController {
                 + "Fail-closed: kein Cloud-Ausweich. Ollama-Modell ziehen + aktivieren.");
         }
         return ResponseEntity.ok(out);
+    }
+
+    /**
+     * Failover-Kette für den Supermodell-Orchestrator (cloud/free): zuerst Sonnet
+     * (Anthropic-direkt → nativ, Subagents bleiben, Supermodell intakt), dann Cloud
+     * via ccr (degradiert-aber-läuft). AutoPromoteService holt Opus nach Cooldown zurück.
+     */
+    private ArrayNode supermodelFailoverChain() {
+        ArrayNode chain = configs.mapper().createArrayNode();
+        ObjectNode s = configs.mapper().createObjectNode(); s.put("provider", "anthropic"); s.put("model", "claude-sonnet-4-6"); chain.add(s);
+        ObjectNode g = configs.mapper().createObjectNode(); g.put("provider", "google");    g.put("model", "gemini-2.5-pro");   chain.add(g);
+        ObjectNode f = configs.mapper().createObjectNode(); f.put("provider", "google");    f.put("model", "gemini-2.5-flash"); chain.add(f);
+        return chain;
     }
 
     /**
@@ -569,7 +593,10 @@ public class ApiController {
         ev.put("mode", sw.path("mode").asText("manual"));
         sse.broadcast("quota-error", ev);
 
-        if (!"auto".equals(sw.path("mode").asText("manual"))) {
+        // Pool-Guard (fail-closed): in Local NIE automatisch wechseln — auch falls
+        // mode irgendwie auf auto steht (defense-in-depth, kein Cloud-Leak).
+        String pool = sw.path("pool").asText("cloud");
+        if (!"auto".equals(sw.path("mode").asText("manual")) || "local".equals(pool)) {
             ObjectNode lw = configs.mapper().createObjectNode();
             lw.put("percent", 100);
             lw.put("project", req == null ? null : req.project);
@@ -578,7 +605,8 @@ public class ApiController {
             sw.set("lastWarn", lw);
             cfg.set("_switcher", sw);
             configs.writeConfig(cfg);
-            return Map.of("action", "notify", "reason", "auto-mode disabled");
+            return Map.of("action", "notify", "reason",
+                "local".equals(pool) ? "local fail-closed (kein Cloud-Ausweich)" : "auto-mode disabled");
         }
 
         ArrayNode chain = sw.has("fallback_chain") && sw.get("fallback_chain").isArray()
@@ -618,19 +646,31 @@ public class ApiController {
         }
 
         ObjectNode target = (ObjectNode) chain.get(pos);
+        String fromModel = cfg.path("model").asText(null);
         ObjectNode env = cfg.has("env") && cfg.get("env").isObject() ? (ObjectNode) cfg.get("env") : configs.mapper().createObjectNode();
-        env.put("ANTHROPIC_API_KEY", "sk-ccr-anything");
-        env.put("ANTHROPIC_BASE_URL", HOST_ROUTER_URL);
-        cfg.put("model", "claude-sonnet-4-5-20250929");
+        boolean targetIsAnthropic = "anthropic".equals(target.path("provider").asText());
+        if (targetIsAnthropic) {
+            // Anthropic-nativ (z.B. Opus→Sonnet): KEIN ccr → native Claude-Code-Subagents/
+            // MCP bleiben, Supermodell läuft weiter (nur schwächerer Orchestrator).
+            env.remove("ANTHROPIC_API_KEY");
+            env.remove("ANTHROPIC_BASE_URL");
+            cfg.put("model", target.path("model").asText("claude-sonnet-4-6"));
+            sw.remove("activeRoute");
+        } else {
+            // Cloud (Gemini/OpenRouter) via ccr — degradiert (keine Subagents), aber läuft.
+            env.put("ANTHROPIC_API_KEY", "sk-ccr-anything");
+            env.put("ANTHROPIC_BASE_URL", HOST_ROUTER_URL);
+            cfg.put("model", "claude-sonnet-4-5-20250929");
+            sw.set("activeRoute", target.deepCopy());
+        }
         sw.put("provider", target.path("provider").asText());
-        sw.set("activeRoute", target.deepCopy());
         sw.put("chain_position", pos + 1);
         sw.put("lastFailoverAt", System.currentTimeMillis());
         ObjectNode lastSwitch = configs.mapper().createObjectNode();
         lastSwitch.put("at", System.currentTimeMillis());
         ObjectNode from = configs.mapper().createObjectNode();
         from.put("provider", currentProvider);
-        from.put("model", cfg.path("model").asText(null));
+        from.put("model", fromModel);
         lastSwitch.set("from", from);
         lastSwitch.set("to", target.deepCopy());
         lastSwitch.put("reason", "quota");
@@ -639,7 +679,7 @@ public class ApiController {
         cfg.set("_switcher", sw);
         configs.writeConfig(cfg);
         router.writeRouterConfig();
-        router.restartRouter();
+        if (!targetIsAnthropic) router.restartRouter(); // ccr-Restart nur für Cloud-Targets
         sse.broadcast("auto-switched", Map.of("to", target, "position", pos, "total", chain.size()));
         return Map.of("action", "switch", "target", target, "position", pos, "total", chain.size());
     }
