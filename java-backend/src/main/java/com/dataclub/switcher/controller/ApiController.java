@@ -506,7 +506,7 @@ public class ApiController {
      * (Anthropic-direkt → nativ, Subagents bleiben, Supermodell intakt), dann Cloud
      * via ccr (degradiert-aber-läuft). AutoPromoteService holt Opus nach Cooldown zurück.
      */
-    private ArrayNode supermodelFailoverChain() {
+    ArrayNode supermodelFailoverChain() {
         ArrayNode chain = configs.mapper().createArrayNode();
         ObjectNode s = configs.mapper().createObjectNode(); s.put("provider", "anthropic"); s.put("model", "claude-sonnet-4-6"); chain.add(s);
         ObjectNode g = configs.mapper().createObjectNode(); g.put("provider", "google");    g.put("model", "gemini-2.5-pro");   chain.add(g);
@@ -523,7 +523,7 @@ public class ApiController {
      * Hauptloop = Phase E, kein Cloud-Failover-Ziel — fail-closed bleibt). Leere/keine Zelle
      * → {@link #supermodelFailoverChain()} als Sicherheitsnetz (Opus nie ganz ohne Fallback).
      */
-    private ArrayNode orchestratorFailoverChain(String pool) {
+    ArrayNode orchestratorFailoverChain(String pool) {
         String cat = "orchestrator-" + pool;
         java.util.List<AiModelConfig> ms = new java.util.ArrayList<>();
         for (AiModelConfig m : modelSvc.listModels()) {
@@ -772,7 +772,7 @@ public class ApiController {
 
     /** Backend-Spiegel der Frontend-matchesPool: Kategorie == Pool ODER endet auf
      *  -pool; free matcht zusätzlich die Legacy-Kategorie free-only. */
-    private static boolean matchesPool(String cat, String pool) {
+    static boolean matchesPool(String cat, String pool) {
         if (cat == null || cat.isBlank()) return false;
         return switch (pool) {
             case "free"  -> cat.equals("free") || cat.equals("free-only") || cat.endsWith("-free");

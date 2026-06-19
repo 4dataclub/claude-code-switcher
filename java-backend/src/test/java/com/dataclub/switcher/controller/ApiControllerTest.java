@@ -1,0 +1,328 @@
+package com.dataclub.switcher.controller;
+
+import com.dataclub.switcher.model.AiModelConfig;
+import com.dataclub.switcher.service.ConfigService;
+import com.dataclub.switcher.service.LlmCascadeClient;
+import com.dataclub.switcher.service.RouterService;
+import com.dataclub.switcher.service.SseService;
+import com.dataclub.switcher.service.SwitcherModelService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * Regressions-Tests für den Supermodell-Failover — sichert die runtime-verifizierte
+ * Logik automatisiert ab (feedback_tests_follow_code). Schwerpunkt:
+ * <b>fail-closed-local</b> (Security: kein automatischer Cloud-Ausweich im Local-Pool),
+ * die datengetriebene Orchestrator-Kette und die Pool-Isolation der Filter-Endpoints.
+ *
+ * Reine Unit-Tests mit gemockten Services (kein Spring-Context, kein I/O).
+ */
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+class ApiControllerTest {
+
+    @Mock ConfigService configs;
+    @Mock RouterService router;
+    @Mock SseService sse;
+    @Mock LlmCascadeClient cascade;
+    @Mock SwitcherModelService modelSvc;
+    @InjectMocks ApiController controller;
+
+    private final ObjectMapper M = new ObjectMapper();
+
+    @BeforeEach
+    void setup() {
+        when(configs.mapper()).thenReturn(M);
+    }
+
+    // ── Helfer ────────────────────────────────────────────────────────────────
+    private AiModelConfig model(String provider, String modelId, String category, boolean enabled, int orderIdx) {
+        return AiModelConfig.builder()
+                .provider(provider).modelId(modelId).category(category)
+                .enabled(enabled).orderIdx(orderIdx).build();
+    }
+
+    private ObjectNode node(String field, String value) {
+        ObjectNode n = M.createObjectNode();
+        n.put(field, value);
+        return n;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  matchesPool — Pool-Isolation (Basis von cascades + ai-models + fail-closed)
+    // ════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void matchesPool_cloud_matchesOnlyCloudCategories() {
+        assertThat(ApiController.matchesPool("cloud", "cloud")).isTrue();
+        assertThat(ApiController.matchesPool("implement-cloud", "cloud")).isTrue();
+        assertThat(ApiController.matchesPool("orchestrator-cloud", "cloud")).isTrue();
+        assertThat(ApiController.matchesPool("implement-free", "cloud")).isFalse();
+        assertThat(ApiController.matchesPool("implement-local", "cloud")).isFalse();
+    }
+
+    @Test
+    void matchesPool_free_inclLegacyFreeOnly() {
+        assertThat(ApiController.matchesPool("free", "free")).isTrue();
+        assertThat(ApiController.matchesPool("free-only", "free")).isTrue(); // Legacy-Kategorie
+        assertThat(ApiController.matchesPool("review-free", "free")).isTrue();
+        assertThat(ApiController.matchesPool("review-cloud", "free")).isFalse();
+        assertThat(ApiController.matchesPool("review-local", "free")).isFalse();
+    }
+
+    @Test
+    void matchesPool_local_neverMatchesCloudOrFree_failClosed() {
+        assertThat(ApiController.matchesPool("local", "local")).isTrue();
+        assertThat(ApiController.matchesPool("implement-local", "local")).isTrue();
+        // fail-closed-relevant: der Local-Pool sieht NIE Cloud-/Free-Kategorien
+        assertThat(ApiController.matchesPool("implement-cloud", "local")).isFalse();
+        assertThat(ApiController.matchesPool("implement-free", "local")).isFalse();
+        assertThat(ApiController.matchesPool("cloud", "local")).isFalse();
+        assertThat(ApiController.matchesPool("free", "local")).isFalse();
+    }
+
+    @Test
+    void matchesPool_blankOrNull_isFalse() {
+        assertThat(ApiController.matchesPool("", "cloud")).isFalse();
+        assertThat(ApiController.matchesPool(null, "cloud")).isFalse();
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  orchestratorFailoverChain — datengetriebene Kette aus der Zelle
+    // ════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void orchestratorChain_buildsFromCell_mapsProvider() {
+        when(modelSvc.listModels()).thenReturn(List.of(
+                model("anthropic", "claude-sonnet-4-6", "orchestrator-cloud", true, 0),
+                model("gemini", "gemini-2.5-flash", "orchestrator-cloud", true, 1),
+                model("openrouter", "deepseek/deepseek-chat-v3.1", "implement-cloud", true, 2) // andere Kategorie → ignoriert
+        ));
+        ArrayNode chain = controller.orchestratorFailoverChain("cloud");
+
+        assertThat(chain).hasSize(2);
+        assertThat(chain.get(0).get("provider").asText()).isEqualTo("anthropic");
+        assertThat(chain.get(0).get("model").asText()).isEqualTo("claude-sonnet-4-6");
+        // gemini-Provider wird auf den Switcher-Provider "google" gemappt (ccr)
+        assertThat(chain.get(1).get("provider").asText()).isEqualTo("google");
+        assertThat(chain.get(1).get("model").asText()).isEqualTo("gemini-2.5-flash");
+    }
+
+    @Test
+    void orchestratorChain_ordersByOrderIdx() {
+        when(modelSvc.listModels()).thenReturn(List.of(
+                model("gemini", "gemini-2.5-flash", "orchestrator-cloud", true, 5),   // höherer idx → zweiter
+                model("anthropic", "claude-sonnet-4-6", "orchestrator-cloud", true, 1) // niedriger idx → zuerst
+        ));
+        ArrayNode chain = controller.orchestratorFailoverChain("cloud");
+
+        assertThat(chain.get(0).get("model").asText()).isEqualTo("claude-sonnet-4-6");
+        assertThat(chain.get(1).get("model").asText()).isEqualTo("gemini-2.5-flash");
+    }
+
+    @Test
+    void orchestratorChain_skipsDisabledAndLocalProviders() {
+        when(modelSvc.listModels()).thenReturn(List.of(
+                model("anthropic", "claude-sonnet-4-6", "orchestrator-cloud", true, 0),
+                model("gemini", "gemini-2.5-flash", "orchestrator-cloud", false, 1), // disabled → raus
+                model("ollama", "qwen2.5:14b", "orchestrator-cloud", true, 2)         // lokal → kein Cloud-Failover-Ziel → raus
+        ));
+        ArrayNode chain = controller.orchestratorFailoverChain("cloud");
+
+        assertThat(chain).hasSize(1);
+        assertThat(chain.get(0).get("provider").asText()).isEqualTo("anthropic");
+    }
+
+    @Test
+    void orchestratorChain_emptyCell_fallsBackToSafetyNet() {
+        when(modelSvc.listModels()).thenReturn(List.of()); // keine orchestrator-Modelle
+        ArrayNode chain = controller.orchestratorFailoverChain("cloud");
+
+        // leere Zelle → supermodelFailoverChain() (Sicherheitsnetz: Opus nie ganz ohne Fallback)
+        assertThat(chain).hasSize(3);
+        assertThat(chain.get(0).get("provider").asText()).isEqualTo("anthropic");
+        assertThat(chain.get(0).get("model").asText()).isEqualTo("claude-sonnet-4-6");
+    }
+
+    @Test
+    void supermodelFailoverChain_hasSonnetNativeThenCloud() {
+        ArrayNode chain = controller.supermodelFailoverChain();
+
+        assertThat(chain).hasSize(3);
+        assertThat(chain.get(0).get("provider").asText()).isEqualTo("anthropic"); // Sonnet nativ zuerst
+        assertThat(chain.get(0).get("model").asText()).isEqualTo("claude-sonnet-4-6");
+        assertThat(chain.get(1).get("provider").asText()).isEqualTo("google");
+        assertThat(chain.get(2).get("provider").asText()).isEqualTo("google");
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  setMode — pool-bewusst (Local = manual/fail-closed, Cloud = auto + Kette)
+    // ════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void setMode_localSupermodel_isManual_noCloudChainArmed_failClosed() {
+        ObjectNode cfg = M.createObjectNode();
+        when(configs.readConfig()).thenReturn(cfg);
+        when(modelSvc.listModels()).thenReturn(List.of()); // kein lokales Modell aktiv
+
+        ApiController.ModeRequest req = new ApiController.ModeRequest();
+        req.pool = "local";
+        req.supermodel = true;
+        controller.setMode(req);
+
+        ObjectNode sw = (ObjectNode) cfg.get("_switcher");
+        assertThat(sw.get("pool").asText()).isEqualTo("local");
+        assertThat(sw.get("supermodel").asBoolean()).isTrue();
+        assertThat(sw.get("mode").asText()).isEqualTo("manual"); // KEIN auto im Local-Pool
+        assertThat(sw.has("fallback_chain")).isFalse();          // KEINE Cloud-Kette scharf gestellt
+        assertThat(sw.path("localOrchestratorPending").asBoolean()).isTrue();
+    }
+
+    @Test
+    void setMode_cloudSupermodel_isAuto_armsChainFromCell() {
+        ObjectNode cfg = M.createObjectNode();
+        when(configs.readConfig()).thenReturn(cfg);
+        when(modelSvc.listModels()).thenReturn(List.of(
+                model("anthropic", "claude-sonnet-4-6", "orchestrator-cloud", true, 0),
+                model("gemini", "gemini-2.5-flash", "orchestrator-cloud", true, 1)
+        ));
+
+        ApiController.ModeRequest req = new ApiController.ModeRequest();
+        req.pool = "cloud";
+        req.supermodel = true;
+        controller.setMode(req);
+
+        ObjectNode sw = (ObjectNode) cfg.get("_switcher");
+        assertThat(sw.get("mode").asText()).isEqualTo("auto");
+        assertThat(sw.get("chain_position").asInt()).isEqualTo(0);
+        ArrayNode chain = (ArrayNode) sw.get("fallback_chain");
+        assertThat(chain).hasSize(2);
+        assertThat(chain.get(0).get("provider").asText()).isEqualTo("anthropic");
+        assertThat(chain.get(1).get("provider").asText()).isEqualTo("google");
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  quotaError — fail-closed-Guard (Security-Kern) + Cloud-Auto-Vorrücken
+    // ════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void quotaError_localPool_neverSwitches_evenIfAuto_failClosed() {
+        ObjectNode cfg = M.createObjectNode();
+        ObjectNode sw = cfg.putObject("_switcher");
+        sw.put("pool", "local");
+        sw.put("mode", "auto");       // selbst wenn mode irgendwie auto ist: Local MUSS notify bleiben
+        sw.put("provider", "anthropic");
+        when(configs.readConfig()).thenReturn(cfg);
+
+        Map<String, Object> res = controller.quotaError(new ApiController.QuotaErrorRequest());
+
+        assertThat(res.get("action")).isEqualTo("notify");
+        assertThat((String) res.get("reason")).contains("local");
+        // kein Cloud-Ausweich: Provider unverändert, keine ccr-Route gesetzt, kein Router-Restart
+        assertThat(sw.path("provider").asText()).isEqualTo("anthropic");
+        assertThat(sw.has("activeRoute")).isFalse();
+        verify(router, never()).restartRouter();
+    }
+
+    @Test
+    void quotaError_manualMode_notifyOnly() {
+        ObjectNode cfg = M.createObjectNode();
+        ObjectNode sw = cfg.putObject("_switcher");
+        sw.put("pool", "cloud");
+        sw.put("mode", "manual");
+        when(configs.readConfig()).thenReturn(cfg);
+
+        Map<String, Object> res = controller.quotaError(new ApiController.QuotaErrorRequest());
+
+        assertThat(res.get("action")).isEqualTo("notify");
+        assertThat((String) res.get("reason")).contains("auto-mode disabled");
+        verify(router, never()).restartRouter();
+    }
+
+    @Test
+    void quotaError_cloudAuto_advancesToNativeSonnetFirst() {
+        ObjectNode cfg = M.createObjectNode();
+        ObjectNode sw = cfg.putObject("_switcher");
+        sw.put("pool", "cloud");
+        sw.put("mode", "auto");
+        sw.put("provider", "anthropic");
+        sw.put("chain_position", 0);
+        ArrayNode chain = sw.putArray("fallback_chain");
+        ObjectNode s = chain.addObject();
+        s.put("provider", "anthropic");
+        s.put("model", "claude-sonnet-4-6");
+        ObjectNode g = chain.addObject();
+        g.put("provider", "google");
+        g.put("model", "gemini-2.5-flash");
+        when(configs.readConfig()).thenReturn(cfg);
+        when(configs.deriveProvider(cfg)).thenReturn("anthropic");
+
+        Map<String, Object> res = controller.quotaError(new ApiController.QuotaErrorRequest());
+
+        assertThat(res.get("action")).isEqualTo("switch");
+        JsonNode target = (JsonNode) res.get("target");
+        assertThat(target.get("provider").asText()).isEqualTo("anthropic"); // Sonnet nativ zuerst
+        assertThat(target.get("model").asText()).isEqualTo("claude-sonnet-4-6");
+        // nativ → keine ccr-Route, kein Router-Restart
+        assertThat(sw.has("activeRoute")).isFalse();
+        verify(router, never()).restartRouter();
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  cascades + ai-models — Endpoints filtern auf den aktiven Pool
+    // ════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void listAiModels_filtersToActivePool() {
+        ObjectNode sw = M.createObjectNode();
+        sw.put("pool", "local");
+        when(configs.getSwitcher()).thenReturn(sw);
+        ArrayNode all = M.createArrayNode();
+        all.add(node("category", "implement-cloud"));
+        all.add(node("category", "implement-local"));
+        all.add(node("category", "dispatch-free"));
+        when(cascade.getModels()).thenReturn(all);
+
+        JsonNode out = controller.listAiModels();
+
+        assertThat(out.isArray()).isTrue();
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).get("category").asText()).isEqualTo("implement-local");
+    }
+
+    @Test
+    void cascades_filtersToActivePool() {
+        ObjectNode sw = M.createObjectNode();
+        sw.put("pool", "free");
+        when(configs.getSwitcher()).thenReturn(sw);
+        ArrayNode all = M.createArrayNode();
+        all.add(node("name", "implement-cloud"));
+        all.add(node("name", "implement-free"));
+        all.add(node("name", "review-free"));
+        when(cascade.getCascades()).thenReturn(all);
+
+        JsonNode out = controller.cascades();
+
+        assertThat(out).hasSize(2);
+        assertThat(out.get(0).get("name").asText()).isEqualTo("implement-free");
+        assertThat(out.get(1).get("name").asText()).isEqualTo("review-free");
+    }
+}
