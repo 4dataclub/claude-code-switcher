@@ -247,15 +247,19 @@ Oder einfach die Toggles in der UI (`localhost:2000`).
 
 ## Hardware-Stufen (Local-Pool, alle 100 % lokal — Orchestrator inkl., nie Opus)
 
-| | **A · Einstieg (16 GB)** | **B · echtes Coding (32–48 GB)** | **C · Voll-lokal (128 GB+)** |
-|---|---|---|---|
-| Orchestrator | kleines Modell (schwach) | qwq:32b / qwen2.5:32b | llama-3.3:70b / qwen2.5:72b |
-| implement | qwen2.5-coder:7b | qwen2.5-coder:32b | qwen2.5-coder:32b |
-| Qualität | leicht/begrenzt | gut | sehr gut (nur nicht ganz Opus) |
+| | **A · Einstieg (16 GB)** | **B · echtes Coding (32–48 GB)** | **C · Voll-lokal (128 GB+)** | **D · Mac Studio Ultra (256–512 GB)** |
+|---|---|---|---|---|
+| Orchestrator | kleines Modell (schwach) | qwq:32b / qwen2.5:32b | llama-3.3:70b / qwen2.5:72b | großes MoE: Qwen3-235B-A22B (~130 GB) / DeepSeek-V3.1 671B (~380 GB @4-bit, 37B aktiv) |
+| implement | qwen2.5-coder:7b | qwen2.5-coder:32b | qwen2.5-coder:32b | Qwen3-Coder / qwen2.5-coder:32b — **parallel resident** zum Orchestrator |
+| Qualität | leicht/begrenzt | gut | sehr gut (nur nicht ganz Opus) | **nahe Frontier** (MoE-Brain + Coder + Reviewer gleichzeitig im RAM, kein Nachladen) |
 
-> **Ehrlich:** Opus-4.8-Frontier-Niveau ist voll-lokal auf einer Workstation **nicht**
-> erreichbar (C kommt am nächsten). Willst du Opus' Hirn → bewusst die **Cloud-Lane** (das
-> ist nicht „Local"). Bester P/L = **Hybrid** (Opus Cloud nur für Plan/Synthese + lokale Kollegen).
+> **Ehrlich:** Opus-4.8-Frontier-Niveau ist voll-lokal **nicht ganz** erreichbar — aber **D
+> (Studio Ultra) schließt die Lücke am weitesten**: ein 235B/671B-MoE-Orchestrator + dedizierte
+> Coder/Reviewer liegen gleichzeitig im Unified Memory. MoE ist der Apple-Silicon-Sweet-Spot
+> (riesige Kapazität, nur Bruchteil aktiv → brauchbarer Speed). **Der eigentliche Mac-Engpass ist
+> nicht RAM, sondern Prompt-Processing / Time-to-First-Token** bei langen Kontexten (zäher als
+> NVIDIA); Token-Generierung ist ok. Willst du das letzte Quäntchen Opus-Hirn → bewusst die
+> **Cloud-Lane**. Bester P/L bleibt **Hybrid** (Opus Cloud nur für Plan/Synthese + lokale Kollegen).
 
 ## Verteiltes Setup (ein Rechner = Server, anderer = Consumer)
 
