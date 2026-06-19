@@ -54,28 +54,58 @@ public class DataInitializer {
     }
 
     /**
-     * Default-Chain für frische DBs (Phase K + S').
+     * Default-Seed für frische DBs — die **2D-Supermodell-Matrix** (Rolle × Pool).
      *
-     * Cascade-Struktur (Phase S'') — zwei Bereiche:
-     * • "cloud"     — bezahlte Tier-Modelle (Anthropic, Google, OpenRouter paid)
-     * • "free-only" — kostenfreie OpenRouter-Modelle (kein Cooldown nötig)
+     * Compound-Kategorien {@code {implement|review|research|dispatch}-{cloud|free|local}}
+     * sind die Routing-Ziele des Supermodell-Modus (Opus delegiert via
+     * {@code @supermodel} an {@code category={kind}-{pool}}). Ohne diesen Seed wären
+     * sie nur Laufzeit-DB-State und bei {@code docker compose down -v} weg
+     * (Setup-Kanonik / feedback_fix_drives_setup_update).
      *
-     * Switcher nutzt die Bereiche zur visuellen Trennung im Admin-UI
-     * ({@code <ki-cascades-view>}). Cooldown-Isolation zwischen den
-     * Bereichen läuft in llm-cascade v0.4.0+.
+     * <pre>
+     *            cloud (bezahlt)        free (:free, €0)       local (Ollama, privat)
+     * implement  DeepSeek V3.1 + Flash  Qwen3-Coder + Next-80B qwen2.5-coder:7b *
+     * review     GPT-4o-mini            GPT-OSS 120B           qwen2.5:7b *
+     * research   Gemini Pro (OR+nativ)  — (Gemini-MCP)         — (Web=Cloud)
+     * dispatch   Gemini Flash-Lite      Llama 3.3 + GPT-OSS-20 gemma3:4b *
+     * </pre>
+     * (* local = enabled=false bis die Ollama-Modelle gezogen sind — Phase E.)
+     *
+     * {@code cloud} (Pool-Kategorie) trägt zusätzlich Opus als Orchestrator/Manuell-
+     * Option. {@code utility}+{@code general} bewusst NICHT geseedet → Local hat
+     * keinen Cloud-{@code general}-Fallback = automatisch fail-closed.
      */
     private void seedDefaultChain(AiModelConfigRepository modelRepo) {
         LocalDateTime now = LocalDateTime.now();
-        record Default(String provider, String modelId, String displayName, String settingKey, String category) {}
+        record Default(String provider, String modelId, String displayName, String settingKey, String category, boolean enabled) {}
         List<Default> defaults = List.of(
-            // ── cloud-Cascade: bezahlte Tier-Modelle (eigener Cooldown) ──
-            new Default("anthropic",  "claude-opus-4-7",                          "Claude Opus 4.7",       "anthropicApiKey",  "cloud"),
-            new Default("gemini",     "gemini-2.5-pro",                           "Gemini 2.5 Pro",        "geminiApiKey",     "cloud"),
-            new Default("openrouter", "openai/gpt-oss-120b:free",                 "GPT-OSS 120B (OR)",     "openrouterApiKey", "cloud"),
-            // ── free-only-Cascade: kostenfreie OpenRouter-Modelle (kein Cooldown) ──
-            new Default("openrouter", "deepseek/deepseek-v4-flash:free",          "DeepSeek V4 Flash (free)", "openrouterApiKey", "free-only"),
-            new Default("openrouter", "meta-llama/llama-3.3-70b-instruct:free",   "Llama 3.3 70B (free)",  "openrouterApiKey", "free-only"),
-            new Default("openrouter", "google/gemma-3-4b-it:free",                "Gemma 3 4B (free)",     "openrouterApiKey", "free-only")
+            // ── cloud-Pool: Opus als Primary / Manuell-Option ──
+            new Default("anthropic",  "claude-opus-4-7",                        "Claude Opus 4.7 (Orchestrator)", "anthropicApiKey",  "cloud",           true),
+            // ── orchestrator: läuft Claude Code selbst — Failover-Kette bei Opus-Limit
+            //    (datengetrieben: setMode liest orchestrator-{pool} der Reihe nach) ──
+            new Default("anthropic",  "claude-sonnet-4-6",                      "Claude Sonnet 4.6 (Orchestrator-Failover)", "anthropicApiKey", "orchestrator-cloud", true),
+            new Default("gemini",     "gemini-2.5-flash",                       "Gemini 2.5 Flash (Orchestrator-Failover #2)", "geminiApiKey",  "orchestrator-cloud", true),
+            new Default("ollama",     "qwen2.5:14b",                            "Qwen2.5 14B (lokaler Orchestrator)",        "ollamaApiKey",    "orchestrator-local", false),
+            new Default("openrouter", "nousresearch/hermes-3-llama-3.1-405b:free", "Hermes-3 405B (free · Orchestrator)",   "openrouterApiKey", "orchestrator-free",  true),
+            // ── implement (Bulk-Code) ──
+            new Default("openrouter", "deepseek/deepseek-chat-v3.1",            "DeepSeek V3.1",                  "openrouterApiKey", "implement-cloud", true),
+            new Default("openrouter", "google/gemini-2.5-flash",                "Gemini 2.5 Flash",              "openrouterApiKey", "implement-cloud", true),
+            new Default("openrouter", "qwen/qwen3-coder:free",                  "Qwen3 Coder (free)",            "openrouterApiKey", "implement-free",  true),
+            new Default("openrouter", "qwen/qwen3-next-80b-a3b-instruct:free",  "Qwen3-Next 80B (free)",         "openrouterApiKey", "implement-free",  true),
+            new Default("ollama",     "qwen2.5-coder:7b",                       "Qwen2.5 Coder 7B (lokal)",      "ollamaApiKey",     "implement-local", false),
+            // ── review (Korrektheit/Tests) ──
+            new Default("openrouter", "openai/gpt-4o-mini",                     "GPT-4o-mini",                   "openrouterApiKey", "review-cloud",    true),
+            new Default("openrouter", "openai/gpt-oss-120b:free",               "GPT-OSS 120B (free)",           "openrouterApiKey", "review-free",     true),
+            new Default("ollama",     "qwen2.5:7b",                             "Qwen2.5 7B (lokal)",            "ollamaApiKey",     "review-local",    false),
+            // ── research (Web/Docs · Large-Context) — Web-Grounding via Gemini-MCP ──
+            new Default("openrouter", "google/gemini-2.5-pro",                  "Gemini 2.5 Pro (research)",     "openrouterApiKey", "research-cloud",  true),
+            new Default("gemini",     "gemini-2.5-pro",                         "Gemini 2.5 Pro (nativ · #2)",   "geminiApiKey",     "research-cloud",  true),
+            new Default("openrouter", "google/gemma-4-31b-it:free",             "Gemma 4 31B (free · Research)",  "openrouterApiKey", "research-free",   true),
+            // ── dispatch (Triviales) ──
+            new Default("openrouter", "google/gemini-2.5-flash-lite",           "Gemini 2.5 Flash-Lite",         "openrouterApiKey", "dispatch-cloud",  true),
+            new Default("openrouter", "meta-llama/llama-3.3-70b-instruct:free", "Llama 3.3 70B (free)",          "openrouterApiKey", "dispatch-free",   true),
+            new Default("openrouter", "openai/gpt-oss-20b:free",                "GPT-OSS 20B (free)",            "openrouterApiKey", "dispatch-free",   true),
+            new Default("ollama",     "gemma3:4b",                              "Gemma 3 4B (lokal)",            "ollamaApiKey",     "dispatch-local",  false)
         );
         int idx = 0;
         for (Default d : defaults) {
@@ -89,14 +119,14 @@ public class DataInitializer {
                 .displayName(d.displayName())
                 .apiKeySettingKey(d.settingKey())
                 .category(d.category())
-                .enabled(Boolean.TRUE)
+                .enabled(d.enabled())
                 .orderIdx(idx++)
                 .autoDisabled(Boolean.FALSE)
                 .createdAt(now)
                 .updatedAt(now)
                 .build());
         }
-        System.out.println("[seed] switcher: Default-Chain geseedet (cloud + free-only Cascades)");
+        System.out.println("[seed] switcher: 2D-Supermodell-Matrix geseedet (Rolle×Pool, local disabled bis Ollama)");
     }
 
     /**

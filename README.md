@@ -6,6 +6,8 @@
 
 *Web-UI auf `http://localhost:2000` — Failover-Chain editierbar, Provider/Modell jederzeit manuell wechselbar.*
 
+> **🧠 Supermodell-Modus** (Opus orchestriert + delegiert Fleißarbeit an günstigere/lokale Modelle; 2 Achsen Pool × Supermodell, Local fail-closed): siehe **[SUPERMODELL.md](SUPERMODELL.md)** — self-contained Anleitung inkl. Laien-Erklärung, 2D-Matrix, Setup (Mac/Ubuntu), Hardware-Stufen, Privacy-Garantie und **Zusammenspiel mit superpowers** (Claude-Code-Arbeitsmodus — Playbook × Staffing, inkl. All-lokal-Sonderfall).
+
 ### UI-Bereiche
 
 <table>
@@ -145,6 +147,31 @@ Du tippst weiterhin nur `claude`. Im Hintergrund läuft ein „unsichtbarer Assi
         Anton ist wieder da. Du arbeitest weiter.        💰 0 €
         Du warst 2,5 h auf Gabi → Kosten ~ 1,50 €
 ```
+
+### Noch einen Schritt weiter — der Supermodell-Modus
+
+Der Failover oben ist **Plan B**: Anton fällt aus, Gabi springt ein. Reaktiv — erst wenn das Limit schon weg ist.
+
+Der **Supermodell-Modus** dreht das zu **Plan A** um. Anton (der teure Senior) macht nur noch das, wofür man einen Senior *braucht* — **planen und am Ende drüberschauen**. Die Fleißarbeit gibt er sofort an die günstigen Kollegen, **bevor sein Limit überhaupt angekratzt wird**:
+
+```
+   Du: "Bau Feature X, mit Tests, und committe es"
+                     │
+                     ▼
+   🟠 Anton PLANT ──► verteilt die Aufgaben:
+        ├─ Code tippen     ──►  🟢 Dieter / 🔷 Gabi   (billig/gratis)
+        ├─ Tests prüfen    ──►  ein Review-Kollege
+        └─ Commit-Message  ──►  der billigste im Haus
+                     │
+                     ▼
+   🟠 Anton sammelt ein, prüft, poliert  ──►  fertig
+```
+
+Der Witz: Anton wird **gar nicht erst leer**, weil er 95 % der Arbeit delegiert. Statt „ein teurer Berater macht alles bis er umfällt" → „ein teurer Kopf plant, ein Schwarm billiger Hände arbeitet". Viele Modelle, die sich wie **ein** überlegenes verhalten — daher *Super*modell.
+
+Gesteuert über zwei Achsen: **welcher Pool** (Cloud = beste Qualität · Free = gratis · Lokal = privat, nichts verlässt den Rechner) und **Supermodell an/aus**. Wer welche Aufgabe kriegt, entscheidet Anton anhand von **Beschreibungen** (kein fester Code) — die ganze Mechanik (Rollen, Routing, Privacy-Garantie, Hardware-Stufen) steht in **[SUPERMODELL.md](SUPERMODELL.md)**.
+
+**Wann lohnt sich das?** Je öfter du an Antons „Pause!" knallst, je mehr stumpfe Fleißarbeit du hast, je wichtiger dir Lokal/Privatsphäre ist. Knallst du nie ans Limit und brauchst kein Lokal → bleib beim einfachen Failover oben; dann ist Supermodell Overkill.
 
 ---
 

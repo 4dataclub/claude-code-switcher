@@ -1,7 +1,6 @@
 import { Component, EventEmitter, Input, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { CascadeModePanelComponent } from '@4dataclub/ki-models-ui';
 
 /**
  * Mode-Toggle (Manuell / Auto-Failover) + Aktiv-Picker (Manuell) +
@@ -28,11 +27,43 @@ import { CascadeModePanelComponent } from '@4dataclub/ki-models-ui';
 @Component({
   selector: 'sw-mode-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule, CascadeModePanelComponent],
+  imports: [CommonModule, FormsModule],
   template: `
     <div>
-      <!-- Row 1: Switching (Manuell / Auto-Failover) — primärer Mode-Toggle -->
-      <div class="flex items-center gap-3 flex-wrap">
+      <!-- Row 0: Supermodell (Orchestrierung an/aus) — die 2. Achse, gilt in JEDEM Bereich/Pool -->
+      <div class="flex items-center gap-3 flex-wrap mb-3">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Supermodell</span>
+        <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
+          <button
+            type="button"
+            (click)="setSupermodel(false)"
+            class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
+            [class.bg-slate-950]="!supermodel"
+            [class.text-slate-50]="!supermodel"
+            [class.dark:bg-slate-50]="!supermodel"
+            [class.dark:text-slate-950]="!supermodel"
+            [class.text-slate-500]="supermodel"
+            [class.dark:text-slate-400]="supermodel"
+          >Aus</button>
+          <button
+            type="button"
+            (click)="setSupermodel(true)"
+            class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
+            [class.bg-indigo-600]="supermodel"
+            [class.text-white]="supermodel"
+            [class.text-slate-500]="!supermodel"
+            [class.dark:text-slate-400]="!supermodel"
+          >An — Opus orchestriert</button>
+        </div>
+        <span *ngIf="supermodel" class="text-xs text-slate-500 dark:text-slate-400">Opus plant &amp; verteilt im gewählten Bereich, prüft am Ende.</span>
+      </div>
+
+      <!-- Row 1: Switching (Manuell / Auto-Failover) — NUR im klassischen Modus.
+           Bei Supermodell AN orchestriert Opus (gepinnt) + die Cascade macht das
+           Rollen-Failover via Cooldown; ein Session-Auto-Failover würde Opus
+           entpinnen → die Achse ist dann widersprüchlich + ausgeblendet
+           (Backend erzwingt ohnehin mode=manual). -->
+      <div *ngIf="!supermodel" class="flex items-center gap-3 flex-wrap">
         <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Switching</span>
         <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
           <button
@@ -60,25 +91,32 @@ import { CascadeModePanelComponent } from '@4dataclub/ki-models-ui';
         </div>
       </div>
 
-      <!-- Row 2: Bereich-Toggle (Library-Component v0.13.0). Filtert
-           Manuell-Picker UND steuert in Auto-Mode welcher Cascade-Bereich
-           das Failover macht. Auto-Info-Card wird per [autoMode]-Input
-           gated und nutzt scrollTargetId für den ↓-Button. -->
-      <div class="mt-3">
-        <ki-cascade-mode-panel
-          [categories]="categories"
-          [activeCategory]="activeCategory"
-          [categoryTitles]="categoryTitles"
-          [categoryHintMap]="categoryHintMap"
-          [autoMode]="mode === 'auto'"
-          scrollTargetId="cascade-bereiche-section"
-          [labels]="cascadeModePanelLabels"
-          (categoryChanged)="setCategory($event)">
-        </ki-cascade-mode-panel>
+      <!-- Row 2: Bereich/Pool-Toggle — NUR die 3 Pools (cloud/free/local).
+           KEIN „Auto"/Off-Zustand: ein Pool ist immer gewählt (Default cloud).
+           Eigene Pill-Reihe statt der Library-Component, die zwingend einen
+           Off-Button rendert. -->
+      <div class="flex items-center gap-3 flex-wrap mt-3">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Bereich</span>
+        <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
+          <button
+            *ngFor="let p of categories"
+            type="button"
+            (click)="setCategory(p)"
+            class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
+            [class.bg-slate-950]="activeCategory === p"
+            [class.text-slate-50]="activeCategory === p"
+            [class.dark:bg-slate-50]="activeCategory === p"
+            [class.dark:text-slate-950]="activeCategory === p"
+            [class.text-slate-500]="activeCategory !== p"
+            [class.dark:text-slate-400]="activeCategory !== p"
+          >{{ poolButtonLabel(p) }}</button>
+        </div>
+        <span class="text-xs text-slate-500 dark:text-slate-400">{{ categoryHintMap[activeCategory] || '' }}</span>
       </div>
 
-      <!-- Manuell-Mode: Picker mit gefilterten Modellen (nach activeCategory) -->
-      <div *ngIf="mode === 'manual'" class="mt-4 rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 sm:p-5 ring-1 ring-slate-200 dark:ring-slate-700">
+      <!-- Manuell-Mode: Einzelmodell-Picker — nur klassisch (bei Supermodell AN
+           wählt nicht der User EIN Modell, sondern Opus delegiert an die Rollen). -->
+      <div *ngIf="mode === 'manual' && !supermodel" class="mt-4 rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 sm:p-5 ring-1 ring-slate-200 dark:ring-slate-700">
         <p class="text-sm text-slate-600 dark:text-slate-300 mb-3">
           <strong class="font-semibold text-slate-900 dark:text-slate-100">Aktiver Provider</strong>
           — Claude Code läuft auf
@@ -164,6 +202,8 @@ export class ModePanelComponent {
   @Input() categoryTitles: Record<string, string> = {};
   /** Optional: lange Hint-Strings pro Kategorie (kommt aus cascades-view) */
   @Input() categoryHintMap: Record<string, string> = {};
+  /** v2: Supermodell-Modus aktiv? (Orchestrierung-Achse, unabhängig vom Bereich/Pool). */
+  @Input() supermodel = false;
 
   @Output() modeChanged = new EventEmitter<'manual' | 'auto'>();
   @Output() promoteRequested = new EventEmitter<void>();
@@ -172,6 +212,8 @@ export class ModePanelComponent {
   /** v0.7.5 — User klickt einen Bereich-Tab → AppComponent ruft
    *  POST /api/preferred-category. Empty-String bedeutet „zurück zu Semantic Routing". */
   @Output() categoryChanged = new EventEmitter<string>();
+  /** v2: Supermodell an/aus → AppComponent ruft POST /api/supermodel. */
+  @Output() supermodelChanged = new EventEmitter<boolean>();
 
   /** Composite key `provider:modelId` für die Single-Select-Combobox.
    *  Wird beim Submit gesplittet und als {provider, model} emittiert. */
@@ -202,13 +244,22 @@ export class ModePanelComponent {
   }
 
   /**
-   * Aktive Modelle gefiltert nach `activeCategory`. Wenn `activeCategory`
-   * leer ist (Semantic Routing): alle Modelle. Sonst: nur die mit passender
-   * `category` ODER ohne Category-Marker (general/null = überall sichtbar).
+   * Aktive Modelle gefiltert nach dem aktiven **Pool** (`activeCategory` ist
+   * jetzt cloud|free|local). Ein Modell gehört zu einem Pool, wenn seine
+   * Kategorie der Pool ist ODER auf `-{pool}` endet (Compound-Matrix
+   * Rolle×Pool). `free` matcht zusätzlich die Legacy-Kategorie `free-only`.
+   * Leerer Pool = alle Modelle.
    */
   availableModelsForCategory(): { provider: string; modelId: string; displayName: string; category?: string | null }[] {
     if (!this.activeCategory) return this.availableModels;
-    return this.availableModels.filter((m) => m.category === this.activeCategory);
+    return this.availableModels.filter((m) => this.matchesPool(m.category, this.activeCategory));
+  }
+
+  /** True wenn die Kategorie zum Pool gehört (exakt, Compound `-pool` oder free-only). */
+  matchesPool(cat: string | null | undefined, pool: string): boolean {
+    if (!cat) return pool === 'cloud'; // null/general → Cloud-Lane
+    if (pool === 'free') return cat === 'free' || cat === 'free-only' || cat.endsWith('-free');
+    return cat === pool || cat.endsWith('-' + pool);
   }
 
   /** Human-readable Provider-Label. */
@@ -248,6 +299,12 @@ export class ModePanelComponent {
     this.modeChanged.emit(m);
   }
 
+  /** Supermodell-Achse: an/aus. Propagiert nach oben (AppComponent → POST /api/supermodel). */
+  setSupermodel(on: boolean): void {
+    if (this.supermodel === on) return;
+    this.supermodelChanged.emit(on);
+  }
+
   /**
    * Library-Component `<ki-cascade-mode-panel>` ruft das hier wenn der
    * User einen Bereich-Tab klickt. Wir propagieren nur nach oben — App-
@@ -264,23 +321,16 @@ export class ModePanelComponent {
    * konsistent bleibt.
    */
   categoryLabel(c: string): string {
+    const pools: Record<string, string> = { cloud: 'Cloud', free: 'Free', local: 'Lokal' };
+    if (pools[c]) return pools[c];
     const hint = this.categoryHintMap?.[c];
     if (hint) return hint;
     return c.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   }
 
-  /**
-   * Deutsche Labels für die Library-Component `<ki-cascade-mode-panel>`.
-   * Stabil als readonly damit es nicht bei jedem Change-Detection-Tick
-   * neue Referenzen gibt (Performance + verhindert ngOnChanges-Schleifen).
-   */
-  readonly cascadeModePanelLabels = {
-    toggleLegend: 'Bereich',
-    hintSemanticRouting: 'Auto-Routing — Cascade entscheidet pro Call welcher Bereich.',
-    hintOverrideTemplate: 'Override: alle Generate-Calls gehen an „{cat}".',
-    autoCardActiveTemplate: 'Auto-Failover läuft via Cascade-Bereich „{cat}". Reihenfolge + Cooldown siehe Card unten.',
-    autoCardSemanticHint: 'Auto-Routing aktiv — wähle einen Bereich oben für gezielten Override.',
-    btnScrollToCascade: '↓ Zur Cascade-Konfiguration',
-    offButtonLabel: 'Auto',
-  };
+  /** Kurzes Button-Label pro Pool (Cloud / Free / Lokal). */
+  poolButtonLabel(p: string): string {
+    const short: Record<string, string> = { cloud: 'Cloud', free: 'Free', local: 'Lokal' };
+    return short[p] || this.categoryTitles[p] || p;
+  }
 }
