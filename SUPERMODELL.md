@@ -69,6 +69,7 @@ normales Pool-Routing.
 
 |  | **cloud** | **free** | **local** |
 |---|---|---|---|
+| **orchestrator** *(Hirn, gepinnt)* | Opus 4.8 → Sonnet 4.6 | *(leer — editierbar)* | qwen2.5:14b (aus bis Ollama) |
 | **implement** | DeepSeek V3.1 + Gemini Flash | Qwen3-Coder + Qwen3-Next 80B | qwen2.5-coder:7b |
 | **review** | GPT-4o-mini | GPT-OSS 120B | qwen2.5:7b |
 | **research** | Gemini Pro (OR + nativ) | *(Gemini-MCP)* | *— Web=Cloud* |
@@ -77,6 +78,15 @@ normales Pool-Routing.
 Jede Zelle ist eine **Failover-Kette** (mehrere Modelle, Cooldown). Fällt eins aus, rückt
 das nächste nach — der Plan läuft weiter. Modelle/Reihenfolge jederzeit in der UI änderbar
 (Rollen + Pools sind **Kategorien = Daten**, voll CRUD-bar, kein Code-Eingriff).
+
+> **Sonderrolle `orchestrator`:** Anders als die 4 Worker ist der Orchestrator **Claude Code
+> selbst** (der laufende Main-Loop) — **kein** `@supermodel`-Delegationsziel (der Agent delegiert
+> nur implement/review/research/dispatch). Die `orchestrator-{pool}`-Zelle *pinnt* das Hirn:
+> **cloud/free** → Opus, mit `orchestrator-cloud` (Sonnet 4.6) + Failover-Kette (Sonnet → Gemini
+> Pro → Flash) via `pinOrchestratorForPool`. **local** → fail-closed, **nie Cloud**: die
+> `orchestrator-local`-Zelle ist, wo du dein lokales Hirn wählst; ohne aktives lokales Modell →
+> `localOrchestratorPending` (gelbe Warnung). Das Live-Routing des Main-Loops aufs lokale Modell
+> (ccr → Ollama) ist **Phase E**.
 
 ## 🔒 Lokal = fail-closed (die wichtigste Garantie)
 
