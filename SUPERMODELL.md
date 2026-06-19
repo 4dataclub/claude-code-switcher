@@ -132,6 +132,58 @@ Es gibt **zwei** Failover-Ebenen — eine läuft schon immer, eine fängt das Op
   (nicht-Anthropic). Und: das Failover feuert nur, wenn der Wrapper **`claude-auto`** das Limit per
   stderr-Parsing erkennt (fragil — keine offizielle Pre-Quota-API für Max/Pro). Nacktes `claude` → kein Auto-Switch.
 
+## Zusammenspiel mit superpowers (Claude-Code-Arbeitsmodus)
+
+[superpowers](https://github.com/obra/superpowers) ist die Standard-**Arbeitsmethodik** von
+Claude Code (brainstorm→plan→TDD→verify→review→finish). Sie und der Supermodell-Modus
+**kollidieren nicht — sie sitzen auf verschiedenen Schichten:**
+
+- **superpowers = Playbook** — *welche* Schritte, *welcher* Qualitäts-Standard.
+- **Supermodell = Staffing** — *wer* macht jeden Schritt, auf *welchem* Modell, zu welchen Kosten.
+
+Der Orchestrator führt das superpowers-Playbook aus und verteilt die Fleißarbeit über `@supermodel`:
+
+```
+ superpowers = WAS:   brainstorm → plan → TDD → verify → review → finish
+ ─────────────────────────────────────────────────────────────────────
+ Supermodell = WER:
+   ┌──────────────────────────┬───────────────────────────────────┐
+   │ Orchestrator selbst       │ @supermodel → cascade → billiger   │
+   │ (Opus; Local-Pool:        │ Worker (implement/review/research) │
+   │  ein lokales Modell)      │                                    │
+   ├──────────────────────────┼───────────────────────────────────┤
+   │ brainstorm (nur unklar)   │ implement / TDD-Code               │
+   │ Plan / Architektur        │ review · research · boilerplate    │
+   │ finale Verify + Synthese  │                                    │
+   └───────────┬──────────────┴────────────────┬──────────────────┘
+               │      Ergebnisse ◄──────────────┘
+               ▼
+   Orchestrator: sammelt → prüft gg. Plan → integriert → verify-before-done
+               ▼  GATES: kein Deploy/Merge/Publish ohne GO · Local = fail-closed
+```
+
+**Vorrang-Regel (Tie-Breaker):** Supermodell **AN** → Delegation läuft **nur** über `@supermodel`
+(nicht über superpowers' eigene `dispatching-parallel-agents` / `subagent-driven-development`);
+superpowers regelt weiter das *Wie* (Plan/TDD/Verify/Review). Supermodell **AUS** → superpowers'
+Subagents sind der Delegationsweg. Ohne die Regel würde der Orchestrator doppelt delegieren.
+
+**Gewinn:** Die Kombi senkt genau die Opus-Quota-Last, die superpowers *allein* auf Opus
+erzeugen würde — Opus denkt nur, die Worker machen die Masse billig.
+
+### Sonderfall: beide voll lokal (Local-Pool + Supermodell + superpowers)
+
+Läuft mechanisch komplett, **100 % privat & fail-closed** — mit drei Konsequenzen:
+
+1. **Der Orchestrator ist ein lokales Modell, nicht Opus** (Opus = Cloud = Leak). superpowers'
+   Playbook läuft also im Kopf eines lokalen Modells → Qualität = hardware-gebunden (siehe
+   Hardware-Stufen unten; Opus-Niveau ist lokal nicht erreichbar).
+2. **superpowers wird zum Sicherheitsnetz, nicht zum Ballast:** weil lokale Worker schwächer
+   sind, fangen TDD + `verification-before-completion` + Review deren Fehler ab — die
+   Qualitäts-Gates machen lokale Ergebnisse überhaupt erst brauchbar.
+3. **Native Claude-Subagents können nur Anthropic/Cloud sein** → im Local-Pool läuft Delegation
+   ausschließlich über `@supermodel` → cascade → `{rolle}-local`. Der Tie-Breaker greift hier
+   doppelt. Fällt ein lokales Modell aus → **STOPP**, nie Cloud.
+
 ## Setup
 
 ### 1. Cascade-Matrix (Modelle)
