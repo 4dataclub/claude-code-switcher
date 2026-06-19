@@ -1051,7 +1051,17 @@ public class ApiController {
      */
     @GetMapping("/ai-models")
     public com.fasterxml.jackson.databind.JsonNode listAiModels() {
-        return cascade.getModels();
+        JsonNode all = cascade.getModels();
+        if (all == null || !all.isArray()) return all;
+        // Nur die Modelle des aktiven Pools — die Modell-Tabelle + Matrix/Picker
+        // spiegeln den im Bereich-Toggle gewählten Pool (cloud/free/local), genau
+        // wie die Cascade-Bereiche. matchesPool = dieselbe Logik wie bei /cascades.
+        String pool = configs.getSwitcher().path("pool").asText("cloud");
+        ArrayNode out = configs.mapper().createArrayNode();
+        for (JsonNode m : all) {
+            if (matchesPool(m.path("category").asText(""), pool)) out.add(m);
+        }
+        return out;
     }
 
     @PostMapping("/ai-models")

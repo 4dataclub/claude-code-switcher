@@ -534,6 +534,8 @@ export class AppComponent implements OnDestroy {
         if (d.pool && d.pool !== this.activePool()) {
           this.activePool.set(d.pool);
           this.cascadesView?.reload(); // anderer Pool → Cascade-Bereiche neu filtern
+          this.modelsTable?.reload();
+          this.reloadAvailableModels();
         }
         if (typeof d.supermodel === 'boolean') this.supermodel.set(d.supermodel);
         this.localOrchestratorPending.set(!!d.localOrchestratorPending);
@@ -655,8 +657,11 @@ export class AppComponent implements OnDestroy {
         this.activePool.set(r.pool || pool);
         this.localOrchestratorPending.set(!!r.localOrchestratorPending);
         this.showToast(r.note ? r.note : 'Pool: ' + (this.poolTitles[pool] || pool), r.note ? 'err' : 'ok');
-        // Backend filtert /api/cascades jetzt nach dem neuen Pool → View neu laden.
+        // Backend filtert /api/cascades + /api/ai-models jetzt nach dem neuen Pool →
+        // Cascade-View, Modell-Tabelle und Matrix/Picker neu laden.
         this.cascadesView?.reload();
+        this.modelsTable?.reload();
+        this.reloadAvailableModels();
         if (r.restart) this.reload();
       },
       error: () => {
