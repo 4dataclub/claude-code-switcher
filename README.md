@@ -171,6 +171,8 @@ Der Witz: Anton wird **gar nicht erst leer**, weil er 95 % der Arbeit delegiert.
 
 Gesteuert über zwei Achsen: **welcher Pool** (Cloud = beste Qualität · Free = gratis · Lokal = privat, nichts verlässt den Rechner) und **Supermodell an/aus**. Wer welche Aufgabe kriegt, entscheidet Anton anhand von **Beschreibungen** (kein fester Code) — die ganze Mechanik (Rollen, Routing, Privacy-Garantie, Hardware-Stufen) steht in **[SUPERMODELL.md](SUPERMODELL.md)**.
 
+**Auch das Hirn ist konfigurierbar.** Der `orchestrator` ist eine eigene Rolle (Zelle pro Pool) wie `implement`/`review`/… — und knallt Opus *selbst* ans Limit, schaltet er der Reihe nach durch die Modelle dieser Zelle (Default cloud: **Sonnet 4.6 → Gemini**). Sonnet zuerst **Anthropic-direkt** (Supermodell bleibt intakt, Subagents laufen), dann degradiert-aber-läuft via Cloud; nach Cooldown promotet er automatisch zurück auf Opus. Reihenfolge editierbar wie jede Rolle (die Kette folgt der Zelle, kein Code-Eingriff). Im **Lokal**-Pool: kein Cloud-Ausweich — **fail-closed**.
+
 **Wann lohnt sich das?** Je öfter du an Antons „Pause!" knallst, je mehr stumpfe Fleißarbeit du hast, je wichtiger dir Lokal/Privatsphäre ist. Knallst du nie ans Limit und brauchst kein Lokal → bleib beim einfachen Failover oben; dann ist Supermodell Overkill.
 
 ---
