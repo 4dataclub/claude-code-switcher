@@ -137,6 +137,51 @@ Beschreibung oder ein Modell, folgt das Routing, **kein Code-Eingriff**. `resear
 Cascade (Gemini-MCP/Grounding; im Local-Pool verweigert = Web=Cloud, fail-closed). Delegation-Fehler:
 **cloud/free = fail-open** (Opus macht's selbst), **local = fail-closed** (Stopp, nie Cloud).
 
+## Ohne Supermodell — der klassische Lauf (Gegenstück)
+
+Häufigste Verwechslung, deshalb direkt daneben: **Supermodell AUS** nutzt dieselben
+Cascade-Bereiche, aber komplett anders. Die Bereiche sind dann **Kosten-Tier-Lanes**
+(`cloud` / `free-only`), keine Rollen — jede eine eigene Failover-Kette mit eigenem Cooldown.
+
+**Wie es in cloud läuft:** Claude Code hängt an **genau einem** Modell und steigt bei Quota-Tod
+die Kette runter — jeder Schritt = Wrapper-Restart (`--resume` hält den Kontext):
+
+```
+ Supermodell AUS · Pool cloud · Auto-Failover
+ ─────────────────────────────────────────────
+ Stufe 0  Anthropic (Opus/Sonnet, OAuth)   ← Start, im Abo
+    │  Quota leer → runterschalten (Restart)
+    ▼
+ Stufe 1  Gemini 2.5 Pro
+    │  leer / Cooldown ▼
+ Stufe 2  Gemini 2.5 Flash
+    │  ▼
+ Stufe 3  DeepSeek free   ← aus free-only, der Notnagel
+
+ ⟲ alle 30 min: Anthropic frei? → Auto-Promote zurück auf Stufe 0
+```
+
+- **Manuell:** du pinnst ein Modell, es bleibt — kein Auto-Switch.
+- **`preferred-category`:** eine Lane festpinnen, oder leer = *Semantic Routing* (Cascade wählt
+  die Lane nach Zweck). Trotzdem ist **immer nur eine** live.
+- Mehrere Bereiche = **Reserve-Lanes + Tiefen-Stufen** derselben einen Kette, **nicht** Mitspieler.
+  Genau eins arbeitet zu jedem Zeitpunkt an allem; Wechsel = Provider umschalten = Restart.
+
+**Der Unterschied in einem Bild:**
+
+```
+ OHNE Supermodell = Reservetank        MIT Supermodell = Fließband
+ ─────────────────────────────         ─────────────────────────────
+ ein Modell macht alles                Opus dirigiert via @supermodel:
+ leer → nächstes (Restart)             ├─► implement-cloud  ┐
+ nacheinander, sequenziell             ├─► review-cloud     │ gleichzeitig
+ (Bereiche = Notnägel)                 └─► dispatch-cloud   ┘ (Seitenkanal :8091)
+```
+
+Kurz: **ohne** Supermodell sind die Bereiche ein **Reservetank-System** (einer leer → nächster,
+sequenziell, ein Modell macht alles). **Mit** Supermodell werden dieselben Bereiche ein
+**gleichzeitiges Team** an einem Stück Arbeit — siehe Routing-Sektion oben.
+
 ## 🔒 Lokal = fail-closed (die wichtigste Garantie)
 
 Im **Local-Pool** verlässt **nichts** automatisch den Rechner — auch nicht „um die Funktion
