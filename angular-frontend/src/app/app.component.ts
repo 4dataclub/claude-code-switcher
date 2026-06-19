@@ -307,8 +307,8 @@ export class AppComponent implements OnDestroy {
 
   /** Die 3 Pools — der Bereich-Toggle zeigt NUR diese (nie Rollen, nie „Auto"). */
   readonly POOLS = ['cloud', 'free', 'local'];
-  /** Die 4 Rollen — erscheinen pro Pool NUR wenn Supermodell AN ist. */
-  readonly ROLES = ['implement', 'review', 'research', 'dispatch'];
+  /** Die Rollen — erscheinen pro Pool NUR wenn Supermodell AN ist. */
+  readonly ROLES = ['orchestrator', 'implement', 'review', 'research', 'dispatch'];
 
   readonly poolTitles: Record<string, string> = {
     cloud: 'Cloud — Premium (bezahlt)',
@@ -321,6 +321,7 @@ export class AppComponent implements OnDestroy {
     local: 'Eigene Infra, privat, fail-closed — nichts verlässt den Rechner.',
   };
   readonly roleMeta: Record<string, { label: string; desc: string }> = {
+    orchestrator: { label: 'Orchestrator', desc: 'Plant + synthetisiert (Claude Code selbst)' },
     implement: { label: 'Implement', desc: 'Bulk-Code, Backend, Boilerplate, CRUD' },
     review:    { label: 'Review',    desc: 'Korrektheit, Sicherheit, Tests' },
     research:  { label: 'Research',  desc: 'Web/Google, große Docs' },
@@ -333,6 +334,7 @@ export class AppComponent implements OnDestroy {
    */
   readonly cascadeOrder: string[] = [
     'cloud', 'free-only', 'local',
+    'orchestrator-cloud', 'orchestrator-free', 'orchestrator-local',
     'implement-cloud', 'review-cloud', 'research-cloud', 'dispatch-cloud',
     'implement-free', 'review-free', 'dispatch-free',
     'implement-local', 'review-local', 'dispatch-local',
