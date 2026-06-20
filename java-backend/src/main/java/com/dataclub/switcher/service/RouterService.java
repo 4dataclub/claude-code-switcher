@@ -30,14 +30,16 @@ import java.util.Map;
 public class RouterService {
 
     private final ConfigService configs;
+    private final SwitcherModelService modelSvc;
     private final ObjectMapper mapper;
     private final DockerClient docker;
 
     @Value("${switcher.router.container}")
     private String routerContainer;
 
-    public RouterService(ConfigService configs) {
+    public RouterService(ConfigService configs, SwitcherModelService modelSvc) {
         this.configs = configs;
+        this.modelSvc = modelSvc;
         this.mapper = configs.mapper();
         DefaultDockerClientConfig cfg = DefaultDockerClientConfig.createDefaultConfigBuilder()
             .withDockerHost("unix:///var/run/docker.sock")
@@ -53,6 +55,33 @@ public class RouterService {
         put("anthropic", "anthropic");
         put("openrouter", "openrouter");
     }};
+
+    /** Switcher-Provider → DB-Setting-Key (app_settings, derselbe Store wie die Cascade).
+     *  anthropic ist NICHT dabei: das ist OAuth/Long-Token, bleibt in settings.json. */
+    private static final Map<String, String> PROVIDER_TO_SETTING = Map.of(
+        "google", "geminiApiKey",
+        "openrouter", "openrouterApiKey"
+    );
+
+    /**
+     * API-Key für einen Switcher-Provider. <b>Quelle der Wahrheit ist die geteilte DB</b>
+     * ({@code app_settings}) — exakt der Store, den {@code ki-models-ui} pflegt und
+     * {@code llm-cascade} + EduPro lesen. Der klassische ccr-Router liest jetzt denselben
+     * Store ⇒ <b>keine architektonische Divergenz</b>, kein switcher-eigener Key-Ort mehr.
+     *
+     * <p>google/openrouter kommen <b>ausschließlich</b> aus der DB (kein settings.json-
+     * Fallback — der wäre selbst wieder eine Divergenz). {@code anthropic} ist
+     * OAuth/Long-Token, bleibt prinzipbedingt in settings.json (der Wrapper hat keinen
+     * DB-Zugriff) und gehört nicht in den geteilten API-Key-Store.
+     */
+    public String resolveKey(String provider) {
+        String settingKey = PROVIDER_TO_SETTING.get(provider);
+        if (settingKey != null) {
+            String db = modelSvc.getSettingRaw(settingKey);
+            return db == null ? "" : db;
+        }
+        return configs.getSwitcher().path("keys").path(provider).asText("");
+    }
 
     /** Provider-Defaults (api-base-url + Modell-Liste) — analog der alten server.js. */
     public ArrayNode buildProviders(ObjectNode keys) {
@@ -90,8 +119,14 @@ public class RouterService {
     /** Schreibt router-config.json basierend auf _switcher in der Switcher-Config. */
     public synchronized void writeRouterConfig() {
         ObjectNode sw = configs.getSwitcher();
-        ObjectNode keys = sw.has("keys") && sw.get("keys").isObject()
-            ? (ObjectNode) sw.get("keys") : mapper.createObjectNode();
+        // Keys aus der DB (app_settings) — EINE Quelle, wie die Cascade. resolveKey()
+        // bevorzugt die DB, fällt auf settings.json zurück. So kann ein veralteter
+        // settings.json-Key den Router nicht mehr ins Leere laufen lassen.
+        ObjectNode keys = mapper.createObjectNode();
+        String gKey = resolveKey("google");
+        String oKey = resolveKey("openrouter");
+        if (!gKey.isBlank()) keys.put("google", gKey);
+        if (!oKey.isBlank()) keys.put("openrouter", oKey);
 
         // aktive Route: explicit oder erstes Element der fallback_chain
         String routeProvider = null, routeModel = null;

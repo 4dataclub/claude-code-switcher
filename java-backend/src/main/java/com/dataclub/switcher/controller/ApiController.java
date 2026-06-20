@@ -225,7 +225,7 @@ public class ApiController {
             if (req.model != null) cfg.put("model", req.model); else cfg.remove("model");
             sw.remove("activeRoute");
         } else if ("google".equals(req.provider)) {
-            if (keys.path("google").asText("").isBlank())
+            if (router.resolveKey("google").isBlank())
                 return ResponseEntity.badRequest().body(Map.of("error", "Google AI Studio API Key fehlt"));
             Set<String> valid = Set.of("gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite",
                                         "gemini-3-pro-preview", "gemini-3-flash-preview");
@@ -238,7 +238,7 @@ public class ApiController {
             sw.set("activeRoute", ar);
             routerNeedsRestart = true;
         } else if ("openrouter".equals(req.provider)) {
-            if (keys.path("openrouter").asText("").isBlank())
+            if (router.resolveKey("openrouter").isBlank())
                 return ResponseEntity.badRequest().body(Map.of("error", "OpenRouter API Key fehlt"));
             String safe = (req.model != null && req.model.contains("/")) ? req.model : "anthropic/claude-sonnet-4.5";
             env.put("ANTHROPIC_API_KEY", "sk-ccr-anything");
@@ -661,7 +661,7 @@ public class ApiController {
             // (Max/Pro-Abo), KEIN Switcher-Key nötig.
             if ("anthropic".equals(tProv)) break;
             String keyName = "google".equals(tProv) ? "google" : "openrouter".equals(tProv) ? "openrouter" : null;
-            if (keyName != null && !keys.path(keyName).asText("").isBlank()) break;
+            if (keyName != null && !router.resolveKey(keyName).isBlank()) break;
             pos++;
         }
 
