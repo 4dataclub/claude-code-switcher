@@ -1,33 +1,29 @@
-import { Component, EventEmitter, Input, Output, SimpleChanges } from '@angular/core';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 
 /**
- * Mode-Toggle (Manuell / Auto-Failover) + Aktiv-Picker (Manuell) +
- * Chain-Editor (Auto) — Switcher-Spezifisch.
+ * Switcher-Steuerpanel: Supermodell-Achse (an/aus) + Switching (Manuell /
+ * Auto-Failover, nur klassisch) + Bereich/Pool-Toggle (cloud/free/local).
  *
  * Look-and-Feel: Tailwind, hell auf weißem Card-Background (slate-50/slate-900
  * dark) — passt zu EduPro-Style des umgebenden Cards in `AppComponent`.
  *
- * - **Manuell-Mode**: zeigt den aktuellen aktiven Provider+Modell plus einen
- *   Picker zum Wechseln. Der „Aktiv"-Toggle in der Modell-Tabelle aktiviert
- *   nur die Cascade-Slot, nicht den Live-Provider — deshalb braucht der
- *   Manuell-Mode einen eigenen Wechsel-Button (siehe `(switchTo)`-Event).
- * - **Auto-Mode**: die Failover-Chain ist editierbar. Bei Quota-Erreichung
- *   wechselt der Wrapper automatisch zur nächsten Stufe.
+ * - **Manuell-Mode**: Claude Code läuft auf einem fixen Modell. Der Live-Wechsel
+ *   passiert über den grünen „Als aktiv"-Button pro Zeile in der Modell-Tabelle
+ *   (gefiltert über den Bereich-Toggle) — hier kein eigener Picker mehr.
+ * - **Auto-Mode**: die Failover-Chain ist editierbar (Library-Component oben).
+ *   Bei Quota-Erreichung wechselt der Wrapper automatisch zur nächsten Stufe.
  *
  * Events:
  * - `(modeChanged)` — `'manual' | 'auto'`
- * - `(chainChanged)` — neue Chain-Liste
- * - `(promoteRequested)` — User klickt „Zurück zu Stufe 1"
- * - `(switchTo)` — Manuell-Mode: User klickt „Wechseln" → AppComponent ruft
- *   `/api/switch` mit `{provider, model}`. Triggered Wrapper-Restart von
- *   Claude Code mit dem neuen Provider.
+ * - `(categoryChanged)` — Bereich/Pool gewechselt (cloud|free|local)
+ * - `(supermodelChanged)` — Supermodell an/aus
+ * - `(promoteRequested)` — „Zurück zu Stufe 1"
  */
 @Component({
   selector: 'sw-mode-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule],
   template: `
     <div>
       <!-- Row 0: Supermodell (Orchestrierung an/aus) — die 2. Achse, gilt in JEDEM Bereich/Pool -->
@@ -114,73 +110,15 @@ import { FormsModule } from '@angular/forms';
         <span class="text-xs text-slate-500 dark:text-slate-400">{{ categoryHintMap[activeCategory] || '' }}</span>
       </div>
 
-      <!-- Manuell-Mode: Einzelmodell-Picker — nur klassisch (bei Supermodell AN
-           wählt nicht der User EIN Modell, sondern Opus delegiert an die Rollen). -->
-      <div *ngIf="mode === 'manual' && !supermodel" class="mt-4 rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 sm:p-5 ring-1 ring-slate-200 dark:ring-slate-700">
-        <p class="text-sm text-slate-600 dark:text-slate-300 mb-3">
-          <strong class="font-semibold text-slate-900 dark:text-slate-100">Aktiver Provider</strong>
-          — Claude Code läuft auf
-          <span class="font-mono text-slate-900 dark:text-slate-100">{{ activeProvider || '–' }}</span><span *ngIf="activeModel"> · <span class="font-mono text-slate-900 dark:text-slate-100">{{ activeModel }}</span></span>.
-        </p>
-
-        <!-- Single-Select Combobox: filtered by activeCategory wenn gesetzt -->
-        <div *ngIf="availableModelsForCategory().length > 0; else noActive" class="flex flex-wrap items-center gap-2">
-          <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Wechseln zu:</span>
-          <select
-            [(ngModel)]="pickerModelKey"
-            class="flex-1 min-w-[16rem] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-sm text-slate-900 dark:text-slate-100"
-          >
-            <option *ngFor="let m of availableModelsForCategory()"
-                    [value]="m.provider + ':' + m.modelId">
-              {{ providerLabel(m.provider) }} · {{ m.displayName }}
-            </option>
-          </select>
-          <button
-            type="button"
-            (click)="emitSwitch()"
-            [disabled]="!pickerModelKey || isAlreadyActiveKey()"
-            class="px-4 py-1.5 text-xs font-bold rounded-lg bg-slate-950 dark:bg-slate-50 text-slate-50 dark:text-slate-950 hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition"
-          >Wechseln</button>
-        </div>
-
-        <ng-template #noActive>
-          <p class="text-sm text-slate-500 dark:text-slate-400 italic">
-            <span *ngIf="!activeCategory; else noActiveInCategory">
-              Keine aktiven Modelle. Aktiviere ein Modell in der Tabelle unten (Toggle „Aktiv" pro Zeile),
-              dann kannst du es hier auswählen.
-            </span>
-            <ng-template #noActiveInCategory>
-              Keine aktiven Modelle im Bereich „{{ categoryLabel(activeCategory) }}".
-              Aktiviere eines in der Tabelle unten oder wechsle den Bereich.
-            </ng-template>
-          </p>
-        </ng-template>
-
-        <p class="mt-3 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-          Nach Klick auf „Wechseln" startet der Wrapper Claude Code mit dem neuen Provider neu
-          (Kontext via <code class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">--resume</code> erhalten).
-          Schneller geht's über den grünen „Als aktiv"-Button direkt in der Modell-Tabelle.
-        </p>
-      </div>
-
-      <!-- Auto-Mode Info-Card wird jetzt von <ki-cascade-mode-panel> oben
-           gerendert (siehe [autoMode]="mode === 'auto'"). Hier keine eigene
-           Info-Card mehr nötig. -->
+      <!-- Manuell-Mode: Der Live-Wechsel auf ein konkretes Modell läuft über den
+           grünen „Als aktiv"-Button pro Zeile in der Modell-Tabelle unten
+           (gefiltert über den Bereich-Toggle). Auto-Mode: Failover-Chain-Editor
+           rendert <ki-cascade-mode-panel> oben. Hier kein eigener Picker mehr. -->
     </div>
   `,
 })
 export class ModePanelComponent {
   @Input() mode: 'manual' | 'auto' = 'manual';
-  /** Aktueller Provider (anthropic|google|openrouter), für Manuell-Picker-Defaults. */
-  @Input() activeProvider: string | null = null;
-  /** Aktuelles Modell, für Manuell-Picker-Defaults. */
-  @Input() activeModel: string | null = null;
-  /**
-   * Liste der **aktiven** Cascade-Modelle (enabled + Key gesetzt). Wird nach
-   * `activeCategory` gefiltert für den Manuell-Picker.
-   * `category` kommt aus dem cascade-Modell — wird hier zur Filterung benutzt.
-   */
-  @Input() availableModels: { provider: string; modelId: string; displayName: string; category?: string | null }[] = [];
 
   /**
    * v0.7.5 — Bereich-Toggle (Cascade-Kategorie). Liste der verfügbaren Kategorien
@@ -207,92 +145,11 @@ export class ModePanelComponent {
 
   @Output() modeChanged = new EventEmitter<'manual' | 'auto'>();
   @Output() promoteRequested = new EventEmitter<void>();
-  /** Manuell-Mode: User klickt „Wechseln" → AppComponent ruft `/api/switch`. */
-  @Output() switchTo = new EventEmitter<{ provider: string; model: string }>();
   /** v0.7.5 — User klickt einen Bereich-Tab → AppComponent ruft
    *  POST /api/preferred-category. Empty-String bedeutet „zurück zu Semantic Routing". */
   @Output() categoryChanged = new EventEmitter<string>();
   /** v2: Supermodell an/aus → AppComponent ruft POST /api/supermodel. */
   @Output() supermodelChanged = new EventEmitter<boolean>();
-
-  /** Composite key `provider:modelId` für die Single-Select-Combobox.
-   *  Wird beim Submit gesplittet und als {provider, model} emittiert. */
-  pickerModelKey = '';
-
-  ngOnChanges(changes: SimpleChanges): void {
-    // Picker-State refreshen wenn die gefilterte Liste sich geändert hat
-    // (availableModels-Input ODER activeCategory geändert).
-    if (changes['availableModels'] || changes['activeProvider'] || changes['activeModel'] || changes['activeCategory']) {
-      const filtered = this.availableModelsForCategory();
-      if (filtered.length === 0) {
-        this.pickerModelKey = '';
-        return;
-      }
-      // Bevorzugt: aktives Modell wenn es in der gefilterten Liste ist
-      const activeKey = this.activeProvider && this.activeModel
-        ? `${this.activeProvider}:${this.activeModel}` : '';
-      const activeStillInList = activeKey && filtered.some((m) => `${m.provider}:${m.modelId}` === activeKey);
-      const currentStillInList = this.pickerModelKey && filtered.some((m) => `${m.provider}:${m.modelId}` === this.pickerModelKey);
-      if (activeStillInList) {
-        this.pickerModelKey = activeKey;
-      } else if (!currentStillInList) {
-        // Vorherige Wahl ist nach Filter-Wechsel nicht mehr drin → erste Option
-        const first = filtered[0];
-        this.pickerModelKey = `${first.provider}:${first.modelId}`;
-      }
-    }
-  }
-
-  /**
-   * Aktive Modelle gefiltert nach dem aktiven **Pool** (`activeCategory` ist
-   * jetzt cloud|free|local). Ein Modell gehört zu einem Pool, wenn seine
-   * Kategorie der Pool ist ODER auf `-{pool}` endet (Compound-Matrix
-   * Rolle×Pool). `free` matcht zusätzlich die Legacy-Kategorie `free-only`.
-   * Leerer Pool = alle Modelle.
-   */
-  availableModelsForCategory(): { provider: string; modelId: string; displayName: string; category?: string | null }[] {
-    if (!this.activeCategory) return this.availableModels;
-    return this.availableModels.filter((m) => this.matchesPool(m.category, this.activeCategory));
-  }
-
-  /** True wenn die Kategorie zum Pool gehört (exakt, Compound `-pool` oder free-only). */
-  matchesPool(cat: string | null | undefined, pool: string): boolean {
-    if (!cat) return pool === 'cloud'; // null/general → Cloud-Lane
-    if (pool === 'free') return cat === 'free' || cat === 'free-only' || cat.endsWith('-free');
-    return cat === pool || cat.endsWith('-' + pool);
-  }
-
-  /** Human-readable Provider-Label. */
-  providerLabel(p: string): string {
-    switch (p) {
-      case 'anthropic':  return 'Anthropic';
-      case 'google':     return 'Google AI Studio';
-      case 'openrouter': return 'OpenRouter';
-      case 'ollama':     return 'Ollama (lokal)';
-      case 'gemini':     return 'Google Gemini';
-      default:           return p;
-    }
-  }
-
-  /**
-   * Picker-Submit: splittet den composite Key zurück in {provider, model}
-   * und propagiert nach oben (App-Component ruft `/api/switch`).
-   */
-  emitSwitch(): void {
-    if (!this.pickerModelKey) return;
-    const idx = this.pickerModelKey.indexOf(':');
-    if (idx < 0) return;
-    const provider = this.pickerModelKey.substring(0, idx);
-    const model = this.pickerModelKey.substring(idx + 1);
-    if (!provider || !model) return;
-    this.switchTo.emit({ provider, model });
-  }
-
-  /** True wenn das gewählte Picker-Modell schon das aktive Modell ist. */
-  isAlreadyActiveKey(): boolean {
-    if (!this.activeProvider || !this.activeModel) return false;
-    return this.pickerModelKey === `${this.activeProvider}:${this.activeModel}`;
-  }
 
   setMode(m: 'manual' | 'auto'): void {
     if (this.mode === m) return;
@@ -313,19 +170,6 @@ export class ModePanelComponent {
   setCategory(c: string): void {
     if (this.activeCategory === c) return;
     this.categoryChanged.emit(c);
-  }
-
-  /**
-   * Lesbares Kategorie-Label für die „Keine Modelle im Bereich"-Meldung.
-   * Identisch zu der Logik in `<ki-cascade-mode-panel>` damit die UX
-   * konsistent bleibt.
-   */
-  categoryLabel(c: string): string {
-    const pools: Record<string, string> = { cloud: 'Cloud', free: 'Free', local: 'Lokal' };
-    if (pools[c]) return pools[c];
-    const hint = this.categoryHintMap?.[c];
-    if (hint) return hint;
-    return c.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   }
 
   /** Kurzes Button-Label pro Pool (Cloud / Free / Lokal). */

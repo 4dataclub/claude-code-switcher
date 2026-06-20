@@ -84,9 +84,6 @@ import {
         </h2>
         <sw-mode-panel
           [mode]="status()?.mode ?? 'manual'"
-          [activeProvider]="status()?.provider ?? null"
-          [activeModel]="activeModel()"
-          [availableModels]="availableModels()"
           [categories]="POOLS"
           [activeCategory]="activePool()"
           [categoryTitles]="poolTitles"
@@ -94,7 +91,6 @@ import {
           [supermodel]="supermodel()"
           (modeChanged)="onModeChange($event)"
           (promoteRequested)="onPromote()"
-          (switchTo)="onSwitchTo($event)"
           (categoryChanged)="onPoolChange($event)"
           (supermodelChanged)="onSupermodelChange($event)"
         ></sw-mode-panel>
@@ -376,13 +372,6 @@ export class AppComponent implements OnDestroy {
   readonly error = signal<string | null>(null);
   readonly restarting = signal(false);
   readonly toast = signal<{ msg: string; type: 'ok' | 'err' } | null>(null);
-  /**
-   * Aktive (enabled + keyConfigured) Cascade-Modelle — speist die Manuell-
-   * Picker-Dropdowns im Modus-Panel. Wird bei jedem `reload()` und bei
-   * SSE-Toggle-Events neu geladen. Provider-Namensraum wird hier auf
-   * Switcher-UI (`google` statt `gemini`) gemappt.
-   */
-  readonly availableModels = signal<{ provider: string; modelId: string; displayName: string; category?: string | null }[]>([]);
 
   /** v2 — Supermodell-Modus (Orchestrierung-Achse) an/aus. */
   readonly supermodel = signal<boolean>(false);
@@ -535,7 +524,7 @@ export class AppComponent implements OnDestroy {
           this.activePool.set(d.pool);
           this.cascadesView?.reload(); // anderer Pool → Cascade-Bereiche neu filtern
           this.modelsTable?.reload();
-          this.reloadAvailableModels();
+          this.reloadMatrixModels();
         }
         if (typeof d.supermodel === 'boolean') this.supermodel.set(d.supermodel);
         this.localOrchestratorPending.set(!!d.localOrchestratorPending);
@@ -573,34 +562,19 @@ export class AppComponent implements OnDestroy {
       },
       error: (e) => this.error.set('Status nicht erreichbar: ' + (e?.message ?? e)),
     });
-    this.reloadAvailableModels();
+    this.reloadMatrixModels();
     this.reloadCategoryTitles();
   }
 
   /**
-   * Lädt die Cascade-Modell-Liste und filtert auf alles was im „Wechseln zu"-
-   * Picker nutzbar ist: Key gesetzt + nicht auto-disabled. Das `enabled`-Flag
-   * (Cascade-Chain-Aktiv-Toggle) wird BEWUSST nicht abgefragt — ein Modell mit
-   * Key kann live ausgewählt werden, auch wenn es gerade nicht in der
-   * Cascade-Chain steht. Provider-Namensraum wird gemappt (`gemini` → `google`).
+   * Lädt die Cascade-Modell-Liste und gruppiert ALLE Modelle (auch disabled)
+   * nach Compound-Kategorie {rolle}-{pool} für das Rollen-Panel (Matrix).
+   * API-Reihenfolge = orderIdx (Failover-Kette). Provider-Namensraum wird
+   * auf die Switcher-UI gemappt (`gemini` → `google`).
    */
-  private reloadAvailableModels(): void {
+  private reloadMatrixModels(): void {
     this.api.listAiModels().subscribe({
       next: (models) => {
-        const usable = models
-          .filter((m) => m.keyConfigured && !m.autoDisabled)
-          .map((m) => ({
-            provider: m.provider === 'gemini' ? 'google' : m.provider,
-            modelId: m.modelId,
-            displayName: m.displayName || m.modelId,
-            // v0.7.5: Kategorie durchreichen damit das Modus-Panel den
-            // Picker im Manuell-Mode nach aktiver Bereich-Auswahl filtern kann.
-            category: m.category ?? null,
-          }));
-        this.availableModels.set(usable);
-        // Matrix: ALLE Modelle (auch disabled) nach Compound-Kategorie gruppieren,
-        // damit das Rollen-Panel die Zellen (inkl. noch nicht aktivierter Local-
-        // Modelle) zeigt. API-Reihenfolge = orderIdx (Failover-Kette).
         const matrix: Record<string, { provider: string; modelId: string; displayName: string; enabled: boolean }[]> = {};
         for (const m of models) {
           const cat = m.category || 'general';
@@ -613,7 +587,7 @@ export class AppComponent implements OnDestroy {
         }
         this.matrixModels.set(matrix);
       },
-      error: () => { this.availableModels.set([]); this.matrixModels.set({}); },
+      error: () => this.matrixModels.set({}),
     });
   }
 
@@ -661,7 +635,7 @@ export class AppComponent implements OnDestroy {
         // Cascade-View, Modell-Tabelle und Matrix/Picker neu laden.
         this.cascadesView?.reload();
         this.modelsTable?.reload();
-        this.reloadAvailableModels();
+        this.reloadMatrixModels();
         if (r.restart) this.reload();
       },
       error: () => {
