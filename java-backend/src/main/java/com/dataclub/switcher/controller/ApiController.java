@@ -182,7 +182,9 @@ public class ApiController {
         if (!Set.of("anthropic", "google", "openrouter").contains(provider)) {
             return ResponseEntity.badRequest().body(Map.of("error", "unknown provider"));
         }
-        String k = configs.getSwitcher().path("keys").path(provider).asText("");
+        // resolveKey: google/openrouter aus der DB (app_settings), anthropic aus
+        // settings.json — derselbe Key, den auch der Router nutzt (konsistente Anzeige).
+        String k = router.resolveKey(provider);
         return ResponseEntity.ok(Map.of("provider", provider, "key", k));
     }
 
@@ -191,9 +193,9 @@ public class ApiController {
     public static class SwitchRequest {
         public String provider;
         public String model;
+        // Nur anthropic (OAuth/Long-Token → settings.json/Wrapper). google/openrouter
+        // pflegt ki-models-ui in der DB (app_settings) — nicht mehr über den Switch.
         public String anthropicKey;
-        public String googleKey;
-        public String openrouterKey;
     }
 
     @PostMapping("/switch")
@@ -206,16 +208,17 @@ public class ApiController {
         ObjectNode sw = cfg.has("_switcher") && cfg.get("_switcher").isObject() ? (ObjectNode) cfg.get("_switcher") : configs.mapper().createObjectNode();
         ObjectNode keys = sw.has("keys") && sw.get("keys").isObject() ? (ObjectNode) sw.get("keys") : configs.mapper().createObjectNode();
 
-        // Keys mit Format-Validation aktualisieren (außer __UNCHANGED__)
-        for (var pair : new String[][]{{"anthropic", req.anthropicKey}, {"google", req.googleKey}, {"openrouter", req.openrouterKey}}) {
-            String name = pair[0], val = pair[1];
-            if (val != null && !val.isEmpty() && !"__UNCHANGED__".equals(val)) {
-                if (!KEY_PATTERNS.get(name).matcher(val).find()) {
-                    return ResponseEntity.badRequest().body(Map.of(
-                        "error", name + "-Key hat falsches Format. Erwartet: " + KEY_PATTERNS.get(name).pattern()));
-                }
-                keys.put(name, val);
+        // Nur anthropic (OAuth/Long-Token) wird hier noch in settings.json gepflegt.
+        // google/openrouter leben in der DB (app_settings) — ki-models-ui pflegt sie,
+        // der Router liest sie via resolveKey(). Kein settings.json-Schreiben mehr
+        // für sie = keine Divergenz (war die Ursache des „API key not valid"-Bugs).
+        String aKey = req.anthropicKey;
+        if (aKey != null && !aKey.isEmpty() && !"__UNCHANGED__".equals(aKey)) {
+            if (!KEY_PATTERNS.get("anthropic").matcher(aKey).find()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "error", "anthropic-Key hat falsches Format. Erwartet: " + KEY_PATTERNS.get("anthropic").pattern()));
             }
+            keys.put("anthropic", aKey);
         }
 
         boolean routerNeedsRestart = false;
@@ -225,7 +228,7 @@ public class ApiController {
             if (req.model != null) cfg.put("model", req.model); else cfg.remove("model");
             sw.remove("activeRoute");
         } else if ("google".equals(req.provider)) {
-            if (keys.path("google").asText("").isBlank())
+            if (router.resolveKey("google").isBlank())
                 return ResponseEntity.badRequest().body(Map.of("error", "Google AI Studio API Key fehlt"));
             Set<String> valid = Set.of("gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite",
                                         "gemini-3-pro-preview", "gemini-3-flash-preview");
@@ -238,7 +241,7 @@ public class ApiController {
             sw.set("activeRoute", ar);
             routerNeedsRestart = true;
         } else if ("openrouter".equals(req.provider)) {
-            if (keys.path("openrouter").asText("").isBlank())
+            if (router.resolveKey("openrouter").isBlank())
                 return ResponseEntity.badRequest().body(Map.of("error", "OpenRouter API Key fehlt"));
             String safe = (req.model != null && req.model.contains("/")) ? req.model : "anthropic/claude-sonnet-4.5";
             env.put("ANTHROPIC_API_KEY", "sk-ccr-anything");
@@ -661,7 +664,7 @@ public class ApiController {
             // (Max/Pro-Abo), KEIN Switcher-Key nötig.
             if ("anthropic".equals(tProv)) break;
             String keyName = "google".equals(tProv) ? "google" : "openrouter".equals(tProv) ? "openrouter" : null;
-            if (keyName != null && !keys.path(keyName).asText("").isBlank()) break;
+            if (keyName != null && !router.resolveKey(keyName).isBlank()) break;
             pos++;
         }
 
