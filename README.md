@@ -299,12 +299,10 @@ WSL2 läuft *in* Windows — kein zweites Gerät, kein Cloud-VM. Innerhalb WSL i
 `http://localhost:2000` zeigt:
 
 1. **Status-Zeile** oben: aktueller Provider, Modell, Modus, Position in der Failover-Chain.
-2. **Modus-Toggle**: Manuell ↔ Auto-Failover.
-3. **Failover-Chain** (im Auto-Modus): drei Stufen, je editierbar (Provider + Modell).
-4. **Provider-Cards**: Anthropic / Google AI Studio / OpenRouter — anklicken für manuellen Switch.
-5. **Modell-Auswahl**: passend zum gewählten Provider.
-6. **API Keys** (aufklappbar): drei Felder. **Anthropic-Feld kann leer bleiben** wenn du Pro/Max nutzt (OAuth via Claude Desktop wird automatisch genutzt).
-7. **Anwenden** → speichert alles in `~/.claude/settings.json` (`_switcher`-Block).
+2. **Steuer-Toggles**: **Supermodell** (An/Aus) · **Bereich** (Cloud/Free/Lokal) · **Switching** (Manuell/Auto-Failover). Der Supermodell-Modus ist in [SUPERMODELL.md](SUPERMODELL.md) erklärt.
+3. **Failover-Chain** (im Auto-Modus): editierbar (Provider + Modell je Stufe).
+4. **Modell-Tabelle**: aktivieren/deaktivieren pro Modell + grüner **„Als aktiv"**-Button = manueller Live-Switch auf genau dieses Modell (gefiltert über den Bereich-Toggle). Einen separaten „Wechseln-zu"-Picker gibt es nicht mehr.
+5. **API Keys**: die Schlüssel landen im geteilten Key-Store **`app_settings` (DB)** — derselbe Store, aus dem `llm-cascade` liest und auf den der Router via `resolveKey()` zugreift. **Anthropic-Feld kann leer bleiben** (OAuth via Claude Desktop); der Anthropic-OAuth/Long-Token bleibt in `~/.claude/settings.json` (der Wrapper braucht ihn dort).
 
 ---
 
@@ -556,7 +554,7 @@ docker rm   claude-switcher-backend-1 claude-switcher-frontend-1 \
             claude-switcher-db-1
 ```
 
-**Settings/Keys gehen verloren** — sie liegen in `~/.claude/settings.json` (`_switcher`-Block). Backup machen wenn dir die Konfiguration wichtig ist. Container-Restart löscht nichts, nur explizites `rm -rf ~/.claude/router-config.json` würde die Router-Config killen.
+**Settings/Keys gehen verloren** — der `_switcher`-State (Provider, activeRoute, …) + der Anthropic-OAuth/Token liegen in `~/.claude/settings.json`; die **Google/OpenRouter-API-Keys** liegen in der **DB** (`app_settings`, Volume `switcher_pgdata`) — derselbe Store, den `ki-models-ui` pflegt. Beides überlebt Container-Restarts; fürs Backup beide sichern. `docker compose down -v` löscht das DB-Volume (= die Keys).
 
 ---
 
