@@ -95,6 +95,11 @@ services:
   llm-cascade:
     image: ${TARGET_IMG}
     container_name: ${PROJECT}-llm-cascade
+    # Kein Host-Port-Mapping — der Switcher-Backend ruft Cascade nur intern
+    # ueber http://llm-cascade:8090 im docker-Netz. Bei Mehrfach-Installationen
+    # auf dem gleichen Host (z.B. EduPro + Switcher) verhindert das Port-Bind-
+    # Kollisionen auf :8091.
+    ports: !override []
   db:
     container_name: ${PROJECT}-db
 OVERRIDE
