@@ -321,6 +321,35 @@ except: print('false')
     fi
   fi
 
+  # ── Pre-flight: ist überhaupt ein Pseudo-TTY frei? ──────────────────────
+  # claude scheitert sonst kryptisch mit "forkpty: Device not configured"
+  # (macOS) bzw. openpty-Fehlern (Linux), wenn das System-PTY-Limit
+  # (kern.tty.ptmx_max / kernel.pty.max) erschöpft ist — passiert bei vielen
+  # parallelen Sessions + Wrapper-Neustarts. Statt stumpf zu sterben: klar
+  # melden + auf freie PTYs warten (sie werden frei, sobald andere Terminals/
+  # Sessions enden). python3 openpty() ist der zuverlässige Echt-Test.
+  pty_retries=0
+  while ! python3 -c 'import pty,os; m,s=pty.openpty(); os.close(m); os.close(s)' 2>/dev/null; do
+    pty_retries=$(( pty_retries + 1 ))
+    if [[ "$(uname)" == "Darwin" ]]; then
+      _pty_max=$(sysctl -n kern.tty.ptmx_max 2>/dev/null); _pty_raise="sudo sysctl -w kern.tty.ptmx_max=2048"
+    else
+      _pty_max=$(cat /proc/sys/kernel/pty/max 2>/dev/null);  _pty_raise="sudo sysctl -w kernel.pty.max=4096"
+    fi
+    {
+      echo ""
+      echo "⚠ Kein freies Pseudo-TTY — das ist das SYSTEM-PTY-Limit (${_pty_max:-?}), NICHT der Switcher."
+      echo "    • alte Terminal-Tabs / nicht gebrauchte 'claude'-Sessions schließen, ODER"
+      echo "    • Limit dauerhaft anheben:  ${_pty_raise}"
+    } >&2
+    if [[ "$pty_retries" -gt 6 ]]; then
+      echo "    → weiterhin keine PTYs frei (nach $pty_retries Versuchen). Abbruch — bitte aufräumen/Limit erhöhen, dann neu starten." >&2
+      exit 1
+    fi
+    echo "    → warte 5s auf freie PTYs ($pty_retries/6) …" >&2
+    sleep 5
+  done
+
   # ── Claude im Foreground ────────────────────────────────────────────────
   # ${arr[@]+...} expansion: Workaround für `set -u` mit leerem Bash-Array
   if [[ "$RESUME_ID" == "__continue__" ]]; then
