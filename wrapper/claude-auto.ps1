@@ -113,6 +113,13 @@ while ($true) {
         }
     } -ArgumentList $MarkerFile, $RestartFile
 
+    # Hinweis (Parität zu wrapper/claude-auto): Der Bash-Wrapper hat hier einen
+    # PTY-Pre-flight (forkpty/openpty), weil macOS/Linux ein Pseudo-TTY-Limit
+    # (kern.tty.ptmx_max / kernel.pty.max) haben, das bei vielen parallelen
+    # Sessions erschöpfen kann. Windows nutzt ein anderes Konsolen-Modell
+    # (ConPTY, kein forkpty / kein vergleichbares globales Limit) → hier kein
+    # Äquivalent nötig.
+
     # ─── Claude im Foreground; stderr+stdout in Log-Datei ────────────────
     if ($ResumeId) {
         Write-Host "↪ claude --resume $ResumeId" -ForegroundColor Cyan
