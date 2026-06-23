@@ -9,6 +9,7 @@ import {
   ModelsPerformanceComponent,
   ModelsCooldownStateComponent,
   ProviderServersComponent,
+  AddModelFormLabels,
   CascadesViewLabels,
   FailoverChainLabels,
   ProviderServersLabels,
@@ -129,7 +130,7 @@ import {
             <ng-template #emptyCell>
               <p class="text-xs italic text-slate-400">
                 <ng-container *ngIf="role === 'research'; else genericEmpty">
-                  <span *ngIf="activePool() === 'local'">Nicht im Local-Pool (Web = Cloud, fail-closed).</span>
+                  <span *ngIf="activePool() === 'local'">Im Local-Pool deaktiviert — fail-closed, kein Cloud-Fallback.</span>
                   <span *ngIf="activePool() !== 'local'">Über Gemini-MCP (Grounding) — kein Cascade-Modell nötig.</span>
                 </ng-container>
                 <ng-template #genericEmpty>Kein Modell — unten in der Tabelle anlegen (Kategorie <code>{{ role }}-{{ activePool() }}</code>).</ng-template>
@@ -166,6 +167,7 @@ import {
           (activeModelChanged)="onSwitchToModel($event)"
         ></ki-models-table>
         <ki-add-model-form
+          *ngIf="addFormVisible()"
           [labels]="addModelFormLabels"
           [defaultCategoryByProvider]="defaultCategoryByProvider"
           (modelCreated)="onModelCreated()"
@@ -275,7 +277,6 @@ export class AppComponent implements OnDestroy {
 
   // Deutsche Labels für die Library-Components (analog zu EduPros i18n-Pipe).
   readonly modelsTableLabels = MODELS_TABLE_LABELS_DE;
-  readonly addModelFormLabels = ADD_MODEL_FORM_LABELS_DE;
   readonly cascadesViewLabels: Partial<CascadesViewLabels> = CASCADES_VIEW_LABELS_DE;
   readonly failoverChainLabels: Partial<FailoverChainLabels> = FAILOVER_CHAIN_LABELS_DE;
   readonly apiKeysSectionLabels = API_KEYS_SECTION_LABELS_DE;
@@ -351,20 +352,12 @@ export class AppComponent implements OnDestroy {
   readonly switcherKeylessProviders: string[] = ['anthropic'];
 
   /**
-   * Default-Kategorie pro Provider — wird beim Provider-Wechsel im "Neues
-   * Modell hinzufügen"-Form vorgewählt. Switcher-Schema: Anthropic/Gemini
-   * sind cloud (bezahlt), OpenRouter ist free-only (typisch :free), Ollama
-   * läuft lokal und kommt nicht in die Cascade.
+   * Keine Provider-Vorwahl mehr: die Kategorie-Auswahl im "Neues Modell
+   * hinzufügen"-Form ist jetzt zustands-abhängig (Pool + Supermodell) und
+   * kommt aus categoryOptions(). Eine statische Provider→Kategorie-Vorwahl
+   * würde sonst ungültige Werte setzen (alt: cloud/free-only/general).
    */
-  readonly defaultCategoryByProvider: Record<string, string> = {
-    anthropic:     'cloud',
-    gemini:        'cloud',
-    openai:        'cloud',
-    deepseek:      'cloud',
-    openrouter:    'free-only',
-    ollama:        'general',
-    openai_compat: 'general',
-  };
+  readonly defaultCategoryByProvider: Record<string, string> = {};
 
   readonly status = signal<SwitcherStatus | null>(null);
   readonly warn = signal<{ percent: number; project?: string } | null>(null);
@@ -381,6 +374,13 @@ export class AppComponent implements OnDestroy {
   readonly localOrchestratorPending = signal<boolean>(false);
   /** v2 — Alle Modelle gruppiert nach Compound-Kategorie {rolle}-{pool} (Rollen-Panel). */
   readonly matrixModels = signal<Record<string, { provider: string; modelId: string; displayName: string; enabled: boolean }[]>>({});
+  /**
+   * Re-Create-Schalter fuer die Add-Model-Form: die Library-Form holt ihre
+   * Kategorien (state-aware /api/categories) NUR in ngOnInit — sie hat keinen
+   * Reload-Input. Bei Pool-/Supermodell-Wechsel togglen wir das kurz auf false
+   * und zurueck, damit Angular die Form neu erzeugt → ngOnInit re-fetcht das
+   * jetzt gefilterte Dropdown. */
+  readonly addFormVisible = signal<boolean>(true);
 
   /** EventSource für SSE-Live-Updates. Wird in ngOnInit aufgemacht + ngOnDestroy geschlossen. */
   private es: EventSource | null = null;
@@ -431,6 +431,35 @@ export class AppComponent implements OnDestroy {
   /** Modelle der Compound-Zelle {role}-{activePool} (für das Rollen-Panel). */
   cellModels(role: string): { provider: string; modelId: string; displayName: string; enabled: boolean }[] {
     return this.matrixModels()[`${role}-${this.activePool()}`] ?? [];
+  }
+
+  /**
+   * Add-Model-Form-Labels mit **dynamischer** Kategorie-Auswahl: das Dropdown
+   * bietet nur die zum aktuellen Zustand passenden Kategorien an — Spiegel der
+   * Cascade-Bereiche-View. Wird als Getter im Template ausgewertet, reagiert
+   * also live auf Pool-/Supermodell-Wechsel.
+   */
+  get addModelFormLabels(): Partial<AddModelFormLabels> {
+    return { ...ADD_MODEL_FORM_LABELS_DE, categoryOptions: this.categoryOptions() };
+  }
+
+  /**
+   * Kategorie-Optionen passend zum 2-Achsen-Zustand:
+   *   AUS → genau die Pool-Kategorie (cloud|free|local).
+   *   AN  → die Rollen-Compounds {rolle}-{pool} des aktiven Pools. research-local
+   *         entfaellt (fail-closed: kein lokales Web-Modell, kein Cloud-Ausweich).
+   */
+  private categoryOptions(): { value: string; label: string }[] {
+    const pool = this.activePool();
+    if (!this.supermodel()) {
+      return [{ value: pool, label: this.poolTitles[pool] || pool }];
+    }
+    return this.ROLES
+      .filter((role) => !(role === 'research' && pool === 'local'))
+      .map((role) => ({
+        value: `${role}-${pool}`,
+        label: `${this.roleMeta[role].label} · ${this.poolTitles[pool] || pool}`,
+      }));
   }
 
   ngOnDestroy(): void {
@@ -512,6 +541,7 @@ export class AppComponent implements OnDestroy {
           this.supermodel.set(!!r?.enabled);
           if (r?.pool) this.activePool.set(r.pool);
           this.localOrchestratorPending.set(!!r?.localOrchestratorPending);
+          this.refreshStateScopedViews(); // Sicht aendert sich mit dem Supermodell
         },
         error: () => {},
       });
@@ -520,14 +550,13 @@ export class AppComponent implements OnDestroy {
     this.es?.addEventListener('mode', (e: MessageEvent) => {
       try {
         const d = JSON.parse(e.data);
-        if (d.pool && d.pool !== this.activePool()) {
-          this.activePool.set(d.pool);
-          this.cascadesView?.reload(); // anderer Pool → Cascade-Bereiche neu filtern
-          this.modelsTable?.reload();
-          this.reloadMatrixModels();
-        }
+        const poolChanged = d.pool && d.pool !== this.activePool();
+        const smChanged = typeof d.supermodel === 'boolean' && d.supermodel !== this.supermodel();
+        if (poolChanged) this.activePool.set(d.pool);
         if (typeof d.supermodel === 'boolean') this.supermodel.set(d.supermodel);
         this.localOrchestratorPending.set(!!d.localOrchestratorPending);
+        // Pool ODER Supermodell geaendert → zustands-abhaengige Sichten neu filtern.
+        if (poolChanged || smChanged) this.refreshStateScopedViews();
       } catch {}
     });
     // Kategorie-Rename/-Delete → categoryTitles + Tabelle dynamisch neu.
@@ -631,11 +660,9 @@ export class AppComponent implements OnDestroy {
         this.activePool.set(r.pool || pool);
         this.localOrchestratorPending.set(!!r.localOrchestratorPending);
         this.showToast(r.note ? r.note : 'Pool: ' + (this.poolTitles[pool] || pool), r.note ? 'err' : 'ok');
-        // Backend filtert /api/cascades + /api/ai-models jetzt nach dem neuen Pool →
-        // Cascade-View, Modell-Tabelle und Matrix/Picker neu laden.
-        this.cascadesView?.reload();
-        this.modelsTable?.reload();
-        this.reloadMatrixModels();
+        // Backend filtert /api/cascades + /api/categories + /api/ai-models jetzt
+        // nach dem neuen Pool → alle zustands-abhaengigen Sichten neu laden.
+        this.refreshStateScopedViews();
         if (r.restart) this.reload();
       },
       error: () => {
@@ -662,12 +689,35 @@ export class AppComponent implements OnDestroy {
           type: 'ok',
         });
         this.reload(); // Rollen-Panel + Pending-State auffrischen
+        // Supermodell aendert die Sicht von /api/cascades + /api/categories
+        // (AUS = Pool selbst, AN = Rollen-Compounds) → Cascade-View, Matrix und
+        // das Add-Model-Dropdown neu filtern.
+        this.refreshStateScopedViews();
       },
       error: () => {
         this.supermodel.set(!on); // rollback
         this.toast.set({ msg: 'Supermodell-Umschaltung fehlgeschlagen', type: 'err' });
       },
     });
+  }
+
+  /**
+   * Laedt alle zustands-abhaengigen Sichten neu, nachdem sich Pool ODER
+   * Supermodell geaendert hat. Backend filtert /api/cascades, /api/categories
+   * und /api/ai-models nach (pool, supermodel) → Cascade-View, Modell-Tabelle,
+   * Rollen-Matrix und das Add-Model-Dropdown (per Re-Create) neu ziehen.
+   */
+  private refreshStateScopedViews(): void {
+    this.cascadesView?.reload();
+    this.modelsTable?.reload();
+    this.reloadMatrixModels();
+    this.recreateAddForm();
+  }
+
+  /** Add-Model-Form neu erzeugen → ngOnInit re-fetcht das gefilterte Dropdown. */
+  private recreateAddForm(): void {
+    this.addFormVisible.set(false);
+    setTimeout(() => this.addFormVisible.set(true));
   }
 
   onPromote(): void {

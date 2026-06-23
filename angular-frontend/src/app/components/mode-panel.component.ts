@@ -49,7 +49,7 @@ import { CommonModule } from '@angular/common';
             [class.text-white]="supermodel"
             [class.text-slate-500]="!supermodel"
             [class.dark:text-slate-400]="!supermodel"
-          >An — Opus orchestriert</button>
+          >An</button>
         </div>
         <span *ngIf="supermodel" class="text-xs text-slate-500 dark:text-slate-400">Opus plant &amp; verteilt im gewählten Bereich, prüft am Ende.</span>
       </div>

@@ -58,17 +58,8 @@ export const ADD_MODEL_FORM_LABELS_DE: Partial<AddModelFormLabels> = {
   hint: 'Der API-Key liegt im Settings-Store — siehe unten „API-Keys". Mehrere Modelle können denselben Key teilen. Kategorie steuert die Cascade: cloud für bezahlte Tier-Modelle, free-only für kostenfreie OpenRouter-Modelle.',
   errorRequired: 'Provider, Modell-ID und Setting-Key sind Pflicht',
   errorFailed: 'Speichern fehlgeschlagen',
-  /**
-   * Switcher-spezifische Kategorien: cloud (bezahlt) + free-only (kostenfrei).
-   * Library-Default wäre utility/content/general (EduPro-Schema) — hier
-   * überschrieben damit das Dropdown im "Neues Modell"-Form die richtigen
-   * Werte zeigt.
-   */
-  categoryOptions: [
-    { value: 'cloud',     label: 'Cloud — Premium-Modelle (Anthropic / Google / OR paid)' },
-    { value: 'free-only', label: 'Free Only — kostenfreie OpenRouter-Modelle' },
-    { value: 'general',   label: 'General — Fallback für beide Bereiche' },
-  ],
+  // categoryOptions wird in AppComponent.addModelFormLabels zustands-abhängig
+  // (Pool + Supermodell) gesetzt — siehe categoryOptions().
 };
 
 export const CASCADES_VIEW_LABELS_DE: Partial<CascadesViewLabels> = {

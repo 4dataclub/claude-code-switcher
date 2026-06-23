@@ -67,42 +67,57 @@ class ApiControllerTest {
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    //  matchesPool — Pool-Isolation (Basis von cascades + ai-models + fail-closed)
+    //  matchesPoolMode — 2-Achsen-Filter (Basis von cascades + categories +
+    //  ai-models + fail-closed). AUS -> nur die Plain-Pool-Kategorie;
+    //  AN -> nur die Rollen-Compounds {rolle}-{pool}.
     // ════════════════════════════════════════════════════════════════════════
 
     @Test
-    void matchesPool_cloud_matchesOnlyCloudCategories() {
-        assertThat(ApiController.matchesPool("cloud", "cloud")).isTrue();
-        assertThat(ApiController.matchesPool("implement-cloud", "cloud")).isTrue();
-        assertThat(ApiController.matchesPool("orchestrator-cloud", "cloud")).isTrue();
-        assertThat(ApiController.matchesPool("implement-free", "cloud")).isFalse();
-        assertThat(ApiController.matchesPool("implement-local", "cloud")).isFalse();
+    void matchesPoolMode_off_cloud_onlyPlainPool() {
+        // Supermodel AUS: nur die Plain-Pool-Cascade, NIE die Rollen-Compounds.
+        assertThat(ApiController.matchesPoolMode("cloud", "cloud", false)).isTrue();
+        assertThat(ApiController.matchesPoolMode("implement-cloud", "cloud", false)).isFalse();
+        assertThat(ApiController.matchesPoolMode("orchestrator-cloud", "cloud", false)).isFalse();
+        assertThat(ApiController.matchesPoolMode("free", "cloud", false)).isFalse();
+        assertThat(ApiController.matchesPoolMode("local", "cloud", false)).isFalse();
     }
 
     @Test
-    void matchesPool_free_inclLegacyFreeOnly() {
-        assertThat(ApiController.matchesPool("free", "free")).isTrue();
-        assertThat(ApiController.matchesPool("free-only", "free")).isTrue(); // Legacy-Kategorie
-        assertThat(ApiController.matchesPool("review-free", "free")).isTrue();
-        assertThat(ApiController.matchesPool("review-cloud", "free")).isFalse();
-        assertThat(ApiController.matchesPool("review-local", "free")).isFalse();
+    void matchesPoolMode_off_free_inclLegacyFreeOnly() {
+        assertThat(ApiController.matchesPoolMode("free", "free", false)).isTrue();
+        assertThat(ApiController.matchesPoolMode("free-only", "free", false)).isTrue(); // Legacy
+        assertThat(ApiController.matchesPoolMode("review-free", "free", false)).isFalse();
+        assertThat(ApiController.matchesPoolMode("cloud", "free", false)).isFalse();
     }
 
     @Test
-    void matchesPool_local_neverMatchesCloudOrFree_failClosed() {
-        assertThat(ApiController.matchesPool("local", "local")).isTrue();
-        assertThat(ApiController.matchesPool("implement-local", "local")).isTrue();
-        // fail-closed-relevant: der Local-Pool sieht NIE Cloud-/Free-Kategorien
-        assertThat(ApiController.matchesPool("implement-cloud", "local")).isFalse();
-        assertThat(ApiController.matchesPool("implement-free", "local")).isFalse();
-        assertThat(ApiController.matchesPool("cloud", "local")).isFalse();
-        assertThat(ApiController.matchesPool("free", "local")).isFalse();
+    void matchesPoolMode_on_cloud_onlyRoleCompounds() {
+        // Supermodel AN: nur die {rolle}-{pool}-Compounds, NIE die Plain-Pool-Cascade.
+        assertThat(ApiController.matchesPoolMode("implement-cloud", "cloud", true)).isTrue();
+        assertThat(ApiController.matchesPoolMode("orchestrator-cloud", "cloud", true)).isTrue();
+        assertThat(ApiController.matchesPoolMode("research-cloud", "cloud", true)).isTrue();
+        assertThat(ApiController.matchesPoolMode("cloud", "cloud", true)).isFalse(); // Plain raus
+        assertThat(ApiController.matchesPoolMode("implement-free", "cloud", true)).isFalse();
+        assertThat(ApiController.matchesPoolMode("implement-local", "cloud", true)).isFalse();
     }
 
     @Test
-    void matchesPool_blankOrNull_isFalse() {
-        assertThat(ApiController.matchesPool("", "cloud")).isFalse();
-        assertThat(ApiController.matchesPool(null, "cloud")).isFalse();
+    void matchesPoolMode_local_neverMatchesCloudOrFree_failClosed() {
+        // fail-closed-relevant: der Local-Pool sieht NIE Cloud-/Free-Kategorien.
+        assertThat(ApiController.matchesPoolMode("local", "local", false)).isTrue();
+        assertThat(ApiController.matchesPoolMode("implement-local", "local", true)).isTrue();
+        assertThat(ApiController.matchesPoolMode("implement-cloud", "local", true)).isFalse();
+        assertThat(ApiController.matchesPoolMode("implement-free", "local", true)).isFalse();
+        assertThat(ApiController.matchesPoolMode("cloud", "local", false)).isFalse();
+        assertThat(ApiController.matchesPoolMode("free", "local", false)).isFalse();
+    }
+
+    @Test
+    void matchesPoolMode_blankOrNull_isFalse() {
+        assertThat(ApiController.matchesPoolMode("", "cloud", false)).isFalse();
+        assertThat(ApiController.matchesPoolMode(null, "cloud", false)).isFalse();
+        assertThat(ApiController.matchesPoolMode("", "cloud", true)).isFalse();
+        assertThat(ApiController.matchesPoolMode(null, "cloud", true)).isFalse();
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -294,6 +309,7 @@ class ApiControllerTest {
     void listAiModels_filtersToActivePool() {
         ObjectNode sw = M.createObjectNode();
         sw.put("pool", "local");
+        sw.put("supermodel", true); // Compound-Kategorien matchen nur bei Supermodell=AN
         when(configs.getSwitcher()).thenReturn(sw);
         ArrayNode all = M.createArrayNode();
         all.add(node("category", "implement-cloud"));
@@ -312,6 +328,7 @@ class ApiControllerTest {
     void cascades_filtersToActivePool() {
         ObjectNode sw = M.createObjectNode();
         sw.put("pool", "free");
+        sw.put("supermodel", true); // Compound-Kategorien matchen nur bei Supermodell=AN
         when(configs.getSwitcher()).thenReturn(sw);
         ArrayNode all = M.createArrayNode();
         all.add(node("name", "implement-cloud"));

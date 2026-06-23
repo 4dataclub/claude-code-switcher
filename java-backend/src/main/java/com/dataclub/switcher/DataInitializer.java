@@ -66,8 +66,8 @@ public class DataInitializer {
      *            cloud (bezahlt)        free (:free, €0)       local (Ollama, privat)
      * implement  DeepSeek V3.1 + Flash  Qwen3-Coder + Next-80B qwen2.5-coder:7b *
      * review     GPT-4o-mini            GPT-OSS 120B           qwen2.5:7b *
-     * research   Gemini Pro (OR+nativ)  — (Gemini-MCP)         — (Web=Cloud)
-     * dispatch   Gemini Flash-Lite      Llama 3.3 + GPT-OSS-20 gemma3:4b *
+     * research   Gemini Pro (OR+nativ)  — (Gemini-MCP)         qwen2.5:7b * (intern/Intranet, offline, nichts raus)
+     * dispatch   Gemini Flash-Lite      Llama 3.3 + GPT-OSS-20 llama3.2:3b *
      * </pre>
      * (* local = enabled=false bis die Ollama-Modelle gezogen sind — Phase E.)
      *
@@ -76,16 +76,27 @@ public class DataInitializer {
      * orchestrator-local = qwen2.5-coder:7b (kein 14b — passt sonst nicht in 8 GB).
      * Staerkere Hardware (z.B. Mac Studio, ≥16 GB): siehe SUPERMODELL.md "Config C".
      *
-     * {@code cloud} (Pool-Kategorie) trägt zusätzlich Opus als Orchestrator/Manuell-
-     * Option. {@code utility}+{@code general} bewusst NICHT geseedet → Local hat
-     * keinen Cloud-{@code general}-Fallback = automatisch fail-closed.
+     * Zusaetzlich traegt jeder Pool eine **Plain-Kategorie** {@code cloud}/{@code free}/
+     * {@code local} (Supermodell AUS → genau 1 Cascade je Pool, das direkt gefahrene
+     * Modell + Failover): cloud = Opus → Sonnet, free = DeepSeek → Qwen3-Coder,
+     * local = qwen2.5-coder:7b → qwen2.5:7b. {@code utility}+{@code general} bewusst
+     * NICHT geseedet → Local hat keinen Cloud-{@code general}-Fallback = fail-closed.
      */
     private void seedDefaultChain(AiModelConfigRepository modelRepo) {
         LocalDateTime now = LocalDateTime.now();
         record Default(String provider, String modelId, String displayName, String settingKey, String category, boolean enabled) {}
         List<Default> defaults = List.of(
-            // ── cloud-Pool: Opus als Primary / Manuell-Option ──
+            // ── Pool-Kategorien (Supermodell AUS) — je genau 1 Cascade pro Pool:
+            //    das Modell, das Claude Code direkt faehrt, + Failover. cloud beginnt
+            //    mit Opus (Primary/Manuell-Option), free/local sind eigene Ketten.
+            //    Dieselben Modell-IDs duerfen zusaetzlich in den Rollen-Compounds stehen
+            //    (kategorie-bewusster Dedup unten). ──
             new Default("anthropic",  "claude-opus-4-7",                        "Claude Opus 4.7 (Orchestrator)", "anthropicApiKey",  "cloud",           true),
+            new Default("anthropic",  "claude-sonnet-4-6",                      "Claude Sonnet 4.6 (cloud-Failover)", "anthropicApiKey", "cloud",          true),
+            new Default("openrouter", "deepseek/deepseek-chat-v3.1",            "DeepSeek V3.1",                  "openrouterApiKey", "free",            true),
+            new Default("openrouter", "qwen/qwen3-coder:free",                  "Qwen3 Coder (free)",            "openrouterApiKey", "free",            true),
+            new Default("ollama",     "qwen2.5-coder:7b",                       "Qwen2.5 Coder 7B (lokal)",      "ollamaApiKey",     "local",           false),
+            new Default("ollama",     "qwen2.5:7b",                             "Qwen2.5 7B (lokal)",            "ollamaApiKey",     "local",           false),
             // ── orchestrator: läuft Claude Code selbst — Failover-Kette bei Opus-Limit
             //    (datengetrieben: setMode liest orchestrator-{pool} der Reihe nach) ──
             new Default("anthropic",  "claude-sonnet-4-6",                      "Claude Sonnet 4.6 (Orchestrator-Failover)", "anthropicApiKey", "orchestrator-cloud", true),
@@ -106,16 +117,24 @@ public class DataInitializer {
             new Default("openrouter", "google/gemini-2.5-pro",                  "Gemini 2.5 Pro (research)",     "openrouterApiKey", "research-cloud",  true),
             new Default("gemini",     "gemini-2.5-pro",                         "Gemini 2.5 Pro (nativ · #2)",   "geminiApiKey",     "research-cloud",  true),
             new Default("openrouter", "google/gemma-4-31b-it:free",             "Gemma 4 31B (free · Research)",  "openrouterApiKey", "research-free",   true),
+            // research-local: Doc-/Large-Context-Analyse auf dem General-7b + Suche im
+            // INTERNEN Netz (Intranet, auch ueber VPN erreichbar). fail-closed = nichts
+            // verlaesst das interne Netz: kein oeffentliches Web, kein Cloud-LLM, keine
+            // Daten nach draussen. Reine Public-Web-Research verweigert der Agent.
+            new Default("ollama",     "qwen2.5:7b",                             "Qwen2.5 7B (lokal · Research/intern)", "ollamaApiKey", "research-local",  false),
             // ── dispatch (Triviales) ──
             new Default("openrouter", "google/gemini-2.5-flash-lite",           "Gemini 2.5 Flash-Lite",         "openrouterApiKey", "dispatch-cloud",  true),
             new Default("openrouter", "meta-llama/llama-3.3-70b-instruct:free", "Llama 3.3 70B (free)",          "openrouterApiKey", "dispatch-free",   true),
             new Default("openrouter", "openai/gpt-oss-20b:free",                "GPT-OSS 20B (free)",            "openrouterApiKey", "dispatch-free",   true),
-            new Default("ollama",     "gemma3:4b",                              "Gemma 3 4B (lokal)",            "ollamaApiKey",     "dispatch-local",  false)
+            new Default("ollama",     "llama3.2:3b",                            "Llama 3.2 3B (lokal)",          "ollamaApiKey",     "dispatch-local",  false)
         );
         int idx = 0;
         for (Default d : defaults) {
-            // Dedup falls llm-cascade dieselbe Tabelle bereits befuellt hat.
-            if (modelRepo.findFirstByProviderAndModelId(d.provider(), d.modelId()).isPresent()) {
+            // Kategorie-bewusster Dedup: dasselbe Modell darf in mehreren Cascade-
+            // Kategorien stehen (Pool-Kategorie + Rollen-Compound) — nur dieselbe
+            // (Provider, Modell-ID, Kategorie) ist ein Duplikat. Schuetzt zugleich
+            // gegen Doppel-Seed falls llm-cascade dieselbe Tabelle befuellt haette.
+            if (modelRepo.findFirstByProviderAndModelIdAndCategory(d.provider(), d.modelId(), d.category()).isPresent()) {
                 continue;
             }
             modelRepo.save(AiModelConfig.builder()

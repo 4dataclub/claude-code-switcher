@@ -325,33 +325,50 @@ Im UI editierbar — du kannst je Stufe Provider und Modell ändern.
 
 ## Cascade-Struktur
 
-Der Switcher verwaltet seine Modelle in zwei unabhängigen Cascades, die im
-Admin-UI als separate Tabs sichtbar sind (`<ki-cascades-view>`):
+Die Modelle hängen an einer **2D-Matrix**: **Pool** (`cloud` / `free` / `local`)
+× **Supermodell** (aus / an). Die Cascade-Kategorie ergibt sich aus beidem; das
+Admin-UI zeigt immer nur die Kategorien des aktuell getoggelten Pools.
+
+**Supermodell AUS** → genau **eine** Cascade pro Pool — das Modell, das Claude
+Code direkt fährt, plus dessen Failover-Kette:
 
 ```
-┌─ free-only ──────────────────┐   ┌─ cloud ──────────────────────┐
-│ deepseek/deepseek-v3 (free)  │   │ claude-opus-4-7 (Anthropic)  │
-│ llama-3.3-70b (free)         │   │ gemini-2.5-pro (Google)      │
-│ gemma-3-4b (free)            │   │ gpt-oss-120b (OpenRouter)    │
-│                              │   │                              │
-│ cooldown: keiner             │   │ cooldown: 32 s (Standard)    │
-│ (kostenlos, Rate-Limitiert)  │   │ (eigener unabhängiger Timer) │
-└──────────────────────────────┘   └──────────────────────────────┘
+┌─ cloud ──────────────────────┐  ┌─ free ───────────────────────┐  ┌─ local ──────────────────────┐
+│ claude-opus-4-7 (Anthropic)  │  │ deepseek-chat-v3.1 (free)    │  │ qwen2.5-coder:7b (Ollama)    │
+│ claude-sonnet-4-6 (Failover) │  │ qwen3-coder (free)           │  │ qwen2.5:7b (Ollama)          │
+└──────────────────────────────┘  └──────────────────────────────┘  └──────────────────────────────┘
 ```
 
-**Warum zwei getrennte Bereiche?**
+**Supermodell AN** → pro Pool **fünf Rollen-Compounds** `{rolle}-{pool}`. Opus
+plant + synthetisiert, günstigere/lokale Modelle führen die Fleißarbeit aus:
 
-| | `cloud` | `free-only` |
-|---|---|---|
-| **Kosten** | bezahlt (API-Abrechnung) | kostenlos |
-| **Qualität** | hoch | variabel |
-| **Cooldown** | eigener Timer (llm-cascade) | nicht nötig — kein Rate-Limit-Risiko |
-| **Typischer Einsatz** | Hauptarbeit, komplexe Tasks | Notnagel bei Quota-Leer |
+| Rolle | Zweck |
+|---|---|
+| `orchestrator-{pool}` | das „Hirn" — bei cloud/free Opus + Failover-Kette, bei local das lokale Modell |
+| `implement-{pool}` | Bulk-Code, Boilerplate, CRUD |
+| `review-{pool}` | Korrektheit / Tests / Sicherheit |
+| `research-{pool}` | Web/Docs (cloud/free via Gemini-MCP; **local: nur intern/Intranet, nichts verlässt das Netz**) |
+| `dispatch-{pool}` | Triviales (Commit-Messages, Kurz-Summaries) |
 
-Die Trennung ist semantisch grundverschieden von EduPro (`utility`/`content`
-nach Task-Typ) — hier geht es um **Kosten-Tier**, nicht um den Verwendungszweck.
-Beide Apps nutzen dieselbe `@4dataclub/ki-models-ui` Library; die Kategorienamen
-kommen direkt aus der Datenbank und werden als Tab-Titel angezeigt.
+**Pool-Eigenschaften:**
+
+| | `cloud` | `free` | `local` |
+|---|---|---|---|
+| **Kosten** | bezahlt (API) | kostenlos | gratis, privat |
+| **Qualität** | hoch | variabel | hardware-abhängig |
+| **Datenschutz** | Cloud-Provider | Cloud-Provider | **fail-closed** — kein Cloud-Ausweich |
+
+Tiefe Erklärung (Rollen-Routing, Hardware-Stufen, Privacy-Garantie, Zusammenspiel
+mit superpowers): **[SUPERMODELL.md](SUPERMODELL.md)**.
+
+### Werks-Default (Seed)
+
+Eine frische Installation seedet die komplette Matrix automatisch. **cloud/free-
+Rollen sind ab Werk aktiv**, **`local`-Rollen ab Werk deaktiviert** (`enabled=false`)
+— sie schalten sich erst nach `ollama pull` + Aktivieren scharf, damit ein Rechner
+ohne lokale Modelle nicht ins Leere läuft. Modelle, Rollen-Zuordnung und Failover-
+Reihenfolge sind im UI editierbar; die Kategorienamen kommen aus der Datenbank
+(geteilte `@4dataclub/ki-models-ui` Library, wie in EduPro).
 
 ---
 

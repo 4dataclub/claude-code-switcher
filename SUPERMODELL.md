@@ -72,8 +72,8 @@ normales Pool-Routing.
 | **orchestrator** *(Hirn, gepinnt)* | Opus 4.8 → Sonnet 4.6 | *(leer — editierbar)* | qwen2.5-coder:7b (aus bis Ollama) |
 | **implement** | DeepSeek V3.1 + Gemini Flash | Qwen3-Coder + Qwen3-Next 80B | qwen2.5-coder:7b |
 | **review** | GPT-4o-mini | GPT-OSS 120B | qwen2.5:7b |
-| **research** | Gemini Pro (OR + nativ) | *(Gemini-MCP)* | *— Web=Cloud* |
-| **dispatch** | Gemini Flash-Lite | Llama 3.3 + GPT-OSS 20B | gemma3:4b |
+| **research** | Gemini Pro (OR + nativ) | *(Gemini-MCP)* | qwen2.5:7b *(intern/Intranet, offline, nichts raus)* |
+| **dispatch** | Gemini Flash-Lite | Llama 3.3 + GPT-OSS 20B | llama3.2:3b |
 
 Jede Zelle ist eine **Failover-Kette** (mehrere Modelle, Cooldown). Fällt eins aus, rückt
 das nächste nach — der Plan läuft weiter. Modelle/Reihenfolge jederzeit in der UI änderbar
@@ -133,8 +133,11 @@ das nächste nach — der Plan läuft weiter. Modelle/Reihenfolge jederzeit in d
 ```
 
 **Daraus folgt:** Rollen + Pools sind `Kategorien = Daten` (voll CRUD-bar) — änderst du eine
-Beschreibung oder ein Modell, folgt das Routing, **kein Code-Eingriff**. `research` verlässt die
-Cascade (Gemini-MCP/Grounding; im Local-Pool verweigert = Web=Cloud, fail-closed). Delegation-Fehler:
+Beschreibung oder ein Modell, folgt das Routing, **kein Code-Eingriff**. `research` nutzt in
+**cloud/free** Gemini-MCP/Grounding (öffentliches Web); im **Local-Pool** läuft `research-local`
+(lokales Modell, offline) und darf lokale Docs + interne/VPN-erreichbare Ressourcen verarbeiten —
+**nichts verlässt das interne Netz** (kein öffentliches Web, kein Cloud); reine Public-Web-Research
+verweigert der Agent. Delegation-Fehler:
 **cloud/free = fail-open** (Opus macht's selbst), **local = fail-closed** (Stopp, nie Cloud).
 
 ## Ohne Supermodell — der klassische Lauf (Gegenstück)
@@ -184,8 +187,11 @@ sequenziell, ein Modell macht alles). **Mit** Supermodell werden dieselben Berei
 
 ## 🔒 Lokal = fail-closed (die wichtigste Garantie)
 
-Im **Local-Pool** verlässt **nichts** automatisch den Rechner — auch nicht „um die Funktion
-am Leben zu halten". **Lieber STOPP als Leak.**
+Im **Local-Pool** verlässt **nichts** automatisch das **interne Netz** — auch nicht „um die
+Funktion am Leben zu halten". Die Grenze ist das interne Perimeter, nicht der einzelne Rechner:
+lokale Modelle + lokale Docs + interne/VPN-erreichbare Ressourcen sind erlaubt, **öffentliches
+Web und Cloud-LLM nicht**. Local läuft dabei garantiert **ohne Internet** (kein Cloud-Eintrag in
+einer `*-local`-Zelle). **Lieber STOPP als Leak.**
 
 - Der **Orchestrator selbst ist lokal** (NICHT Opus — Opus = Anthropic = Cloud würde die
   Planung rausgeben). Das Backend pinnt im Local-Pool **niemals** Opus/Anthropic.
@@ -319,7 +325,7 @@ claude mcp list                      # 'gemini-cli' muss auftauchen
 
 **b) `@supermodel`-Agent** — `~/.claude/agents/supermodel.md` (ein Haiku-Relay, liest den
 aktiven Pool via `curl :2000/api/supermodel` und delegiert an `category={kind}-{pool}`;
-research → Gemini-MCP; local fail-closed). Die kanonische Version liegt im Repo unter
+research → cloud/free via Gemini-MCP, local via `research-local` intern/offline). Die kanonische Version liegt im Repo unter
 [`agents/supermodel.md`](agents/supermodel.md) — nach `~/.claude/agents/` kopieren.
 
 **c) Policy-Block** in `~/.claude/CLAUDE.md` (nach dem Switcher-Block):
@@ -368,7 +374,7 @@ unsere geplante Upgrade-Stufe (zwischen B und C); dort greift das XDA-Hybrid-Mus
 | **implement** | `qwen2.5-coder:7b` | `qwen2.5-coder:7b` | `qwen2.5-coder:32b` | `qwen2.5-coder:32b` | `qwen2.5-coder:32b` |
 | **review** | `qwen2.5:7b` | `qwen2.5-coder:7b` → `gemma3:4b` | `qwen2.5-coder:32b` | `qwen2.5-coder:32b` | `qwen2.5-coder:32b` |
 | **dispatch** | `gemma3:4b` | `gemma3:4b` | `qwen2.5:7b` → `qwen2.5-coder:32b` | `qwen2.5:7b` | `gemma3:4b` → `qwen2.5:7b` |
-| **research** | Gemini-MCP (Cloud) | Gemini-MCP (Cloud) | Gemini-MCP (Cloud) | Gemini-MCP (Cloud) *oder* lokale Docs | Gemini-MCP *oder* lokale Docs |
+| **research** | `qwen2.5:7b` (intern/offline, nichts raus) | Gemini-MCP (Cloud, hybrid) | Gemini-MCP (Cloud, hybrid) | Gemini-MCP (Cloud, hybrid) *oder* lokale Docs | nur lokal/intern — nichts raus |
 | **Qualität** | Einstieg/begrenzt — nur **EIN** 7b resident (~4.9 GB), 7b+4b ko-resident, zwei 7b ✗ | leicht/begrenzt — Bulk lokal, Frontier=Opus | gut — ~80 % lokal, Orchestrierung grenzwertig-lokal/hybrid | sehr gut — 32b-Orch + 32b-Coder ko-resident im Unified Memory | sehr gut (nur nicht ganz Opus) — nichts verlässt die Infra |
 
 Der **Werks-Default (8 GB)** liegt bewusst **unter A**: bei 8 GB VRAM passt nur ein heißes
