@@ -291,6 +291,41 @@ class ApiControllerTest {
     }
 
     @Test
+    void setMode_local_withEnabledModel_pinsSessionViaOllama_restart() {
+        ObjectNode cfg = M.createObjectNode();
+        when(configs.readConfig()).thenReturn(cfg);
+        when(modelSvc.listModels()).thenReturn(List.of(
+                model("ollama", "qwen2.5-coder:7b", "orchestrator-local", true, 0)
+        ));
+        ApiController.ModeRequest req = new ApiController.ModeRequest();
+        req.pool = "local"; req.supermodel = true;
+        var resp = controller.setMode(req);
+
+        ObjectNode sw = (ObjectNode) cfg.get("_switcher");
+        // Opus verschwindet: Session läuft über ccr→Ollama auf dem lokalen Modell.
+        assertThat(sw.path("activeRoute").path("provider").asText()).isEqualTo("ollama");
+        assertThat(sw.path("activeRoute").path("model").asText()).isEqualTo("qwen2.5-coder:7b");
+        assertThat(cfg.path("env").path("ANTHROPIC_BASE_URL").asText()).isEqualTo("http://localhost:3456");
+        assertThat(sw.path("localOrchestratorPending").asBoolean(false)).isFalse();
+        assertThat(sw.path("mode").asText()).isEqualTo("manual"); // local bleibt fail-closed, kein auto
+    }
+
+    @Test
+    void setMode_local_noEnabledModel_failClosed_noReroute_pending() {
+        ObjectNode cfg = M.createObjectNode();
+        when(configs.readConfig()).thenReturn(cfg);
+        when(modelSvc.listModels()).thenReturn(List.of()); // kein lokales Modell aktiv
+        ApiController.ModeRequest req = new ApiController.ModeRequest();
+        req.pool = "local"; req.supermodel = true;
+        controller.setMode(req);
+
+        ObjectNode sw = (ObjectNode) cfg.get("_switcher");
+        assertThat(sw.path("localOrchestratorPending").asBoolean()).isTrue();
+        assertThat(sw.has("activeRoute")).isFalse();               // KEIN Reroute
+        assertThat(cfg.path("env").has("ANTHROPIC_BASE_URL")).isFalse(); // kein Cloud/Router-Ausweich
+    }
+
+    @Test
     void setMode_cloudSupermodel_isAuto_armsChainFromCell() {
         ObjectNode cfg = M.createObjectNode();
         when(configs.readConfig()).thenReturn(cfg);

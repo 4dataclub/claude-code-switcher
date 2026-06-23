@@ -595,12 +595,18 @@ public class ApiController {
      */
     private boolean pinOrchestratorForPool(ObjectNode cfg, ObjectNode sw, String pool) {
         if ("local".equals(pool)) {
-            // FAIL-CLOSED: in Local NIE auf Anthropic/Cloud pinnen. Wir lösen
-            // keinen Cloud-Pin aus; ob ein lokales Orchestrator-Modell verfügbar
-            // ist, signalisiert localOrchestratorPending (echtes ccr-Routing aufs
-            // lokale Main-Loop-Modell ist Phase E, sobald Ollama-Modelle da sind).
-            sw.put("localOrchestratorPending", !hasEnabledLocalOrchestrator());
-            return false;
+            // FAIL-CLOSED: NIE auf Cloud pinnen. Session läuft echt über ccr→Ollama
+            // auf dem orchestrator-local-Top (Phase E) — Opus verschwindet.
+            AiModelConfig localTop = orchestratorTopModel(pool);
+            if (localTop == null) {
+                // Kein aktiviertes lokales Modell → pending, KEIN Reroute, KEIN Cloud-Ausweich.
+                sw.put("localOrchestratorPending", true);
+                return false;
+            }
+            sw.remove("localOrchestratorPending");
+            pinViaRouter(cfg, sw, "ollama", localTop.getModelId());
+            sw.put("chain_position", 0);
+            return true; // Restart: Wrapper zieht die Session aufs lokale Modell hoch
         }
         // cloud/free → Session = oberstes aktiviertes Modell der orchestrator-{pool}-Zelle
         sw.remove("localOrchestratorPending");
@@ -628,16 +634,6 @@ public class ApiController {
         pinViaRouter(cfg, sw, swProv, top.getModelId());
         sw.put("chain_position", 0);
         return changed;
-    }
-
-    /** Existiert ein aktiviertes lokales (Ollama/openai_compat) Modell als Orchestrator? */
-    private boolean hasEnabledLocalOrchestrator() {
-        for (AiModelConfig m : modelSvc.listModels()) {
-            if (!Boolean.TRUE.equals(m.getEnabled())) continue;
-            String p = m.getProvider() == null ? "" : m.getProvider().toLowerCase();
-            if (p.equals("ollama") || p.equals("openai_compat")) return true;
-        }
-        return false;
     }
 
     // ─── Wrapper-Endpoints (warn / quota-error / recheck-now / restart) ──────
