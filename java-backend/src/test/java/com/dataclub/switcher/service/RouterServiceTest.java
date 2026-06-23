@@ -1,14 +1,18 @@
 package com.dataclub.switcher.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+
+import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
@@ -102,5 +106,26 @@ class RouterServiceTest {
         keys.put("google", "AIza-valid");
         var providers = router.buildProvidersForPool("cloud", keys, null);
         assertThat(providers.get(0).path("name").asText()).isEqualTo("gemini");
+    }
+
+    @Test
+    void writeRouterConfig_localPool_writesOnlyOllamaRoute(@TempDir Path tmp) throws Exception {
+        Path cfgFile = tmp.resolve("router-config.json");
+        when(configs.routerConfigPath()).thenReturn(cfgFile.toString());
+        // Local-Pool + Route auf das lokale Modell, dazu vorhandene Cloud-Keys in der DB.
+        ObjectNode sw = M.createObjectNode();
+        sw.put("pool", "local");
+        sw.putObject("activeRoute").put("provider", "ollama").put("model", "qwen2.5-coder:7b");
+        when(configs.getSwitcher()).thenReturn(sw);
+        when(modelSvc.getSettingRaw("geminiApiKey")).thenReturn("AIza-valid");
+        when(modelSvc.getSettingRaw("openrouterApiKey")).thenReturn("sk-or-valid");
+
+        router.writeRouterConfig();
+
+        JsonNode out = M.readTree(cfgFile.toFile());
+        // FAIL-CLOSED: genau ein Provider, und der ist Ollama — kein gemini/openrouter.
+        assertThat(out.path("Providers")).hasSize(1);
+        assertThat(out.path("Providers").get(0).path("name").asText()).isEqualTo("ollama");
+        assertThat(out.path("Router").path("default").asText()).isEqualTo("ollama,qwen2.5-coder:7b");
     }
 }

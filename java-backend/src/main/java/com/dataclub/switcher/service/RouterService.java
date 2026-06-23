@@ -174,8 +174,9 @@ public class RouterService {
             routeModel    = sw.get("fallback").path("model").asText(null);
         }
 
+        String pool = sw.path("pool").asText("cloud");
         String mappedProvider = routeProvider != null ? UI_TO_CCR.getOrDefault(routeProvider, routeProvider) : null;
-        ArrayNode providers = buildProviders(keys);
+        ArrayNode providers = buildProvidersForPool(pool, keys, routeModel);
 
         String defaultRoute = "";
         if (mappedProvider != null && routeModel != null) {
