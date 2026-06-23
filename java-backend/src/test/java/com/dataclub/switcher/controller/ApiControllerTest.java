@@ -456,4 +456,36 @@ class ApiControllerTest {
         assertThat(out.get(0).get("name").asText()).isEqualTo("implement-free");
         assertThat(out.get(1).get("name").asText()).isEqualTo("review-free");
     }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  setMode — Router-Restart-Wiring (Task 6)
+    // ════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void setMode_routedSession_restartsRouter() {
+        ObjectNode cfg = M.createObjectNode();
+        when(configs.readConfig()).thenReturn(cfg);
+        when(modelSvc.listModels()).thenReturn(List.of(
+                model("ollama", "qwen2.5-coder:7b", "orchestrator-local", true, 0)
+        ));
+        ApiController.ModeRequest req = new ApiController.ModeRequest();
+        req.pool = "local"; req.supermodel = true;
+        controller.setMode(req);
+
+        verify(router).restartRouter(); // ccr muss die neue (ollama-only) Config laden
+    }
+
+    @Test
+    void setMode_anthropicDirect_doesNotRestartRouter() {
+        ObjectNode cfg = M.createObjectNode();
+        when(configs.readConfig()).thenReturn(cfg);
+        when(modelSvc.listModels()).thenReturn(List.of(
+                model("anthropic", "claude-sonnet-4-6", "orchestrator-cloud", true, 0)
+        ));
+        ApiController.ModeRequest req = new ApiController.ModeRequest();
+        req.pool = "cloud"; req.supermodel = true;
+        controller.setMode(req);
+
+        verify(router, never()).restartRouter(); // direkt = kein Router im Spiel
+    }
 }

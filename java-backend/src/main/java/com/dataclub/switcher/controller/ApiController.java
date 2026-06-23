@@ -481,6 +481,11 @@ public class ApiController {
         cfg.set("_switcher", sw);
         configs.writeConfig(cfg);
         router.writeRouterConfig();
+        // Läuft die Session über den ccr-Router (local→ollama oder cloud/free google/
+        // openrouter-Top), muss ccr die neue Config laden. Anthropic-direkt = kein Router.
+        if (sw.has("activeRoute") && sw.get("activeRoute").isObject()) {
+            router.restartRouter();
+        }
         if (needRestart) {
             configs.writeRestartMarker("local".equals(pool) ? "supermodel-local" : "supermodel-on", null);
         }
