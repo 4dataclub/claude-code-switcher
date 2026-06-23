@@ -43,6 +43,27 @@ aber an günstigere/lokale Modelle. So bleibt Opus geschont, und sensible Daten 
 `implement` (DeepSeek) schreibt den Code → `review` (GPT) prüft → `dispatch` macht die
 Commit-Message → **Opus liest alles, integriert, poliert** und liefert das Endergebnis.
 
+## Installation (opt-in)
+
+Das Standard-Setup (`setup.sh`) installiert **nur** den Failover-Switcher. Der Supermodell-Modus
+ist **opt-in** — er braucht zusätzlich den `@supermodel`-Agenten, die Delegations-Policy und einen
+SessionStart-Hook in `~/.claude/`:
+
+```bash
+./setup.sh --with-supermodel       # macOS / Linux / WSL2
+.\setup.ps1 -WithSupermodel        # Windows (PowerShell)
+```
+
+Das richtet ein:
+- `~/.claude/agents/supermodel.md` — der eine Delegations-Agent
+- Policy-Block in `~/.claude/CLAUDE.md` — **self-gating**: gilt nur, wenn `/api/supermodel` an meldet
+- `~/.claude/hooks/supermodel-sessionstart.sh` (+ `.ps1`), registriert als `SessionStart`-Hook in `settings.json`
+
+**Danach scharf stellen:** im UI (`http://localhost:2000`) **Supermodell = An** + gültige Keys
+eintragen — **OpenRouter** deckt `implement`/`review`/`dispatch` (Cloud) plus den ganzen Free-Pool,
+**Gemini** liefert `research`. Der **Lokal**-Pool braucht zusätzlich Ollama + gezogene Modelle.
+Ohne diese Teile läuft Claude Code normal weiter (nur ohne Delegation).
+
 ## Die 2 Achsen
 
 Gesteuert in der ki-models-ui (`http://localhost:2000`):

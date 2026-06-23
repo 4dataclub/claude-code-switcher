@@ -175,6 +175,8 @@ Gesteuert über zwei Achsen: **welcher Pool** (Cloud = beste Qualität · Free =
 
 **Wann lohnt sich das?** Je öfter du an Antons „Pause!" knallst, je mehr stumpfe Fleißarbeit du hast, je wichtiger dir Lokal/Privatsphäre ist. Knallst du nie ans Limit und brauchst kein Lokal → bleib beim einfachen Failover oben; dann ist Supermodell Overkill.
 
+**Installation:** Das Standard-Setup bringt nur den Failover. Den Supermodell-Modus (Agent + Policy + SessionStart-Hook) holst du dir **opt-in** dazu — `./setup.sh --with-supermodel` (macOS/Linux) bzw. `.\setup.ps1 -WithSupermodel` (Windows). Danach im UI (`:2000`) **Supermodell = An** + OpenRouter/Gemini-Keys eintragen. Vollständige Mechanik + Setup: **[SUPERMODELL.md](SUPERMODELL.md)**.
+
 ---
 
 ## Quick Start
