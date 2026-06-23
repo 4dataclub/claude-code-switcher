@@ -235,6 +235,43 @@ class ApiControllerTest {
     // ════════════════════════════════════════════════════════════════════════
 
     @Test
+    void setMode_cloud_anthropicTop_pinsSessionToThatModel_direct() {
+        ObjectNode cfg = M.createObjectNode();
+        when(configs.readConfig()).thenReturn(cfg);
+        when(modelSvc.listModels()).thenReturn(List.of(
+                model("anthropic", "claude-sonnet-4-6", "orchestrator-cloud", true, 0)
+        ));
+        ApiController.ModeRequest req = new ApiController.ModeRequest();
+        req.pool = "cloud"; req.supermodel = true;
+        controller.setMode(req);
+
+        ObjectNode sw = (ObjectNode) cfg.get("_switcher");
+        // Session-Modell == Cascade-Top (vorher: Modell entfernt → claude-Binary-Default opus)
+        assertThat(cfg.path("model").asText()).isEqualTo("claude-sonnet-4-6");
+        assertThat(sw.path("provider").asText()).isEqualTo("anthropic");
+        assertThat(sw.has("activeRoute")).isFalse();            // anthropic = direkt, kein Router
+        assertThat(cfg.path("env").has("ANTHROPIC_BASE_URL")).isFalse();
+    }
+
+    @Test
+    void setMode_cloud_googleTop_pinsSessionViaRouter() {
+        ObjectNode cfg = M.createObjectNode();
+        when(configs.readConfig()).thenReturn(cfg);
+        when(modelSvc.listModels()).thenReturn(List.of(
+                model("gemini", "gemini-2.5-pro", "orchestrator-cloud", true, 0)
+        ));
+        ApiController.ModeRequest req = new ApiController.ModeRequest();
+        req.pool = "cloud"; req.supermodel = true;
+        controller.setMode(req);
+
+        ObjectNode sw = (ObjectNode) cfg.get("_switcher");
+        assertThat(cfg.path("env").path("ANTHROPIC_BASE_URL").asText()).isEqualTo("http://localhost:3456");
+        assertThat(sw.path("provider").asText()).isEqualTo("google");
+        assertThat(sw.path("activeRoute").path("provider").asText()).isEqualTo("google");
+        assertThat(sw.path("activeRoute").path("model").asText()).isEqualTo("gemini-2.5-pro");
+    }
+
+    @Test
     void setMode_localSupermodel_isManual_noCloudChainArmed_failClosed() {
         ObjectNode cfg = M.createObjectNode();
         when(configs.readConfig()).thenReturn(cfg);

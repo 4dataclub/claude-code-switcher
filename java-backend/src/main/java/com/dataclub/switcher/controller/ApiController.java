@@ -560,9 +560,38 @@ public class ApiController {
         return chain.isEmpty() ? supermodelFailoverChain() : chain;
     }
 
+    private ObjectNode envOf(ObjectNode cfg) {
+        return cfg.has("env") && cfg.get("env").isObject()
+            ? (ObjectNode) cfg.get("env") : configs.mapper().createObjectNode();
+    }
+
+    /** Session direkt an Anthropic (kein Router), Modell = das Cascade-Top. */
+    private void pinAnthropicDirect(ObjectNode cfg, ObjectNode sw, String model) {
+        ObjectNode env = envOf(cfg);
+        env.remove("ANTHROPIC_API_KEY");
+        env.remove("ANTHROPIC_BASE_URL");
+        cfg.set("env", env);
+        if (model != null && !model.isBlank()) cfg.put("model", model); else cfg.remove("model");
+        sw.put("provider", "anthropic");
+        sw.remove("activeRoute");
+    }
+
+    /** Session über den ccr-Router (BASE_URL→:3456), Route = swProvider,model. */
+    private void pinViaRouter(ObjectNode cfg, ObjectNode sw, String swProvider, String model) {
+        ObjectNode env = envOf(cfg);
+        env.put("ANTHROPIC_API_KEY", "sk-ccr-anything");
+        env.put("ANTHROPIC_BASE_URL", HOST_ROUTER_URL);
+        cfg.set("env", env);
+        cfg.put("model", "claude-sonnet-4-5-20250929"); // ccr-Platzhalter, Route entscheidet
+        ObjectNode ar = configs.mapper().createObjectNode();
+        ar.put("provider", swProvider); ar.put("model", model);
+        sw.set("activeRoute", ar);
+        sw.put("provider", swProvider);
+    }
+
     /**
-     * Pool-bewusstes Orchestrator-Pinning. cloud/free → Opus; local → fail-closed
-     * (nie Cloud). Gibt zurück, ob ein Wrapper-Restart nötig ist.
+     * Pool-bewusstes Orchestrator-Pinning. cloud/free → Session = Cascade-Top;
+     * local → fail-closed (nie Cloud). Gibt zurück, ob ein Wrapper-Restart nötig ist.
      */
     private boolean pinOrchestratorForPool(ObjectNode cfg, ObjectNode sw, String pool) {
         if ("local".equals(pool)) {
@@ -573,20 +602,32 @@ public class ApiController {
             sw.put("localOrchestratorPending", !hasEnabledLocalOrchestrator());
             return false;
         }
-        // cloud/free → Opus pinnen (idempotent, analog chain-promote)
+        // cloud/free → Session = oberstes aktiviertes Modell der orchestrator-{pool}-Zelle
         sw.remove("localOrchestratorPending");
-        if (!"anthropic".equals(sw.path("provider").asText(""))) {
-            ObjectNode env = cfg.has("env") && cfg.get("env").isObject()
-                ? (ObjectNode) cfg.get("env") : configs.mapper().createObjectNode();
-            env.remove("ANTHROPIC_API_KEY");
-            env.remove("ANTHROPIC_BASE_URL");
-            cfg.set("env", env);
-            sw.put("provider", "anthropic");
-            sw.put("chain_position", 0);
-            sw.remove("activeRoute");
-            return true;
+        AiModelConfig top = orchestratorTopModel(pool);
+        if (top == null) {
+            // Sicherheitsnetz: leere Zelle → Anthropic-direkt (Opus-Default), wie bisher.
+            if (!"anthropic".equals(sw.path("provider").asText(""))) {
+                pinAnthropicDirect(cfg, sw, null);
+                sw.put("chain_position", 0);
+                return true;
+            }
+            return false;
         }
-        return false;
+        String swProv = CASCADE_TO_SWITCHER.getOrDefault(top.getProvider(), top.getProvider());
+        if ("anthropic".equals(swProv)) {
+            boolean changed = !"anthropic".equals(sw.path("provider").asText(""))
+                || !top.getModelId().equals(cfg.path("model").asText(""));
+            pinAnthropicDirect(cfg, sw, top.getModelId());
+            sw.put("chain_position", 0);
+            return changed;
+        }
+        // google/openrouter → Session via ccr-Router auf das Top-Modell
+        boolean changed = !swProv.equals(sw.path("provider").asText(""))
+            || !top.getModelId().equals(sw.path("activeRoute").path("model").asText(""));
+        pinViaRouter(cfg, sw, swProv, top.getModelId());
+        sw.put("chain_position", 0);
+        return changed;
     }
 
     /** Existiert ein aktiviertes lokales (Ollama/openai_compat) Modell als Orchestrator? */
