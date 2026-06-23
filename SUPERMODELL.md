@@ -81,12 +81,18 @@ das nächste nach — der Plan läuft weiter. Modelle/Reihenfolge jederzeit in d
 
 > **Sonderrolle `orchestrator`:** Anders als die 4 Worker ist der Orchestrator **Claude Code
 > selbst** (der laufende Main-Loop) — **kein** `@supermodel`-Delegationsziel (der Agent delegiert
-> nur implement/review/research/dispatch). Die `orchestrator-{pool}`-Zelle *pinnt* das Hirn:
-> **cloud/free** → Opus, mit `orchestrator-cloud` (Sonnet 4.6) + Failover-Kette (Sonnet → Gemini
-> Pro → Flash) via `pinOrchestratorForPool`. **local** → fail-closed, **nie Cloud**: die
-> `orchestrator-local`-Zelle ist, wo du dein lokales Hirn wählst; ohne aktives lokales Modell →
-> `localOrchestratorPending` (gelbe Warnung). Das Live-Routing des Main-Loops aufs lokale Modell
-> (ccr → Ollama) ist **Phase E**.
+> nur implement/review/research/dispatch). **Konsistenz-Invariante (für alle Pools gleich):
+> Das laufende Session-Modell == das oberste aktivierte Modell von `orchestrator-{pool}`** (kleinster
+> `orderIdx`); der Rest der Zelle ist die Failover-Kette. `pinOrchestratorForPool` setzt das durch:
+> **cloud/free** → Top-Modell der `orchestrator-{pool}`-Zelle wird die Session — ist es ein
+> Anthropic-Modell, läuft die Session Anthropic-direkt; ist es Google/OpenRouter, wird sie über
+> ccr dorthin geroutet (Failover-Kette dahinter). **local** → fail-closed, **nie Cloud**: die
+> Session läuft **echt über ccr → Ollama** auf das `orchestrator-local`-Top (Werks-Seed
+> `qwen2.5-coder:7b`); die Router-Config enthält bei local **ausschließlich** den Ollama-Provider,
+> keinen Cloud-Fallback. **Opus verschwindet** beim Umschalten auf local — kein versteckter
+> Hintergrund-Opus. Ohne aktives lokales Modell → `localOrchestratorPending` (gelbe Warnung),
+> **kein** Cloud-Ausweich (lieber STOPP als Leak). Dieses Live-Routing des Main-Loops aufs lokale
+> Modell (früher „Phase E") ist **umgesetzt**.
 
 ## Routing — woher weiß er, welche Aufgabe in welchen Bereich?
 

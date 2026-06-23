@@ -2,7 +2,7 @@
 
 - **Datum:** 2026-06-23
 - **Branch:** `fix/local-orchestrator-8gb-default`
-- **Status:** Design freigegeben (beide offenen Entscheidungen bestätigt) — bereit für Plan
+- **Status:** Umgesetzt (Teil 1 + Teil 2 / Phase E) — siehe Plan `2026-06-23-orchestrator-session-consistency.md`. Offen: Live-Wiring Router→Ollama im Runtime (Task 8/9, deploy-abhängig).
 
 ## Leitregel (von Djavid festgelegt)
 
