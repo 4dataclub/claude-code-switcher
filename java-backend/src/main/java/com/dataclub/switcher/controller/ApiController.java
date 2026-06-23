@@ -518,6 +518,21 @@ public class ApiController {
     }
 
     /**
+     * Oberstes aktiviertes Modell der {@code orchestrator-{pool}}-Zelle (kleinster
+     * orderIdx) = das Session-Modell (Konsistenz-Invariante). Anders als
+     * {@link #orchestratorFailoverChain} wird hier NICHT auf Cloud-Provider gefiltert —
+     * local/ollama ist als Session-Ziel legitim (Phase E). {@code null} = leere Zelle.
+     */
+    AiModelConfig orchestratorTopModel(String pool) {
+        String cat = "orchestrator-" + pool;
+        return modelSvc.listModels().stream()
+            .filter(m -> cat.equals(m.getCategory()) && Boolean.TRUE.equals(m.getEnabled()))
+            .min(java.util.Comparator.comparingInt(
+                m -> m.getOrderIdx() == null ? Integer.MAX_VALUE : m.getOrderIdx()))
+            .orElse(null);
+    }
+
+    /**
      * DATENGETRIEBENE Orchestrator-Failover-Kette aus der {@code orchestrator-{pool}}-Zelle
      * — editierbar wie jede andere Rolle (Modelle hinzufügen/entfernen/umsortieren = orderIdx).
      * Opus am Limit schaltet der Reihe nach durch genau diese Modelle (Cooldown-Failover),

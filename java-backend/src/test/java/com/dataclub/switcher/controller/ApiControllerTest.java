@@ -189,6 +189,48 @@ class ApiControllerTest {
     }
 
     // ════════════════════════════════════════════════════════════════════════
+    //  orchestratorTopModel — oberstes aktiviertes Modell der Zelle (Session-Ziel)
+    // ════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void topModel_picksLowestOrderIdxEnabled() {
+        when(modelSvc.listModels()).thenReturn(List.of(
+                model("gemini", "gemini-2.5-flash", "orchestrator-cloud", true, 5),
+                model("anthropic", "claude-sonnet-4-6", "orchestrator-cloud", true, 1)
+        ));
+        AiModelConfig top = controller.orchestratorTopModel("cloud");
+        assertThat(top).isNotNull();
+        assertThat(top.getModelId()).isEqualTo("claude-sonnet-4-6");
+    }
+
+    @Test
+    void topModel_skipsDisabled() {
+        when(modelSvc.listModels()).thenReturn(List.of(
+                model("anthropic", "claude-opus-4-7", "orchestrator-cloud", false, 0), // disabled → übersprungen
+                model("anthropic", "claude-sonnet-4-6", "orchestrator-cloud", true, 1)
+        ));
+        assertThat(controller.orchestratorTopModel("cloud").getModelId()).isEqualTo("claude-sonnet-4-6");
+    }
+
+    @Test
+    void topModel_nullWhenEmpty() {
+        when(modelSvc.listModels()).thenReturn(List.of());
+        assertThat(controller.orchestratorTopModel("cloud")).isNull();
+    }
+
+    @Test
+    void topModel_local_returnsOllama_notSkipped() {
+        // Anders als die Failover-Kette: local/ollama ist hier ein gültiges Session-Ziel.
+        when(modelSvc.listModels()).thenReturn(List.of(
+                model("ollama", "qwen2.5-coder:7b", "orchestrator-local", true, 0)
+        ));
+        AiModelConfig top = controller.orchestratorTopModel("local");
+        assertThat(top).isNotNull();
+        assertThat(top.getProvider()).isEqualTo("ollama");
+        assertThat(top.getModelId()).isEqualTo("qwen2.5-coder:7b");
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
     //  setMode — pool-bewusst (Local = manual/fail-closed, Cloud = auto + Kette)
     // ════════════════════════════════════════════════════════════════════════
 
