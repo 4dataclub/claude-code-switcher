@@ -286,8 +286,11 @@ class ApiControllerTest {
         assertThat(sw.get("pool").asText()).isEqualTo("local");
         assertThat(sw.get("supermodel").asBoolean()).isTrue();
         assertThat(sw.get("mode").asText()).isEqualTo("manual"); // KEIN auto im Local-Pool
-        assertThat(sw.has("fallback_chain")).isFalse();          // KEINE Cloud-Kette scharf gestellt
+        assertThat(sw.has("fallback_chain")).isFalse();          // KEINE Cloud-Kette scharf gestellt (ererbte verworfen)
         assertThat(sw.path("localOrchestratorPending").asBoolean()).isTrue();
+        // Fail-closed pending: session geht über ccr→ollama (dead-end), KEIN Cloud-Ausweich.
+        assertThat(cfg.path("env").path("ANTHROPIC_BASE_URL").asText()).isEqualTo("http://localhost:3456");
+        assertThat(sw.has("activeRoute")).isFalse();
     }
 
     @Test
@@ -317,12 +320,16 @@ class ApiControllerTest {
         when(modelSvc.listModels()).thenReturn(List.of()); // kein lokales Modell aktiv
         ApiController.ModeRequest req = new ApiController.ModeRequest();
         req.pool = "local"; req.supermodel = true;
-        controller.setMode(req);
+        var resp = controller.setMode(req);
 
         ObjectNode sw = (ObjectNode) cfg.get("_switcher");
         assertThat(sw.path("localOrchestratorPending").asBoolean()).isTrue();
-        assertThat(sw.has("activeRoute")).isFalse();               // KEIN Reroute
-        assertThat(cfg.path("env").has("ANTHROPIC_BASE_URL")).isFalse(); // kein Cloud/Router-Ausweich
+        assertThat(sw.has("activeRoute")).isFalse();               // KEIN Reroute (kein activeRoute)
+        // Fail-closed: kein Cloud-Provider-Ausweich. Die Session geht über ccr→ollama (dead-end).
+        // ANTHROPIC_BASE_URL zeigt auf ccr-Router (lokal, ollama-only) — KEIN Cloud-Leak.
+        assertThat(cfg.path("env").path("ANTHROPIC_BASE_URL").asText()).isEqualTo("http://localhost:3456");
+        assertThat(cfg.path("model").asText()).isEqualTo("claude-sonnet-4-5-20250929");
+        assertThat(sw.path("provider").asText()).isEqualTo("ollama");
     }
 
     @Test
@@ -507,5 +514,100 @@ class ApiControllerTest {
         assertThat(who).contains("qwen2.5-coder:7b");
         assertThat(who).doesNotContain("Anthropic direkt");
         assertThat(who.toLowerCase()).contains("lokal"); // local/Ollama klar erkennbar
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  NEW: fail-closed cloud→local-no-model security tests (Task: tear down cloud route)
+    // ════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void setMode_cloudThenLocalNoModel_tearsDownCloudRoute_failClosed() {
+        // Simulate a config that already carries an inherited cloud-google route
+        ObjectNode cfg = M.createObjectNode();
+        ObjectNode env = cfg.putObject("env");
+        env.put("ANTHROPIC_BASE_URL", "http://localhost:3456");
+        env.put("ANTHROPIC_API_KEY", "sk-ccr-anything");
+        ObjectNode sw = cfg.putObject("_switcher");
+        sw.put("provider", "google");
+        ObjectNode ar = sw.putObject("activeRoute");
+        ar.put("provider", "google");
+        ar.put("model", "gemini-2.5-pro");
+        ArrayNode staleChain = sw.putArray("fallback_chain");
+        ObjectNode chainEntry = staleChain.addObject();
+        chainEntry.put("provider", "anthropic");
+        chainEntry.put("model", "claude-sonnet-4-6");
+
+        when(configs.readConfig()).thenReturn(cfg);
+        // No enabled orchestrator-local model → localTop == null
+        when(modelSvc.listModels()).thenReturn(List.of());
+
+        ApiController.ModeRequest req = new ApiController.ModeRequest();
+        req.pool = "local";
+        req.supermodel = true;
+        var resp = controller.setMode(req);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        // Response must signal restart=true and pending=true
+        assertThat(body.get("restart")).isEqualTo(true);
+        assertThat(body.get("localOrchestratorPending")).isEqualTo(true);
+
+        ObjectNode writtenSw = (ObjectNode) cfg.get("_switcher");
+        // activeRoute MUST be gone — no inherited cloud route survives
+        assertThat(writtenSw.has("activeRoute")).isFalse();
+        // fallback_chain MUST be gone — local kennt keine Cloud-Failover-Kette
+        assertThat(writtenSw.has("fallback_chain")).isFalse();
+        // provider must be ollama (fail-closed pending)
+        assertThat(writtenSw.path("provider").asText()).isEqualTo("ollama");
+        // Session still goes via ccr (local = ollama-only, ollama without model = dead-end)
+        assertThat(cfg.path("env").path("ANTHROPIC_BASE_URL").asText()).isEqualTo("http://localhost:3456");
+        // Model placeholder is set
+        assertThat(cfg.path("model").asText()).isEqualTo("claude-sonnet-4-5-20250929");
+    }
+
+    @Test
+    void whoami_localPendingNoActiveRoute_reportsLocal_notAnthropicNotGoogle() {
+        // Pending local state: provider=ollama, NO activeRoute, model=placeholder
+        ObjectNode cfg = M.createObjectNode();
+        cfg.put("model", "claude-sonnet-4-5-20250929");
+        ObjectNode sw = cfg.putObject("_switcher");
+        sw.put("provider", "ollama");
+        sw.put("localOrchestratorPending", true);
+        // NO activeRoute set
+
+        when(configs.readConfig()).thenReturn(cfg);
+        when(configs.deriveProvider(cfg)).thenReturn("ollama");
+
+        String who = controller.whoami();
+        // Must report as local/Ollama, not Anthropic, not Google
+        assertThat(who.toLowerCase()).contains("lokal");
+        assertThat(who).contains("Ollama");
+        assertThat(who).doesNotContain("Anthropic");
+        assertThat(who).doesNotContain("Google");
+    }
+
+    @Test
+    void setMode_local_withEnabledModel_pinsSessionViaOllama_restart_tightened() {
+        ObjectNode cfg = M.createObjectNode();
+        when(configs.readConfig()).thenReturn(cfg);
+        when(modelSvc.listModels()).thenReturn(List.of(
+                model("ollama", "qwen2.5-coder:7b", "orchestrator-local", true, 0)
+        ));
+        ApiController.ModeRequest req = new ApiController.ModeRequest();
+        req.pool = "local"; req.supermodel = true;
+        var resp = controller.setMode(req);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        // Tightened: restart must be true and chain_position must be 0
+        assertThat(body.get("restart")).isEqualTo(true);
+
+        ObjectNode sw = (ObjectNode) cfg.get("_switcher");
+        assertThat(sw.path("chain_position").asInt()).isEqualTo(0);
+        // Existing assertions preserved
+        assertThat(sw.path("activeRoute").path("provider").asText()).isEqualTo("ollama");
+        assertThat(sw.path("activeRoute").path("model").asText()).isEqualTo("qwen2.5-coder:7b");
+        assertThat(cfg.path("env").path("ANTHROPIC_BASE_URL").asText()).isEqualTo("http://localhost:3456");
+        assertThat(sw.path("localOrchestratorPending").asBoolean(false)).isFalse();
     }
 }

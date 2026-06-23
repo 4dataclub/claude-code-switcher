@@ -181,7 +181,7 @@ public class RouterService {
         String defaultRoute = "";
         if (mappedProvider != null && routeModel != null) {
             defaultRoute = mappedProvider + "," + routeModel;
-        } else if (providers.size() > 0) {
+        } else if (providers.size() > 0 && providers.get(0).path("models").size() > 0) {
             String n = providers.get(0).get("name").asText();
             String m = providers.get(0).get("models").get(0).asText();
             defaultRoute = n + "," + m;

@@ -487,7 +487,7 @@ public class ApiController {
         router.writeRouterConfig();
         // Läuft die Session über den ccr-Router (local→ollama oder cloud/free google/
         // openrouter-Top), muss ccr die neue Config laden. Anthropic-direkt = kein Router.
-        if (sw.has("activeRoute") && sw.get("activeRoute").isObject()) {
+        if ("local".equals(pool) || (sw.has("activeRoute") && sw.get("activeRoute").isObject())) {
             router.restartRouter();
         }
         if (needRestart) {
@@ -604,13 +604,26 @@ public class ApiController {
      */
     private boolean pinOrchestratorForPool(ObjectNode cfg, ObjectNode sw, String pool) {
         if ("local".equals(pool)) {
+            // local kennt keine Cloud-Failover-Kette (fail-closed) — ererbte Kette verwerfen
+            sw.remove("fallback_chain");
             // FAIL-CLOSED: NIE auf Cloud pinnen. Session läuft echt über ccr→Ollama
             // auf dem orchestrator-local-Top (Phase E) — Opus verschwindet.
             AiModelConfig localTop = orchestratorTopModel(pool);
             if (localTop == null) {
-                // Kein aktiviertes lokales Modell → pending, KEIN Reroute, KEIN Cloud-Ausweich.
+                // Kein aktiviertes lokales Modell → pending. FAIL-CLOSED: jede ererbte Cloud-Route
+                // abräumen und die Session auf den ccr-Router (bei local = ollama-only, ohne gültige
+                // Route) zeigen → Anfragen scheitern lokal, NICHTS verlässt das interne Netz, Opus
+                // bleibt weg. KEIN Anthropic-direkt (das wäre wieder Cloud/Opus).
                 sw.put("localOrchestratorPending", true);
-                return false;
+                sw.remove("activeRoute");
+                ObjectNode env = envOf(cfg);
+                env.put("ANTHROPIC_API_KEY", "sk-ccr-anything");
+                env.put("ANTHROPIC_BASE_URL", HOST_ROUTER_URL);
+                cfg.set("env", env);
+                cfg.put("model", "claude-sonnet-4-5-20250929");
+                sw.put("provider", "ollama");
+                sw.put("chain_position", 0);
+                return true; // Restart: ererbte Cloud-Env aus dem laufenden Prozess entfernen
             }
             sw.remove("localOrchestratorPending");
             pinViaRouter(cfg, sw, "ollama", localTop.getModelId());

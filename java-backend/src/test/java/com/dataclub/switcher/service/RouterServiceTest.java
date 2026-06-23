@@ -128,4 +128,33 @@ class RouterServiceTest {
         assertThat(out.path("Providers").get(0).path("name").asText()).isEqualTo("ollama");
         assertThat(out.path("Router").path("default").asText()).isEqualTo("ollama,qwen2.5-coder:7b");
     }
+
+    @Test
+    void writeRouterConfig_localPendingNoModel_ollamaOnly_emptyDefaultRoute_noNpe(@TempDir Path tmp) throws Exception {
+        // Fail-closed pending state: local pool, NO activeRoute, NO fallback_chain.
+        // buildOllamaProvider(null) → models array is EMPTY.
+        // Previously caused NPE: providers.get(0).get("models").get(0).asText() → get(0) == null.
+        Path cfgFile = tmp.resolve("router-config-pending.json");
+        when(configs.routerConfigPath()).thenReturn(cfgFile.toString());
+
+        ObjectNode sw = M.createObjectNode();
+        sw.put("pool", "local");
+        sw.put("localOrchestratorPending", true);
+        // NO activeRoute, NO fallback_chain → routeModel == null → buildOllamaProvider(null) → empty models
+        when(configs.getSwitcher()).thenReturn(sw);
+        // Cloud keys present in DB — must be ignored (fail-closed)
+        when(modelSvc.getSettingRaw("geminiApiKey")).thenReturn("AIza-valid");
+        when(modelSvc.getSettingRaw("openrouterApiKey")).thenReturn("sk-or-valid");
+
+        // Must not throw NPE
+        router.writeRouterConfig();
+
+        JsonNode out = M.readTree(cfgFile.toFile());
+        // Exactly one provider: ollama with empty models array
+        assertThat(out.path("Providers")).hasSize(1);
+        assertThat(out.path("Providers").get(0).path("name").asText()).isEqualTo("ollama");
+        assertThat(out.path("Providers").get(0).path("models")).isEmpty();
+        // Default route must be empty (no model → no valid route → fail-closed dead-end)
+        assertThat(out.path("Router").path("default").asText()).isEmpty();
+    }
 }
