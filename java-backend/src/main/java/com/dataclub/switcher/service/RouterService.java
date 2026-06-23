@@ -37,6 +37,9 @@ public class RouterService {
     @Value("${switcher.router.container}")
     private String routerContainer;
 
+    @Value("${switcher.ollama.baseUrl:http://ollama:11434/v1/chat/completions}")
+    private String ollamaBaseUrl = "http://ollama:11434/v1/chat/completions";
+
     public RouterService(ConfigService configs, SwitcherModelService modelSvc) {
         this.configs = configs;
         this.modelSvc = modelSvc;
@@ -54,6 +57,7 @@ public class RouterService {
         put("google", "gemini");
         put("anthropic", "anthropic");
         put("openrouter", "openrouter");
+        put("ollama", "ollama");
     }};
 
     /** Switcher-Provider → DB-Setting-Key (app_settings, derselbe Store wie die Cascade).
@@ -114,6 +118,32 @@ public class RouterService {
             out.add(p);
         }
         return out;
+    }
+
+    /** ccr-Provider für lokales Ollama (OpenAI-kompatible API, Key ist Dummy). */
+    ObjectNode buildOllamaProvider(String model) {
+        ObjectNode p = mapper.createObjectNode();
+        p.put("name", "ollama");
+        p.put("api_base_url", ollamaBaseUrl);
+        p.put("api_key", "ollama"); // Ollama ignoriert den Key, ccr verlangt aber einen
+        ArrayNode m = p.putArray("models");
+        if (model != null && !model.isBlank()) m.add(model);
+        p.set("transformer", mapper.createObjectNode().set("use", mapper.createArrayNode().add("openai")));
+        return p;
+    }
+
+    /**
+     * Provider-Liste je Pool. <b>local = NUR Ollama (fail-closed)</b> — kein google/
+     * openrouter, egal ob Keys da sind, nichts verlässt das interne Netz. cloud/free =
+     * {@link #buildProviders} wie gehabt.
+     */
+    ArrayNode buildProvidersForPool(String pool, ObjectNode keys, String localModel) {
+        if ("local".equals(pool)) {
+            ArrayNode out = mapper.createArrayNode();
+            out.add(buildOllamaProvider(localModel));
+            return out;
+        }
+        return buildProviders(keys);
     }
 
     /** Schreibt router-config.json basierend auf _switcher in der Switcher-Config. */

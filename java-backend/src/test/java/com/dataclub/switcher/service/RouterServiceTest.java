@@ -76,4 +76,31 @@ class RouterServiceTest {
 
         assertThat(router.resolveKey("google")).isEmpty();
     }
+
+    @Test
+    void buildOllamaProvider_openaiTransformer_modelListed() {
+        ObjectNode p = router.buildOllamaProvider("qwen2.5-coder:7b");
+        assertThat(p.path("name").asText()).isEqualTo("ollama");
+        assertThat(p.path("api_base_url").asText()).contains("11434");
+        assertThat(p.path("transformer").path("use").get(0).asText()).isEqualTo("openai");
+        assertThat(p.path("models").get(0).asText()).isEqualTo("qwen2.5-coder:7b");
+    }
+
+    @Test
+    void buildProvidersForPool_local_onlyOllama_ignoresCloudKeys_failClosed() {
+        ObjectNode keys = M.createObjectNode();
+        keys.put("google", "AIza-valid"); keys.put("openrouter", "sk-or-valid");
+        var providers = router.buildProvidersForPool("local", keys, "qwen2.5-coder:7b");
+        // FAIL-CLOSED: trotz Cloud-Keys NUR Ollama, kein gemini/openrouter.
+        assertThat(providers).hasSize(1);
+        assertThat(providers.get(0).path("name").asText()).isEqualTo("ollama");
+    }
+
+    @Test
+    void buildProvidersForPool_cloud_usesCloudProviders() {
+        ObjectNode keys = M.createObjectNode();
+        keys.put("google", "AIza-valid");
+        var providers = router.buildProvidersForPool("cloud", keys, null);
+        assertThat(providers.get(0).path("name").asText()).isEqualTo("gemini");
+    }
 }
