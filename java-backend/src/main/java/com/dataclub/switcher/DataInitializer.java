@@ -71,6 +71,11 @@ public class DataInitializer {
      * </pre>
      * (* local = enabled=false bis die Ollama-Modelle gezogen sind — Phase E.)
      *
+     * Local-Defaults zielen auf 8 GB VRAM (RTX 4060 Laptop / haeufigster dGPU-Nenner):
+     * je ein 7b-Q4 (~4.9 GB) passt resident, 7b+kleines Dispatch-Modell sind ko-resident.
+     * orchestrator-local = qwen2.5-coder:7b (kein 14b — passt sonst nicht in 8 GB).
+     * Staerkere Hardware (z.B. Mac Studio, ≥16 GB): siehe SUPERMODELL.md "Config C".
+     *
      * {@code cloud} (Pool-Kategorie) trägt zusätzlich Opus als Orchestrator/Manuell-
      * Option. {@code utility}+{@code general} bewusst NICHT geseedet → Local hat
      * keinen Cloud-{@code general}-Fallback = automatisch fail-closed.
@@ -85,7 +90,7 @@ public class DataInitializer {
             //    (datengetrieben: setMode liest orchestrator-{pool} der Reihe nach) ──
             new Default("anthropic",  "claude-sonnet-4-6",                      "Claude Sonnet 4.6 (Orchestrator-Failover)", "anthropicApiKey", "orchestrator-cloud", true),
             new Default("gemini",     "gemini-2.5-flash",                       "Gemini 2.5 Flash (Orchestrator-Failover #2)", "geminiApiKey",  "orchestrator-cloud", true),
-            new Default("ollama",     "qwen2.5:14b",                            "Qwen2.5 14B (lokaler Orchestrator)",        "ollamaApiKey",    "orchestrator-local", false),
+            new Default("ollama",     "qwen2.5-coder:7b",                       "Qwen2.5 Coder 7B (lokaler Orchestrator)",   "ollamaApiKey",    "orchestrator-local", false),
             new Default("openrouter", "nousresearch/hermes-3-llama-3.1-405b:free", "Hermes-3 405B (free · Orchestrator)",   "openrouterApiKey", "orchestrator-free",  true),
             // ── implement (Bulk-Code) ──
             new Default("openrouter", "deepseek/deepseek-chat-v3.1",            "DeepSeek V3.1",                  "openrouterApiKey", "implement-cloud", true),

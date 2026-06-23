@@ -69,7 +69,7 @@ normales Pool-Routing.
 
 |  | **cloud** | **free** | **local** |
 |---|---|---|---|
-| **orchestrator** *(Hirn, gepinnt)* | Opus 4.8 → Sonnet 4.6 | *(leer — editierbar)* | qwen2.5:14b (aus bis Ollama) |
+| **orchestrator** *(Hirn, gepinnt)* | Opus 4.8 → Sonnet 4.6 | *(leer — editierbar)* | qwen2.5-coder:7b (aus bis Ollama) |
 | **implement** | DeepSeek V3.1 + Gemini Flash | Qwen3-Coder + Qwen3-Next 80B | qwen2.5-coder:7b |
 | **review** | GPT-4o-mini | GPT-OSS 120B | qwen2.5:7b |
 | **research** | Gemini Pro (OR + nativ) | *(Gemini-MCP)* | *— Web=Cloud* |
@@ -355,21 +355,43 @@ Oder einfach die Toggles in der UI (`localhost:2000`).
 - Modelle ziehen: `ollama pull qwen2.5-coder:7b qwen2.5:7b gemma3:4b`, dann die
   `*-local`-Zellen in der UI aktivieren + provider-server zuweisen.
 
-## Hardware-Stufen (Local-Pool, alle 100 % lokal — Orchestrator inkl., nie Opus)
+## Hardware-Stufen (Local-Pool)
 
-| | **A · Einstieg (16 GB)** | **B · echtes Coding (32–48 GB)** | **C · Voll-lokal (128 GB+)** | **D · Mac Studio Ultra (256–512 GB)** |
-|---|---|---|---|---|
-| Orchestrator | kleines Modell (schwach) | qwq:32b / qwen2.5:32b | llama-3.3:70b / qwen2.5:72b | großes MoE: Qwen3-235B-A22B (~130 GB) / DeepSeek-V3.1 671B (~380 GB @4-bit, 37B aktiv) |
-| implement | qwen2.5-coder:7b | qwen2.5-coder:32b | qwen2.5-coder:32b | Qwen3-Coder / qwen2.5-coder:32b — **parallel resident** zum Orchestrator |
-| Qualität | leicht/begrenzt | gut | sehr gut (nur nicht ganz Opus) | **nahe Frontier** (MoE-Brain + Coder + Reviewer gleichzeitig im RAM, kein Nachladen) |
+Autoritatives Config-Framework (A/B/C). Der **Werks-Default ist die Stufe „jetzt" (8 GB,
+unter A)** — das verdrahtet der Seeder (`DataInitializer.seedDefaultChain`), damit jeder
+Kollege out-of-the-box dieselbe local-Matrix bekommt. **B+ = Mac Studio M4 Max 64 GB (eBay)**,
+unsere geplante Upgrade-Stufe (zwischen B und C); dort greift das XDA-Hybrid-Muster.
 
-> **Ehrlich:** Opus-4.8-Frontier-Niveau ist voll-lokal **nicht ganz** erreichbar — aber **D
-> (Studio Ultra) schließt die Lücke am weitesten**: ein 235B/671B-MoE-Orchestrator + dedizierte
-> Coder/Reviewer liegen gleichzeitig im Unified Memory. MoE ist der Apple-Silicon-Sweet-Spot
-> (riesige Kapazität, nur Bruchteil aktiv → brauchbarer Speed). **Der eigentliche Mac-Engpass ist
-> nicht RAM, sondern Prompt-Processing / Time-to-First-Token** bei langen Kontexten (zäher als
-> NVIDIA); Token-Generierung ist ok. Willst du das letzte Quäntchen Opus-Hirn → bewusst die
-> **Cloud-Lane**. Bester P/L bleibt **Hybrid** (Opus Cloud nur für Plan/Synthese + lokale Kollegen).
+| Rolle | **jetzt · 8 GB** (RTX 4060 Laptop, Werks-Default) | **A · Hybrid-Einstieg · 16 GB** | **B · echtes Coding · 32–48 GB** | **B+ · Mac Studio M4 Max 64 GB (eBay)** | **C · Voll-lokal · 128 GB+** |
+|---|---|---|---|---|---|
+| **Orchestrator** | `qwen2.5-coder:7b` (aus bis Ollama) | Opus (Cloud) — lokal zu schwach | Opus (hybrid, empf.) *oder* `qwq:32b` lokal | Opus Cloud (Plan/Synthese, XDA-Hybrid) *oder* `qwq:32b`/`qwen2.5:32b` lokal | `llama-3.3:70b` → `qwen2.5:72b` |
+| **implement** | `qwen2.5-coder:7b` | `qwen2.5-coder:7b` | `qwen2.5-coder:32b` | `qwen2.5-coder:32b` | `qwen2.5-coder:32b` |
+| **review** | `qwen2.5:7b` | `qwen2.5-coder:7b` → `gemma3:4b` | `qwen2.5-coder:32b` | `qwen2.5-coder:32b` | `qwen2.5-coder:32b` |
+| **dispatch** | `gemma3:4b` | `gemma3:4b` | `qwen2.5:7b` → `qwen2.5-coder:32b` | `qwen2.5:7b` | `gemma3:4b` → `qwen2.5:7b` |
+| **research** | Gemini-MCP (Cloud) | Gemini-MCP (Cloud) | Gemini-MCP (Cloud) | Gemini-MCP (Cloud) *oder* lokale Docs | Gemini-MCP *oder* lokale Docs |
+| **Qualität** | Einstieg/begrenzt — nur **EIN** 7b resident (~4.9 GB), 7b+4b ko-resident, zwei 7b ✗ | leicht/begrenzt — Bulk lokal, Frontier=Opus | gut — ~80 % lokal, Orchestrierung grenzwertig-lokal/hybrid | sehr gut — 32b-Orch + 32b-Coder ko-resident im Unified Memory | sehr gut (nur nicht ganz Opus) — nichts verlässt die Infra |
+
+Der **Werks-Default (8 GB)** liegt bewusst **unter A**: bei 8 GB VRAM passt nur ein heißes
+7b-Q4 (~4.9 GB) resident; 7b + kleines Dispatch-Modell (3–4b) ko-residieren (~6.9 GB), zwei
+7b (9.8 GB) **nicht** → Swap/Thrashing. Darum ein gepinntes `qwen2.5-coder:7b` für
+orchestrator/implement/review + `gemma3:4b` für dispatch. Alle `*-local` starten
+`enabled=false` bis `ollama pull` lief.
+
+> **B+ (Mac Studio M4 Max 64 GB, eBay) — Upgrade-Pfad, NUR auf explizite Anweisung umstellen.**
+> 64 GB Unified liegt zwischen B (32–48) und C (128+) → trägt einen 32b-Orchestrator **plus**
+> 32b-Coder gleichzeitig im Memory. Hier greift das **XDA-Muster** (cloud-Opus nur für
+> Plan/Synthese, lokale Großmodelle für Bulk) — genau das, was unser Supermodell automatisiert.
+> Umstellung: nur die Modell-Einträge der `*-local`-Kategorien tauschen (Bereichs-Struktur
+> bleibt fest). Vor Tausch `ollama list` + `nvidia-smi`/Activity-Monitor prüfen (muss real ins
+> Memory passen). Nicht eigenmächtig switchen.
+
+> **Ehrlich:** Opus-4.8-Frontier-Niveau ist voll-lokal **nicht ganz** erreichbar. C (bzw. ein
+> Studio Ultra mit 256–512 GB für 235B/671B-MoE-Orchestratoren) schließt die Lücke am weitesten —
+> MoE ist der Apple-Silicon-Sweet-Spot (riesige Kapazität, nur Bruchteil aktiv → brauchbarer
+> Speed). **Der eigentliche Mac-Engpass ist nicht RAM, sondern Prompt-Processing /
+> Time-to-First-Token** bei langen Kontexten (zäher als NVIDIA); Token-Generierung ist ok. Willst
+> du das letzte Quäntchen Opus-Hirn → bewusst die **Cloud-Lane**. Bester P/L bleibt **Hybrid**
+> (Opus Cloud nur für Plan/Synthese + lokale Kollegen).
 
 ## Verteiltes Setup (ein Rechner = Server, anderer = Consumer)
 
