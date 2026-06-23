@@ -488,4 +488,24 @@ class ApiControllerTest {
 
         verify(router, never()).restartRouter(); // direkt = kein Router im Spiel
     }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  whoami — Ollama-Zweig (Task 7)
+    // ════════════════════════════════════════════════════════════════════════
+
+    @Test
+    void whoami_localOllamaRoute_reportsLocalModel_notAnthropic() {
+        ObjectNode cfg = M.createObjectNode();
+        cfg.put("model", "claude-sonnet-4-5-20250929"); // Router-Platzhalter (darf NICHT durchschlagen)
+        ObjectNode sw = cfg.putObject("_switcher");
+        sw.put("provider", "ollama");
+        sw.putObject("activeRoute").put("provider", "ollama").put("model", "qwen2.5-coder:7b");
+        when(configs.readConfig()).thenReturn(cfg);
+        when(configs.deriveProvider(cfg)).thenReturn("ollama");
+
+        String who = controller.whoami();
+        assertThat(who).contains("qwen2.5-coder:7b");
+        assertThat(who).doesNotContain("Anthropic direkt");
+        assertThat(who.toLowerCase()).contains("lokal"); // local/Ollama klar erkennbar
+    }
 }

@@ -138,6 +138,10 @@ public class ApiController {
             };
             return model + " via OpenRouter — entwickelt von " + builder;
         }
+        if ("ollama".equals(provider)) {
+            String model = ar.path("model").asText("?");
+            return model + " via Ollama (lokal) — läuft lokal, nichts verlässt das interne Netz";
+        }
         String m = cfg.path("model").asText("claude-sonnet-4-5-20250929");
         return pretty(m) + " (Anthropic direkt) — entwickelt von Anthropic";
     }
