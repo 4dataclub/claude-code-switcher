@@ -148,7 +148,7 @@ if command -v docker >/dev/null 2>&1; then
     none)
       echo "  ⚠ Keine NVIDIA-GPU → CPU-Modus (läuft weiter)" ;;
     *)
-      echo "  ⚠ SWITCHER_GPU=$GPU_VENDOR nicht unterstützt (nur 'nvidia' vorgebaut) → CPU-Modus" ;;
+      echo "  ⚠ SWITCHER_GPU=${SWITCHER_GPU} nicht unterstützt (nur 'nvidia' vorgebaut) → CPU-Modus" ;;
   esac
 
   echo "▸ Baue + starte Stack (ohne in-stack Ollama)"
