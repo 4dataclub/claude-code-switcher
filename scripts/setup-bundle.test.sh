@@ -24,5 +24,16 @@ if grep -q 'profile local-llm' setup.sh; then ok "Provision nutzt --profile loca
 # Manifest/Payload: amd64-Override ist mitgebundelt.
 if grep -q '^docker-compose.amd64.yml$' setup.sh; then ok "amd64-Override im Manifest"; else no "amd64-Override fehlt im Bundle"; fi
 
+# Arch-Block: amd64 klont llm-cascade aus Source.
+if grep -q 'git clone --depth 1 --branch' setup.sh; then ok "amd64 klont llm-cascade-Source"; else no "amd64-Clone fehlt"; fi
+# Arch-Block: amd64 layert den Build-Override.
+if grep -q '\-f docker-compose.amd64.yml' setup.sh; then ok "amd64 layert Build-Override"; else no "amd64-Override-Layer fehlt"; fi
+# Clone-Fehler auf amd64 ist fatal.
+if grep -q 'git clone .* fehlgeschlagen' setup.sh; then ok "amd64-Clone-Fehler bricht ab"; else no "amd64-Clone-Abbruch fehlt"; fi
+# GPU-Seam: SWITCHER_GPU-Override vorhanden.
+if grep -q 'SWITCHER_GPU' setup.sh; then ok "GPU-Override SWITCHER_GPU"; else no "SWITCHER_GPU-Seam fehlt"; fi
+# GPU-Seam: dokumentierter Unsupported-Vendor-Zweig (AMD/Intel YAGNI).
+if grep -q 'nicht unterstützt' setup.sh; then ok "GPU unsupported-vendor Seam"; else no "GPU-Vendor-Seam fehlt"; fi
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

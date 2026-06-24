@@ -112,12 +112,44 @@ if command -v docker >/dev/null 2>&1; then
   DC="docker compose"
   docker compose version >/dev/null 2>&1 || { command -v docker-compose >/dev/null 2>&1 && DC="docker-compose"; }
 
-  # GPU-Override nur auf Linux mit funktionierender NVIDIA-GPU.
+  # --- Arch-Lane: amd64 (x86_64) baut llm-cascade aus Source; arm64 nutzt das Image. ---
+  # Grund: das veroeffentlichte Image ist arm64-only.
   CF="-f docker-compose.yml"
-  if [ "$(uname -s)" = "Linux" ] && command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
-    CF="$CF -f docker-compose.gpu.yml"
-    echo "  ▸ NVIDIA-GPU erkannt → GPU-Override aktiv"
+  ARCH="$(uname -m)"
+  if [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "amd64" ]; then
+    LLM_CASCADE_REF="${LLM_CASCADE_REF:-main}"
+    LLM_CASCADE_REPO="${LLM_CASCADE_REPO:-https://github.com/4dataclub/llm-cascade.git}"
+    if [ ! -d llm-cascade ]; then
+      echo "  ▸ amd64 ($ARCH) erkannt → klone llm-cascade ($LLM_CASCADE_REF) für Source-Build"
+      if ! git clone --depth 1 --branch "$LLM_CASCADE_REF" "$LLM_CASCADE_REPO" llm-cascade; then
+        echo "✗ git clone llm-cascade fehlgeschlagen — auf amd64 ist das Image nicht nutzbar. Abbruch." >&2
+        exit 1
+      fi
+    else
+      echo "  ✓ llm-cascade-Source bereits vorhanden → kein erneuter Clone"
+    fi
+    CF="$CF -f docker-compose.amd64.yml"
   fi
+
+  # --- GPU-Lane (orthogonal): NVIDIA auf Linux layert gpu.yml. CPU = Warnung + weiterlaufen. ---
+  # Override-Escape-Hatch: SWITCHER_GPU=auto|nvidia|none. AMD/Intel sind YAGNI → expliziter Seam.
+  GPU_VENDOR="${SWITCHER_GPU:-auto}"
+  if [ "$GPU_VENDOR" = "auto" ]; then
+    if [ "$(uname -s)" = "Linux" ] && command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+      GPU_VENDOR="nvidia"
+    else
+      GPU_VENDOR="none"
+    fi
+  fi
+  case "$GPU_VENDOR" in
+    nvidia)
+      CF="$CF -f docker-compose.gpu.yml"
+      echo "  ▸ NVIDIA-GPU aktiv → GPU-Override (docker-compose.gpu.yml)" ;;
+    none)
+      echo "  ⚠ Keine NVIDIA-GPU → CPU-Modus (läuft weiter)" ;;
+    *)
+      echo "  ⚠ SWITCHER_GPU=$GPU_VENDOR nicht unterstützt (nur 'nvidia' vorgebaut) → CPU-Modus" ;;
+  esac
 
   echo "▸ Baue + starte Stack (ohne in-stack Ollama)"
   $DC $CF up -d --build 2>&1 | tail -5
