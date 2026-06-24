@@ -1,0 +1,6 @@
+# amd64 (x86_64): das veroeffentlichte llm-cascade-Image ist arm64-only.
+# Dieser Override baut llm-cascade stattdessen aus geklontem Source (./llm-cascade).
+# Layern:  docker compose -f docker-compose.yml -f docker-compose.amd64.yml up -d --build
+services:
+  llm-cascade:
+    build: ./llm-cascade
