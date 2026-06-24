@@ -7,12 +7,32 @@
 ## Ziel
 
 Eine einzige `setup.sh` / `setup.ps1` soll den Switcher **ohne Hand-Config auf
-mehreren Systemen sauber installierbar** machen — verbindlich getestet auf
-**Linux x86_64 + NVIDIA** und **macOS arm64** —, dabei die lokale Inferenz nach
+mehreren Systemen sauber installierbar** machen — **gleichrangig primär getestet auf
+Linux x86_64 + NVIDIA und auf macOS arm64** —, dabei die lokale Inferenz nach
 Möglichkeit **über die GPU** laufen lassen. Der heute vorhandene Detect-or-Provision
 für Ollama bleibt; ergänzt werden eine **CPU-Arch-Achse** (llm-cascade-Image ist
 arm64-only → x86_64 baut aus Source) und ein **Mac-GPU-Pfad** (native Metal-Ollama
 statt Container).
+
+**Verbindliche Ziel-Maschinen:** (1) Linux x86_64 + NVIDIA (diese Kiste RTX 4060,
+Kollegen mit ähnlichem Setup); (2) macOS arm64 — sowohl der aktuelle Mac als auch der
+geplante **Mac Studio M4 Max 64 GB** (B+-Upgrade-Stufe). Beide Macs liegen in *einer*
+Spur (arm64-`image:` + nativer Metal-Ollama-Adopt); der Studio braucht **keine**
+Install-Sonderbehandlung — sein 64-GB-Vorteil betrifft nur die Cascade-Modell-Größe
+(B+-Stufe), die separat und nur auf ausdrückliche Ansage umgestellt wird, **nicht**
+dieses Install-Design.
+
+### Zwei Ebenen (mentales Modell)
+
+- **Ebene 1 — Arch:** genau **eine** Spur pro Maschine, gegenseitig ausschließend,
+  automatisch über `uname`. amd64 (Linux/Windows x86_64) → `build:` aus Source;
+  arm64-Linux → `image:`; Mac (arm64 macOS) → `image:`.
+- **Ebene 2 — GPU: orthogonal obendrauf**, aber der *Mechanismus* ist
+  plattformabhängig. Linux + NVIDIA → `docker-compose.gpu.yml` (Container nutzt
+  NVIDIA); Mac → kein Container-GPU, sondern nativer Metal-Ollama + adopt; keine GPU →
+  CPU. Auf x86_64+NVIDIA feuern **beide Ebenen gleichzeitig** (amd64-Build *und*
+  GPU-Override) — sie stapeln, weil die GPU aus dem `gpu.yml`-Override kommt, nicht aus
+  dem Build.
 
 ## Ausgangslage (verifiziert, 2026-06-24)
 
@@ -50,6 +70,23 @@ Beispiele der resultierenden `-f`-Kette (`CF`):
 - Linux + NVIDIA + kein Host-Ollama: `-f docker-compose.yml -f docker-compose.amd64.yml -f docker-compose.gpu.yml`, dann provision.
 - Linux + NVIDIA + Host-Ollama: `-f docker-compose.yml -f docker-compose.amd64.yml`, dann adopt.
 - Mac + Host-Ollama: `-f docker-compose.yml` (Base, `image:`), dann adopt.
+
+### GPU-Vendor: NVIDIA-only jetzt, erweiterbare Naht
+
+„GPU" heißt hier konkret **NVIDIA** (`nvidia-smi` → `docker-compose.gpu.yml` mit
+`devices: nvidia`). Bewusste Scope-Grenze:
+
+- **NVIDIA** → GPU-Container. **Kein GPU / AMD / Intel auf Linux** → CPU-Fallback (Warnung).
+- **AMD (ROCm)** ist nicht enthalten — bräuchte einen eigenen `docker-compose.rocm.yml`
+  (`/dev/kfd`, `/dev/dri`). **Intel** ist nicht enthalten — Stock-`ollama/ollama` kann
+  Intel-GPU gar nicht, das bräuchte ein anderes Image (`ipex-llm`-Fork). Beide sind
+  YAGNI, solange keine solche Maschine real zu testen ist.
+- **Erweiterbare Naht:** Die GPU-Achse ist als „erkenne Vendor → wähle passenden
+  Override (oder CPU)" gebaut. AMD später dazunehmen = **eine** neue Override-Datei +
+  **ein** Detection-Zweig, ohne Redesign.
+- **Escape-Hatch:** optionale Env-Var `SWITCHER_GPU=cuda|cpu` (erweiterbar um `rocm`)
+  überschreibt die Auto-Erkennung — wer eine nicht-erkannte GPU erzwingen/abschalten
+  will, *kann* explizit angeben, **muss** im Normalfall aber nichts tun.
 
 ## Architektur-Entscheidung: Arch via Compose-Override
 
@@ -134,12 +171,25 @@ In-place-`sed`, kein dupliziertes Compose, der Base bleibt für Mac unverändert
   die Fälle Linux±GPU × adopt/provision und Mac × adopt/provision gegen Erwartung.
 - **Live x86_64 (manuell):** Frischlauf in Wegwerf-Ordner auf dieser Kiste →
   llm-cascade baut amd64, adopt greift, `*-local`-Test antwortet.
-- **Live Mac (manuell, Mac-Kollege):** mit nativem Ollama → adopt + GPU; ohne →
-  Install-Abfrage → nach „ja" GPU, nach „nein" CPU-Container.
+- **Live Mac (manuell, primärer Ziel-Test):** auf dem aktuellen Mac UND auf dem Mac
+  Studio M4 Max — mit nativem Ollama → adopt + Metal-GPU; ohne → Install-Abfrage → nach
+  „ja" GPU, nach „nein" CPU-Container.
+
+## Plattform-Status
+
+| Plattform | Status | GPU-Weg |
+|---|---|---|
+| **Linux x86_64 + NVIDIA** | primär (getestet) | `gpu.yml` (NVIDIA) |
+| **macOS arm64** (aktueller Mac + Mac Studio M4 Max) | primär (getestet) | nativer Metal-Ollama + adopt |
+| **Windows x86_64** | best-effort („wie Linux": amd64-Build, NVIDIA via WSL2 wenn erkannt, sonst CPU) | `gpu.yml` falls WSL2+NVIDIA, sonst CPU |
+| **arm64-Linux** | best-effort (`image:` + NVIDIA-Override falls vorhanden) | `gpu.yml` falls NVIDIA, sonst CPU |
 
 ## Nicht im Scope (separat)
 
 - **Multi-Arch-Image bei 4dataclub** (CI baut `:0.8.1` für arm64+amd64). Sobald es
   existiert, fällt der x86_64-Klon+Build-Zweig ersatzlos weg (`image:` überall). Bleibt
   als offener Upstream-Punkt; dieses Design ist die in-Repo-Brücke bis dahin.
-- **Windows-GPU** (NVIDIA via WSL2) jenseits des „wie Linux"-Defaults.
+- **AMD/ROCm- und Intel-GPU-Pfade** — erweiterbare Naht ist vorgesehen
+  (`docker-compose.rocm.yml` + Detection-Zweig bzw. `ipex-llm`-Image), aber nicht
+  ausgeliefert, bis es Test-Hardware gibt.
+- **Windows-GPU-Härtung** über den „wie Linux"-Default hinaus (echte WSL2+NVIDIA-Verifikation).
