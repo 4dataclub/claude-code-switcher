@@ -167,8 +167,22 @@ function Invoke-PullHost {
 
 $dockerOk = (Get-Command docker -ErrorAction SilentlyContinue) -ne $null
 if ($dockerOk) {
+    # Windows ist immer x86_64 → llm-cascade-Image (arm64-only) nicht nutzbar, also aus Source bauen.
+    $LlmCascadeRef  = if ($env:LLM_CASCADE_REF)  { $env:LLM_CASCADE_REF }  else { 'main' }
+    $LlmCascadeRepo = if ($env:LLM_CASCADE_REPO) { $env:LLM_CASCADE_REPO } else { 'https://github.com/4dataclub/llm-cascade.git' }
+    if (-not (Test-Path 'llm-cascade')) {
+        Write-Host "  ▸ amd64 (Windows) → klone llm-cascade ($LlmCascadeRef) für Source-Build" -ForegroundColor Cyan
+        & git clone --depth 1 --branch $LlmCascadeRef $LlmCascadeRepo llm-cascade
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "✗ git clone llm-cascade fehlgeschlagen — Image auf amd64 nicht nutzbar. Abbruch." -ForegroundColor Red
+            exit 1
+        }
+    } else {
+        Write-Host "  ✓ llm-cascade-Source bereits vorhanden → kein erneuter Clone" -ForegroundColor Green
+    }
+    $ComposeFiles = @('-f','docker-compose.yml','-f','docker-compose.amd64.yml')
     Write-Host "▸ Baue + starte Stack (ohne in-stack Ollama)" -ForegroundColor Cyan
-    & docker compose -f docker-compose.yml up -d --build 2>&1 | Select-Object -Last 5
+    & docker compose @ComposeFiles up -d --build 2>&1 | Select-Object -Last 5
 
     Write-Host "▸ Warte auf llm-cascade (:8091) …" -ForegroundColor Cyan
     for ($i = 0; $i -lt 60; $i++) {
@@ -185,7 +199,7 @@ if ($dockerOk) {
         }
     } else {
         Write-Host "▸ Kein Host-Ollama gefunden → starte in-stack Ollama (Profil local-llm)" -ForegroundColor Cyan
-        & docker compose -f docker-compose.yml --profile local-llm up -d 2>&1 | Select-Object -Last 3
+        & docker compose @ComposeFiles --profile local-llm up -d 2>&1 | Select-Object -Last 3
         Write-Host "  ▸ warte auf Ollama-Container …"
         for ($i = 0; $i -lt 30; $i++) {
             & docker exec $OllamaContainer ollama list *> $null

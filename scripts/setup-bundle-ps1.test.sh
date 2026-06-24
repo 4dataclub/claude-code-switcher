@@ -22,5 +22,10 @@ if grep -q 'gemma3:4b' setup.ps1; then no "ps1 noch gemma3:4b-Referenz"; else ok
 # Manifest: amd64-Override ist auch im ps1-Bundle.
 if grep -q '^docker-compose.amd64.yml$' setup.ps1; then ok "ps1 amd64-Override im Manifest"; else no "ps1 amd64-Override fehlt"; fi
 
+# Windows amd64: klont llm-cascade aus Source.
+if grep -q 'git clone --depth 1 --branch' setup.ps1; then ok "ps1 klont llm-cascade-Source"; else no "ps1-Clone fehlt"; fi
+# Windows amd64: layert den Build-Override.
+if grep -q 'docker-compose.amd64.yml' setup.ps1; then ok "ps1 layert amd64-Override"; else no "ps1-amd64-Override fehlt"; fi
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
