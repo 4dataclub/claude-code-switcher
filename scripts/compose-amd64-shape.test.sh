@@ -15,8 +15,10 @@ CFG="$(docker compose -f docker-compose.yml -f docker-compose.amd64.yml config 2
 if [ -n "$CFG" ]; then ok "amd64-Override rendert"; else no "compose config leer/fehlerhaft"; fi
 # 2. llm-cascade baut aus ./llm-cascade (Build-Kontext gesetzt).
 if printf '%s' "$CFG" | grep -qE 'context:.*/llm-cascade'; then ok "llm-cascade build.context gesetzt"; else no "build.context fehlt"; fi
-# 3. Override fasst NUR llm-cascade an (kein ollama/postgres-Build).
-if printf '%s' "$CFG" | grep -A30 'ollama:' | grep -q 'build:'; then no "ollama faelschlich mit build:"; else ok "ollama unveraendert (kein build:)"; fi
+# 3. Override fasst NUR llm-cascade an (keinen anderen Service).
+#    Geprueft an der Override-Datei selbst: jeder 2-Space-Service-Key ausser llm-cascade waere ein Fehler.
+OTHER=$(grep -E '^  [a-z][a-z0-9_-]*:' docker-compose.amd64.yml | grep -v 'llm-cascade:' || true)
+if [ -z "$OTHER" ]; then ok "Override betrifft nur llm-cascade"; else no "Override fasst weitere Services an: $OTHER"; fi
 
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
