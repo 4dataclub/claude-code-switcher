@@ -30,6 +30,9 @@ CLAUDE_TPL="$SCRIPT_DIR/templates/CLAUDE.md.tpl"
 build_manifest() {
   # Root-Files
   echo "docker-compose.yml"
+  # Setup-Hilfsbibliothek (vom Header nach dem Entpacken gesourct).
+  # Nur die Lib, NICHT das .test.sh-File.
+  echo "scripts/lib/ollama-provision.sh"
   # java-backend recursive
   if [[ -d "$ROOT/java-backend" ]]; then
     (cd "$ROOT" && find java-backend -type f \

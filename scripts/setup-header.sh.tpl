@@ -109,11 +109,43 @@ PYEOF
 fi
 
 if command -v docker >/dev/null 2>&1; then
-  echo "▸ Baue + starte Docker-Container"
-  if docker compose version >/dev/null 2>&1; then
-    docker compose up -d --build 2>&1 | tail -5
-  elif command -v docker-compose >/dev/null 2>&1; then
-    docker-compose up -d --build 2>&1 | tail -5
+  DC="docker compose"
+  docker compose version >/dev/null 2>&1 || { command -v docker-compose >/dev/null 2>&1 && DC="docker-compose"; }
+
+  # GPU-Override nur auf Linux mit funktionierender NVIDIA-GPU.
+  CF="-f docker-compose.yml"
+  if [ "$(uname -s)" = "Linux" ] && command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+    CF="$CF -f docker-compose.gpu.yml"
+    echo "  ▸ NVIDIA-GPU erkannt → GPU-Override aktiv"
+  fi
+
+  echo "▸ Baue + starte Stack (ohne in-stack Ollama)"
+  $DC $CF up -d --build 2>&1 | tail -5
+
+  if [ -f "$(pwd)/scripts/lib/ollama-provision.sh" ]; then
+    . "$(pwd)/scripts/lib/ollama-provision.sh"
+
+    echo "▸ Warte auf llm-cascade (:8091) …"
+    for _ in $(seq 1 60); do
+      curl -fsS --max-time 2 "${OP_CASCADE_URL}/api/health" >/dev/null 2>&1 && break
+      sleep 2
+    done
+
+    MODE=$(op_detect_mode)
+    if [ "$MODE" = provision ]; then
+      echo "▸ Kein Host-Ollama gefunden → starte in-stack Ollama (Profil local-llm)"
+      $DC $CF --profile local-llm up -d 2>&1 | tail -3
+      echo "  ▸ warte auf Ollama-Container …"
+      for _ in $(seq 1 30); do
+        docker exec "$OP_OLLAMA_CONTAINER" ollama list >/dev/null 2>&1 && break
+        sleep 2
+      done
+    else
+      echo "▸ Host-Ollama gefunden → adoptiere (kein eigener Container)"
+    fi
+    op_apply "$MODE"
+  else
+    echo "  ⚠ scripts/lib/ollama-provision.sh fehlt — überspringe Ollama-Setup"
   fi
 else
   echo "  ⚠ docker nicht installiert"
