@@ -40,5 +40,42 @@ check "detect_mode: kein Host-Ollama -> provision"  t_detect_provision
 check "model_ids: distinct ollama, sortiert"        t_model_ids_parse
 check "model_ids: Fallback-Defaults wenn cascade down" t_model_ids_fallback
 
+t_apply_adopt() {
+  CALLS=""
+  op_model_ids()          { printf 'qwen2.5:7b\nllama3.2:3b\n'; }
+  op_set_default_server() { CALLS="$CALLS set:$1;"; }
+  op_host_has_model()     { return 1; }            # keins vorhanden -> alle pullen
+  op_pull_host()          { CALLS="$CALLS host:$1;"; }
+  op_pull_instack()       { CALLS="$CALLS stack:$1;"; }
+  op_apply adopt >/dev/null
+  expect_eq "$CALLS" " set:http://host.docker.internal:11434/v1; host:qwen2.5:7b; host:llama3.2:3b;"
+}
+t_apply_adopt_skips_present() {
+  CALLS=""
+  op_model_ids()          { printf 'qwen2.5:7b\nllama3.2:3b\n'; }
+  op_set_default_server() { CALLS="$CALLS set:$1;"; }
+  op_host_has_model()     { [ "$1" = "qwen2.5:7b" ]; }   # qwen da, llama nicht
+  op_pull_host()          { CALLS="$CALLS host:$1;"; }
+  op_apply adopt >/dev/null
+  expect_eq "$CALLS" " set:http://host.docker.internal:11434/v1; host:llama3.2:3b;"
+}
+t_apply_provision() {
+  CALLS=""
+  op_model_ids()          { printf 'qwen2.5:7b\nllama3.2:3b\n'; }
+  op_set_default_server() { CALLS="$CALLS set:$1;"; }
+  op_pull_instack()       { CALLS="$CALLS stack:$1;"; }
+  op_apply provision >/dev/null
+  expect_eq "$CALLS" " set:http://ollama:11434/v1; stack:qwen2.5:7b; stack:llama3.2:3b;"
+}
+t_apply_bad_mode() {
+  op_model_ids() { printf 'x\n'; }
+  ! op_apply bogus 2>/dev/null      # Exit != 0 erwartet
+}
+
+check "apply adopt: Host-Server + pullt fehlende auf Host" t_apply_adopt
+check "apply adopt: überspringt vorhandene Modelle"        t_apply_adopt_skips_present
+check "apply provision: in-stack-Server + pullt im Container" t_apply_provision
+check "apply: unbekannter Modus -> Fehler"                 t_apply_bad_mode
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
