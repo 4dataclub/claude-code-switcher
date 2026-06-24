@@ -19,6 +19,8 @@ if grep -q 'profile local-llm' setup.ps1; then ok "ps1 Provision via --profile l
 if grep -q '/api/provider-servers/localhost' setup.ps1; then ok "ps1 PUT provider-servers/localhost"; else no "ps1 PUT fehlt"; fi
 # 5. Kein gemma3:4b-Rest mehr.
 if grep -q 'gemma3:4b' setup.ps1; then no "ps1 noch gemma3:4b-Referenz"; else ok "ps1 kein gemma3:4b"; fi
+# Manifest: amd64-Override ist auch im ps1-Bundle.
+if grep -q '^docker-compose.amd64.yml$' setup.ps1; then ok "ps1 amd64-Override im Manifest"; else no "ps1 amd64-Override fehlt"; fi
 
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

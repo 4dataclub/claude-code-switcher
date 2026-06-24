@@ -21,6 +21,8 @@ if grep -q 'scripts/lib/ollama-provision.sh' setup.sh && grep -q 'op_apply' setu
 else no "Header-Verdrahtung fehlt"; fi
 # 5. Provision-Pfad nutzt das Profil.
 if grep -q 'profile local-llm' setup.sh; then ok "Provision nutzt --profile local-llm"; else no "Profil-Aufruf fehlt"; fi
+# Manifest/Payload: amd64-Override ist mitgebundelt.
+if grep -q '^docker-compose.amd64.yml$' setup.sh; then ok "amd64-Override im Manifest"; else no "amd64-Override fehlt im Bundle"; fi
 
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

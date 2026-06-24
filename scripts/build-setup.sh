@@ -30,6 +30,7 @@ CLAUDE_TPL="$SCRIPT_DIR/templates/CLAUDE.md.tpl"
 build_manifest() {
   # Root-Files
   echo "docker-compose.yml"
+  echo "docker-compose.amd64.yml"
   # Setup-Hilfsbibliothek (vom Header nach dem Entpacken gesourct).
   # Nur die Lib, NICHT das .test.sh-File.
   echo "scripts/lib/ollama-provision.sh"
