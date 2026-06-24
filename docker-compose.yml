@@ -105,6 +105,8 @@ services:
       # gesetzt — der Cascade wird dann beim Test des Modells einen sauberen
       # "Ollama unreachable"-Fehler bringen statt zu crashen.
       OLLAMA_BASE_URL: http://ollama:11434/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - db
     restart: unless-stopped
@@ -120,27 +122,17 @@ services:
       - switcher_pgdata:/var/lib/postgresql/data
     restart: unless-stopped
 
-  # ─── Lokales Ollama (immer an, damit der „localhost"-Default sofort lebt) ──
-  # Früher hinter `profiles: ["local-llm"]` — jetzt default-an, damit der
-  # geseedete localhost-Inferenz-Server ohne Extra-Flag funktioniert. Beim ersten
-  # Start zieht es einmalig ~3.3 GB gemma3:4b ins Volume.
-  #
-  # GPU: Docker-on-Mac kann die Apple-GPU NICHT durchreichen (immer CPU). Auf
-  # einem Linux-Host MIT GPU die Override dazunehmen:
-  #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
-  # Für GPU vom Mac aus: einen externen GPU-Server eintragen — das Routing
-  # bevorzugt ihn automatisch für zugewiesene Modelle.
+  # Nur aktiv im Provision-Pfad (Setup startet via `--profile local-llm`, wenn
+  # KEIN Host-Ollama gefunden wird). Modelle werden vom Setup nachgezogen
+  # (scripts/lib/ollama-provision.sh), nicht hier hartkodiert. Default-CMD des
+  # Images = `ollama serve`.
   ollama:
     image: ollama/ollama:latest
     container_name: claude-switcher-ollama-1
+    profiles: ["local-llm"]
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
-    # Beim Start: gemma3:4b pullen (idempotent, springt nur an wenn nicht
-    # schon im Volume). Wer ein anderes Modell will: `docker exec
-    # claude-switcher-ollama-1 ollama pull <model>` oder über das Switcher-UI
-    # die Modell-ID in der ai_model_config-Tabelle aendern.
-    entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull gemma3:4b; wait"]
 
 volumes:
   switcher_pgdata:
