@@ -173,7 +173,7 @@ if command -v docker >/dev/null 2>&1; then
         printf "  ? Ollama nicht installiert. Für GPU (Metal) per Homebrew installieren? [y/N] "
         read -r ans
         case "$ans" in
-          y|Y) brew install ollama && ollama serve >/dev/null 2>&1 & ;;
+          y|Y) if brew install ollama; then ollama serve >/dev/null 2>&1 & fi ;;
           *)   echo "  ⚠ übersprungen → CPU-Container-Fallback" ;;
         esac
       fi
