@@ -164,6 +164,27 @@ if command -v docker >/dev/null 2>&1; then
     done
 
     MODE=$(op_detect_mode)
+    if [ "$MODE" = provision ] && [ "$(uname -s)" = "Darwin" ]; then
+      # macOS: GPU (Metal) ist aus Containern nicht erreichbar → natives Ollama bevorzugen.
+      if command -v ollama >/dev/null 2>&1; then
+        echo "▸ macOS: starte natives Ollama (Metal-GPU) statt CPU-Container"
+        ollama serve >/dev/null 2>&1 &
+      elif [ -t 0 ] && command -v brew >/dev/null 2>&1; then
+        printf "  ? Ollama nicht installiert. Für GPU (Metal) per Homebrew installieren? [y/N] "
+        read -r ans
+        case "$ans" in
+          y|Y) brew install ollama && ollama serve >/dev/null 2>&1 & ;;
+          *)   echo "  ⚠ übersprungen → CPU-Container-Fallback" ;;
+        esac
+      fi
+      if command -v ollama >/dev/null 2>&1; then
+        echo "  ▸ warte auf natives Ollama (:11434) …"
+        for _ in $(seq 1 30); do
+          curl -fsS --max-time 2 "${OP_HOST_PROBE_URL}/api/tags" >/dev/null 2>&1 && { MODE=adopt; break; }
+          sleep 1
+        done
+      fi
+    fi
     if [ "$MODE" = provision ]; then
       echo "▸ Kein Host-Ollama gefunden → starte in-stack Ollama (Profil local-llm)"
       $DC $CF --profile local-llm up -d 2>&1 | tail -3

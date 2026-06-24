@@ -35,5 +35,10 @@ if grep -q 'SWITCHER_GPU' setup.sh; then ok "GPU-Override SWITCHER_GPU"; else no
 # GPU-Seam: dokumentierter Unsupported-Vendor-Zweig (AMD/Intel YAGNI).
 if grep -q 'nicht unterstützt' setup.sh; then ok "GPU unsupported-vendor Seam"; else no "GPU-Vendor-Seam fehlt"; fi
 
+# Mac-GPU: provision bevorzugt natives Metal-Ollama vor CPU-Container.
+if grep -q 'macOS.*natives Ollama' setup.sh; then ok "Mac startet natives Ollama (Metal)"; else no "Mac-Metal-Block fehlt"; fi
+# Mac-GPU: TTY-geschuetzte brew-Abfrage (Linux/CI blockt nie).
+if grep -q 'brew install ollama' setup.sh && grep -q '\[ -t 0 \]' setup.sh; then ok "Mac brew-Prompt TTY-guarded"; else no "Mac brew-Prompt/TTY-Guard fehlt"; fi
+
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
