@@ -29,11 +29,19 @@ If that fails, read `~/.claude/settings.json` → `_switcher.pool` (default `clo
 
 Cascade call (implement / review / dispatch / research-local):
 ```bash
-curl -sS --max-time 180 -X POST http://localhost:8091/api/generate \
+CAT="$KIND-$POOL"
+RESP=$(curl -sS --max-time 180 -X POST http://localhost:8091/api/generate \
   -H 'Content-Type: application/json' \
-  -d '{"category":"'"$KIND-$POOL"'","service":"claude-supermodel","prompt":"<FULL self-contained task: file paths, signatures, constraints, relevant code pasted inline>"}'
+  -d '{"category":"'"$CAT"'","service":"claude-supermodel","prompt":"<FULL self-contained task: file paths, signatures, constraints, relevant code pasted inline>"}')
+# Audit-Zeile für den Delegations-Watcher — UNABHÄNGIGER Beleg, welche Cascade real lief.
+# Bricht die Delegation NIE ab (|| true); kein Task-Inhalt wird geloggt, nur Routing-Metadaten.
+MODEL=$(printf '%s' "$RESP" | grep -o '"model":"[^"]*"' | head -1 | cut -d'"' -f4)
+LAT=$(printf '%s'   "$RESP" | grep -o '"latencyMs":[0-9]*' | head -1 | cut -d: -f2)
+printf '%s' "$RESP" | grep -q '"text"' && OK=ok || OK=fail
+printf '%s\t%s\t%s\t%s\t%s\n' "$(date -Iseconds)" "$CAT" "${MODEL:-?}" "$OK" "${LAT:-?}" \
+  >> "${SWITCHER_DELEGATION_LOG:-$HOME/.claude/supermodel-delegations.log}" 2>/dev/null || true
 ```
-Response JSON: `{"text":"...","model":"...","latencyMs":...}` → use `.text`.
+Response JSON: `{"text":"...","model":"...","latencyMs":...}` → use `.text` from `$RESP`.
 
 ## Rules
 
