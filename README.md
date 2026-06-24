@@ -175,6 +175,23 @@ Gesteuert über zwei Achsen: **welcher Pool** (Cloud = beste Qualität · Free =
 
 **Wann lohnt sich das?** Je öfter du an Antons „Pause!" knallst, je mehr stumpfe Fleißarbeit du hast, je wichtiger dir Lokal/Privatsphäre ist. Knallst du nie ans Limit und brauchst kein Lokal → bleib beim einfachen Failover oben; dann ist Supermodell Overkill.
 
+### Eine Frage, drei Türen — und warum Switcher alle drei hat
+
+Unter der Haube läuft alles über **eine** Maschine (`llm-cascade`): jede Anfrage muss in genau **ein** Fach — *„welcher Spezialist macht das?"*. Es gibt drei Türen zur Antwort, mit fester Präzedenz:
+
+```
+ ① Der CHEF labelt explizit   → der Orchestrator hat den Job zerlegt und
+   (category im Body)            weiß "das ist ein review"        → SUPERMODELL
+   │   schlägt …
+ ② DU legst den Hebel um      → "alles nach Cloud / nach Lokal"
+   (preferredCategory)                              → Pool-Toggle in der UI
+   │   schlägt …
+ ③ Der SCANNER rät            → liest den Inhalt: "das ist eine Übersetzung"
+   (Semantic Router)                                → wie EduPro es macht
+```
+
+Der Switcher nutzt dieselbe Maschine wie die Schwester-Plattform **EduPro** — und hat damit **alle drei Türen**. EduPro lebt auf ③ (Inhalt raten, 1 Achse: Content/Dev/Utility/General); der Switcher-Supermodell-Modus dreht das um und nutzt ① (der Chef weiß die Rolle vorher, 2 Achsen: Rolle × Pool). Ohne Agent und ohne Hebel würde auch der Switcher einfach semantisch raten. Ganzes Bild mit Diagrammen + Vergleichstabelle: **[SUPERMODELL.md](SUPERMODELL.md#supermodell-vs-edupros-semantisches-routing--gleiche-maschine-andere-tür)**.
+
 ---
 
 ## Quick Start
