@@ -72,7 +72,7 @@ normales Pool-Routing.
 | **orchestrator** *(Hirn, gepinnt)* | Opus 4.8 → Sonnet 4.6 | *(leer — editierbar)* | qwen2.5:14b (aus bis Ollama) |
 | **implement** | DeepSeek V3.1 + Gemini Flash | Qwen3-Coder + Qwen3-Next 80B | qwen2.5-coder:7b |
 | **review** | GPT-4o-mini | GPT-OSS 120B | qwen2.5:7b |
-| **research** | Gemini Pro (OR + nativ) | *(Gemini-MCP)* | *— Web=Cloud* |
+| **research** | Gemini Pro (OR + nativ) | *(Gemini-MCP)* | qwen2.5:7b — intern/offline, nichts raus |
 | **dispatch** | Gemini Flash-Lite | Llama 3.3 + GPT-OSS 20B | gemma3:4b |
 
 Jede Zelle ist eine **Failover-Kette** (mehrere Modelle, Cooldown). Fällt eins aus, rückt
@@ -133,8 +133,11 @@ das nächste nach — der Plan läuft weiter. Modelle/Reihenfolge jederzeit in d
 ```
 
 **Daraus folgt:** Rollen + Pools sind `Kategorien = Daten` (voll CRUD-bar) — änderst du eine
-Beschreibung oder ein Modell, folgt das Routing, **kein Code-Eingriff**. `research` verlässt die
-Cascade (Gemini-MCP/Grounding; im Local-Pool verweigert = Web=Cloud, fail-closed). Delegation-Fehler:
+Beschreibung oder ein Modell, folgt das Routing, **kein Code-Eingriff**. `research`: cloud/free
+verlässt die Cascade (Gemini-MCP/Grounding); **local** routet auf das lokale Modell
+(`research-local`, Doc-Analyse/Reasoning) und darf lokale Docs + interne/VPN-erreichbare
+Ressourcen nutzen — **nichts verlässt das interne Netz**, kein öffentliches Web/Cloud; reine
+Public-Web-Recherche verweigert der Agent (fail-closed). Delegation-Fehler:
 **cloud/free = fail-open** (Opus macht's selbst), **local = fail-closed** (Stopp, nie Cloud).
 
 ## Ohne Supermodell — der klassische Lauf (Gegenstück)
@@ -184,11 +187,17 @@ sequenziell, ein Modell macht alles). **Mit** Supermodell werden dieselben Berei
 
 ## 🔒 Lokal = fail-closed (die wichtigste Garantie)
 
-Im **Local-Pool** verlässt **nichts** automatisch den Rechner — auch nicht „um die Funktion
-am Leben zu halten". **Lieber STOPP als Leak.**
+Im **Local-Pool** verlässt **nichts** automatisch das **interne Netz** — auch nicht „um die
+Funktion am Leben zu halten". **Lieber STOPP als Leak.** Die fail-closed-Grenze ist das
+**interne Netz-Perimeter**, nicht „die Maschine": der Pool ist **offline-fähig** (läuft ohne
+Internet, sobald die Modelle gezogen sind), **Intranet/VPN-erreichbare Ressourcen sind ok**,
+aber **nichts geht ins öffentliche Web / in die Cloud / zu einem Cloud-LLM**.
 
 - Der **Orchestrator selbst ist lokal** (NICHT Opus — Opus = Anthropic = Cloud würde die
   Planung rausgeben). Das Backend pinnt im Local-Pool **niemals** Opus/Anthropic.
+- **`research-local` ist legitim:** ein lokales Modell darf lokale Docs + interne/VPN-erreichbare
+  Ressourcen verarbeiten. Verweigert wird nur, was **zwingend das öffentliche Web** braucht
+  (`Public-Web-Research nicht im Local-Pool`). Reine Public-Web-Recherche = fail-closed.
 - Solange kein lokales Modell aktiv ist → `localOrchestratorPending` (Warnung im UI), aber
   **kein Cloud-Ausweich**.
 - Der `@supermodel`-Agent delegiert im Local-Pool nur an `{rolle}-local`; schlägt das fehl,

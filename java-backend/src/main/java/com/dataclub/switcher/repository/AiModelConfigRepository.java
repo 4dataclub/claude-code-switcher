@@ -16,4 +16,9 @@ public interface AiModelConfigRepository extends JpaRepository<AiModelConfig, Lo
 
     /** Dedup-Check beim Seed: gleicher Provider + Modell-ID = bereits vorhanden. */
     Optional<AiModelConfig> findFirstByProviderAndModelId(String provider, String modelId);
+
+    /** Kategorie-bewusster Dedup-Check beim Matrix-Seed: dasselbe Modell darf in
+     *  mehreren Compound-Kategorien stehen (z.B. {@code qwen2.5:7b} als review-local
+     *  UND research-local) — Dedup nur auf der vollen Zelle (Provider+Modell+Kategorie). */
+    Optional<AiModelConfig> findFirstByProviderAndModelIdAndCategory(String provider, String modelId, String category);
 }
