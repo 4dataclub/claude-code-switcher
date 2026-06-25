@@ -12,9 +12,11 @@ set -euo pipefail
 
 TARGET="claude-switcher"
 WITH_USER_CONFIG=1
+WITH_SUPERMODEL=0
 for arg in "$@"; do
   case "$arg" in
     --no-user-config) WITH_USER_CONFIG=0 ;;
+    --with-supermodel) WITH_SUPERMODEL=1 ;;
     --*) echo "Unbekannte Option: $arg" >&2; exit 1 ;;
     *)   TARGET="$arg" ;;
   esac
@@ -108,6 +110,71 @@ else:
 PYEOF
 fi
 
+# ── Opt-in: Supermodell-Delegation (@supermodel-Agent + Policy + SessionStart-Hook) ──
+# Standardmäßig AUS — nur mit --with-supermodel. Macht aus dem reinen Failover-Switcher
+# das volle Supermodell-Setup (Opus delegiert Fleißarbeit an die llm-cascade).
+if (( WITH_SUPERMODEL )); then
+  CLAUDE_DIR="${HOME}/.claude"
+  mkdir -p "$CLAUDE_DIR/agents" "$CLAUDE_DIR/hooks"
+
+  echo "▸ Supermodell: Agent → $CLAUDE_DIR/agents/supermodel.md"
+  cp agents/supermodel.md "$CLAUDE_DIR/agents/supermodel.md"
+
+  echo "▸ Supermodell: SessionStart-Hook → $CLAUDE_DIR/hooks/supermodel-sessionstart.sh"
+  cp wrapper/supermodel-sessionstart.sh "$CLAUDE_DIR/hooks/supermodel-sessionstart.sh"
+  chmod +x "$CLAUDE_DIR/hooks/supermodel-sessionstart.sh"
+
+  CLAUDE_MD="$CLAUDE_DIR/CLAUDE.md"
+  SM_BEG="<!-- BEGIN claude-switcher-supermodel -->"
+  SM_END="<!-- END claude-switcher-supermodel -->"
+  TMP_SM=$(mktemp)
+  awk -v m="__BEGIN_supermodel_policy__" -v e="__END_supermodel_policy__" '
+    $0==m{c=1;next} $0==e{exit} c
+  ' "$SCRIPT" | base64 --decode > "$TMP_SM"
+  echo "▸ Supermodell: Policy → $CLAUDE_MD"
+  if [[ -f "$CLAUDE_MD" ]] && grep -qF "$SM_BEG" "$CLAUDE_MD"; then
+    python3 - "$CLAUDE_MD" "$TMP_SM" "$SM_BEG" "$SM_END" <<'PYEOF'
+import sys, re
+md_path, block_path, beg, end = sys.argv[1:5]
+with open(md_path) as f: md = f.read()
+with open(block_path) as f: block = f.read().rstrip() + "\n"
+new_block = f"{beg}\n{block}{end}\n"
+md = re.sub(re.escape(beg) + r".*?" + re.escape(end) + r"\n?", new_block, md, flags=re.DOTALL)
+with open(md_path, "w") as f: f.write(md)
+PYEOF
+    echo "  ✓ Supermodell-Policy aktualisiert"
+  else
+    {
+      [[ -f "$CLAUDE_MD" ]] && cat "$CLAUDE_MD" && echo
+      echo "$SM_BEG"; cat "$TMP_SM"; echo "$SM_END"
+    } > "$CLAUDE_MD.tmp" && mv "$CLAUDE_MD.tmp" "$CLAUDE_MD"
+    echo "  ✓ Supermodell-Policy angefügt"
+  fi
+  rm -f "$TMP_SM"
+
+  echo "▸ Supermodell: Registriere SessionStart-Hook in $CLAUDE_DIR/settings.json"
+  python3 - "$CLAUDE_DIR/settings.json" "$CLAUDE_DIR/hooks/supermodel-sessionstart.sh" <<'PYEOF'
+import json, sys
+from pathlib import Path
+sp, hp = Path(sys.argv[1]), sys.argv[2]
+data = {}
+if sp.exists():
+    try: data = json.loads(sp.read_text())
+    except: data = {}
+data.setdefault("hooks", {})
+existing = data["hooks"].get("SessionStart", [])
+if not any(any(h.get("command","").endswith("supermodel-sessionstart.sh") for h in e.get("hooks",[])) for e in existing):
+    existing.append({"hooks":[{"type":"command","command":hp,"shell":"bash"}]})
+    data["hooks"]["SessionStart"] = existing
+    sp.parent.mkdir(parents=True, exist_ok=True)
+    sp.write_text(json.dumps(data, indent=2))
+    print("  ✓ SessionStart-Hook registriert")
+else:
+    print("  ✓ SessionStart-Hook war schon registriert")
+PYEOF
+  echo "  ✓ Supermodell-Modus installiert — im UI (http://localhost:2000) einschalten + günstige Keys (OpenRouter/Gemini) eintragen."
+fi
+
 if command -v docker >/dev/null 2>&1; then
   echo "▸ Baue + starte Docker-Container"
   if docker compose version >/dev/null 2>&1; then
@@ -117,6 +184,24 @@ if command -v docker >/dev/null 2>&1; then
   fi
 else
   echo "  ⚠ docker nicht installiert"
+fi
+
+# ── Supermodell scharf stellen (nach Docker-Start): Cloud-Pool + Supermodell an ──
+# Opus (Abo) bleibt Orchestrator; Failover (Opus-Limit → Gemini) greift im Terminal.
+if (( WITH_SUPERMODEL )) && command -v curl >/dev/null 2>&1; then
+  echo "▸ Supermodell: warte aufs Backend + stelle Modus scharf (Cloud + Supermodell an)"
+  for _i in $(seq 1 30); do
+    if curl -sf --max-time 2 http://localhost:2000/api/supermodel >/dev/null 2>&1; then
+      if curl -sS --max-time 5 -X POST http://localhost:2000/api/mode \
+           -H 'Content-Type: application/json' -d '{"pool":"cloud","supermodel":true}' >/dev/null 2>&1; then
+        echo "  ✓ Supermodell=AN · Pool=Cloud · Failover aktiv · Opus bleibt Orchestrator"
+      else
+        echo "  ⚠ Auto-Scharfstellen fehlgeschlagen — im UI (http://localhost:2000) Supermodell manuell aktivieren"
+      fi
+      break
+    fi
+    sleep 2
+  done
 fi
 
 # Wrapper-Alias automatisch installieren (Bash/Zsh)

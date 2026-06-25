@@ -10,7 +10,8 @@
 [CmdletBinding()]
 param(
     [string]$Target = 'claude-switcher',
-    [switch]$NoUserConfig
+    [switch]$NoUserConfig,
+    [switch]$WithSupermodel
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,9 +28,10 @@ Push-Location $Target
 function Path-To-Marker { param([string]$P) ($P -replace '[/.\-\\]', '_') }
 
 function Extract-Block {
-    param([string]$Path)
-    $marker = Path-To-Marker $Path
-    $unixPath = $Path -replace '\\', '/'
+    param([string]$Path, [string]$BlockMarker = '')
+    # Marker explizit (z.B. 'claude_md', 'supermodel_policy') ODER aus dem Pfad ableiten.
+    # (Vorher: 2. Arg wurde ignoriert → claude_md/Policy extrahierten leer auf Windows.)
+    $marker = if ($BlockMarker) { $BlockMarker } else { Path-To-Marker $Path }
     $dir = Split-Path $Path -Parent
     if ($dir -and -not (Test-Path $dir)) { New-Item -Path $dir -ItemType Directory -Force | Out-Null }
     $beg = "__BEGIN_${marker}__"
@@ -123,6 +125,75 @@ if (-not $NoUserConfig) {
     }
 }
 
+# ── Opt-in: Supermodell-Delegation (@supermodel-Agent + Policy + SessionStart-Hook) ──
+# Standardmäßig AUS — nur mit -WithSupermodel. Pendant zum Bash-Block.
+if ($WithSupermodel) {
+    $ClaudeDir = Join-Path $HOME '.claude'
+    $AgentsDir = Join-Path $ClaudeDir 'agents'
+    $HooksDir  = Join-Path $ClaudeDir 'hooks'
+    New-Item -Path $AgentsDir -ItemType Directory -Force | Out-Null
+    New-Item -Path $HooksDir  -ItemType Directory -Force | Out-Null
+
+    $AgentDest = Join-Path $AgentsDir 'supermodel.md'
+    Copy-Item 'agents\supermodel.md' $AgentDest -Force
+    Write-Host "▸ Supermodell: Agent -> $AgentDest" -ForegroundColor Cyan
+
+    $SmHookDest = Join-Path $HooksDir 'supermodel-sessionstart.ps1'
+    Copy-Item 'wrapper\supermodel-sessionstart.ps1' $SmHookDest -Force
+    Write-Host "▸ Supermodell: SessionStart-Hook -> $SmHookDest" -ForegroundColor Cyan
+
+    $ClaudeMd = Join-Path $ClaudeDir 'CLAUDE.md'
+    $smBeg = '<!-- BEGIN claude-switcher-supermodel -->'
+    $smEnd = '<!-- END claude-switcher-supermodel -->'
+    $tmpSm = New-TemporaryFile
+    Extract-Block $tmpSm.FullName 'supermodel_policy'
+    $smContent = [System.IO.File]::ReadAllText($tmpSm.FullName).TrimEnd() + "`n"
+    Write-Host "▸ Supermodell: Policy -> $ClaudeMd" -ForegroundColor Cyan
+    if ((Test-Path $ClaudeMd) -and ((Get-Content $ClaudeMd -Raw) -match [regex]::Escape($smBeg))) {
+        $existing = Get-Content $ClaudeMd -Raw
+        $newBlock = "$smBeg`n$smContent$smEnd`n"
+        $pattern  = [regex]::Escape($smBeg) + '.*?' + [regex]::Escape($smEnd) + "(`n)?"
+        $updated  = [regex]::Replace($existing, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $newBlock }, 'Singleline')
+        Set-Content -Path $ClaudeMd -Value $updated -NoNewline
+        Write-Host "  ✓ Supermodell-Policy aktualisiert" -ForegroundColor Green
+    } else {
+        $head = ''
+        if (Test-Path $ClaudeMd) { $head = (Get-Content $ClaudeMd -Raw) + "`n" }
+        $full = "$head$smBeg`n$smContent$smEnd`n"
+        Set-Content -Path $ClaudeMd -Value $full -NoNewline
+        Write-Host "  ✓ Supermodell-Policy angefügt" -ForegroundColor Green
+    }
+    Remove-Item $tmpSm -Force
+
+    $Settings = Join-Path $ClaudeDir 'settings.json'
+    Write-Host "▸ Supermodell: Registriere SessionStart-Hook in $Settings" -ForegroundColor Cyan
+    $data = @{}
+    if (Test-Path $Settings) {
+        try { $data = Get-Content $Settings -Raw | ConvertFrom-Json -AsHashtable } catch { $data = @{} }
+    }
+    if (-not $data.ContainsKey('hooks')) { $data['hooks'] = @{} }
+    if (-not $data['hooks'].ContainsKey('SessionStart')) { $data['hooks']['SessionStart'] = @() }
+    $already = $false
+    foreach ($entry in $data['hooks']['SessionStart']) {
+        foreach ($h in $entry.hooks) {
+            if ($h.command -and $h.command -like '*supermodel-sessionstart.ps1*') { $already = $true; break }
+        }
+    }
+    if (-not $already) {
+        $data['hooks']['SessionStart'] += @{
+            hooks = @(@{
+                type    = 'command'
+                command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$SmHookDest`""
+            })
+        }
+        ($data | ConvertTo-Json -Depth 10) | Set-Content -Path $Settings -NoNewline
+        Write-Host "  ✓ SessionStart-Hook registriert" -ForegroundColor Green
+    } else {
+        Write-Host "  ✓ SessionStart-Hook war schon registriert" -ForegroundColor Green
+    }
+    Write-Host "  ✓ Supermodell-Modus installiert — im UI (http://localhost:2000) einschalten + Keys (OpenRouter/Gemini) eintragen." -ForegroundColor Green
+}
+
 # Docker
 $dockerOk = (Get-Command docker -ErrorAction SilentlyContinue) -ne $null
 if ($dockerOk) {
@@ -130,6 +201,22 @@ if ($dockerOk) {
     & docker compose up -d --build 2>&1 | Select-Object -Last 5
 } else {
     Write-Host "  ⚠ docker nicht installiert (Docker Desktop für Windows benötigt)" -ForegroundColor Yellow
+}
+
+# ── Supermodell scharf stellen (nach Docker-Start): Cloud-Pool + Supermodell an ──
+# Opus (Abo) bleibt Orchestrator; Failover (Opus-Limit -> Gemini) greift im Terminal.
+if ($WithSupermodel) {
+    Write-Host "▸ Supermodell: warte aufs Backend + stelle Modus scharf (Cloud + Supermodell an)" -ForegroundColor Cyan
+    for ($i = 0; $i -lt 30; $i++) {
+        try {
+            Invoke-RestMethod -Uri 'http://localhost:2000/api/supermodel' -TimeoutSec 2 -ErrorAction Stop | Out-Null
+            try {
+                Invoke-RestMethod -Uri 'http://localhost:2000/api/mode' -Method POST -ContentType 'application/json' -Body '{"pool":"cloud","supermodel":true}' -TimeoutSec 5 -ErrorAction Stop | Out-Null
+                Write-Host "  ✓ Supermodell=AN · Pool=Cloud · Failover aktiv · Opus bleibt Orchestrator" -ForegroundColor Green
+            } catch { Write-Host "  ⚠ Auto-Scharfstellen fehlgeschlagen — im UI (http://localhost:2000) manuell aktivieren" -ForegroundColor Yellow }
+            break
+        } catch { Start-Sleep -Seconds 2 }
+    }
 }
 
 # Wrapper-Alias automatisch installieren (PowerShell-Profil)

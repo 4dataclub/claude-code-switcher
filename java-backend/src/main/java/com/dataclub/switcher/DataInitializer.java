@@ -65,25 +65,23 @@ public class DataInitializer {
      * <pre>
      *            cloud (bezahlt)        free (:free, €0)       local (Ollama, privat)
      * implement  DeepSeek V3.1 + Flash  Qwen3-Coder + Next-80B qwen2.5-coder:7b *
-     * review     GPT-4o-mini            GPT-OSS 120B           qwen2.5:7b *
+     * review     Haiku 4.5 + GPT-4o-mini GPT-OSS 120B          qwen2.5:7b *
      * research   Gemini Pro (OR+nativ)  — (Gemini-MCP)         — (Web=Cloud)
      * dispatch   Gemini Flash-Lite      Llama 3.3 + GPT-OSS-20 gemma3:4b *
      * </pre>
      * (* local = enabled=false bis die Ollama-Modelle gezogen sind — Phase E.)
      *
-     * {@code cloud} (Pool-Kategorie) trägt zusätzlich Opus als Orchestrator/Manuell-
-     * Option. {@code utility}+{@code general} bewusst NICHT geseedet → Local hat
+     * {@code orchestrator-cloud} trägt Opus (Abo) als Orchestrator-Primary (Failover → Gemini Flash).
+     * {@code utility}+{@code general} bewusst NICHT geseedet → Local hat
      * keinen Cloud-{@code general}-Fallback = automatisch fail-closed.
      */
     private void seedDefaultChain(AiModelConfigRepository modelRepo) {
         LocalDateTime now = LocalDateTime.now();
         record Default(String provider, String modelId, String displayName, String settingKey, String category, boolean enabled) {}
         List<Default> defaults = List.of(
-            // ── cloud-Pool: Opus als Primary / Manuell-Option ──
-            new Default("anthropic",  "claude-opus-4-7",                        "Claude Opus 4.7 (Orchestrator)", "anthropicApiKey",  "cloud",           true),
-            // ── orchestrator: läuft Claude Code selbst — Failover-Kette bei Opus-Limit
+            // ── orchestrator: Claude Code selbst (Opus-Abo bleibt Orchestrator) — Failover-Kette bei Opus-Limit
             //    (datengetrieben: setMode liest orchestrator-{pool} der Reihe nach) ──
-            new Default("anthropic",  "claude-sonnet-4-6",                      "Claude Sonnet 4.6 (Orchestrator-Failover)", "anthropicApiKey", "orchestrator-cloud", true),
+            new Default("anthropic",  "claude-opus-4-8",                        "Claude Opus 4.8 (Orchestrator)", "anthropicApiKey", "orchestrator-cloud", true),
             new Default("gemini",     "gemini-2.5-flash",                       "Gemini 2.5 Flash (Orchestrator-Failover #2)", "geminiApiKey",  "orchestrator-cloud", true),
             new Default("ollama",     "qwen2.5:14b",                            "Qwen2.5 14B (lokaler Orchestrator)",        "ollamaApiKey",    "orchestrator-local", false),
             new Default("openrouter", "nousresearch/hermes-3-llama-3.1-405b:free", "Hermes-3 405B (free · Orchestrator)",   "openrouterApiKey", "orchestrator-free",  true),
@@ -93,7 +91,8 @@ public class DataInitializer {
             new Default("openrouter", "qwen/qwen3-coder:free",                  "Qwen3 Coder (free)",            "openrouterApiKey", "implement-free",  true),
             new Default("openrouter", "qwen/qwen3-next-80b-a3b-instruct:free",  "Qwen3-Next 80B (free)",         "openrouterApiKey", "implement-free",  true),
             new Default("ollama",     "qwen2.5-coder:7b",                       "Qwen2.5 Coder 7B (lokal)",      "ollamaApiKey",     "implement-local", false),
-            // ── review (Korrektheit/Tests) ──
+            // ── review (Korrektheit/Tests) — Claude Haiku 4.5 (via OpenRouter, kein Abo-Limit) als primär, GPT-4o-mini als Fallback ──
+            new Default("openrouter", "anthropic/claude-haiku-4.5",             "Claude Haiku 4.5 (Anthropic via OpenRouter · Review)", "openrouterApiKey", "review-cloud", true),
             new Default("openrouter", "openai/gpt-4o-mini",                     "GPT-4o-mini",                   "openrouterApiKey", "review-cloud",    true),
             new Default("openrouter", "openai/gpt-oss-120b:free",               "GPT-OSS 120B (free)",           "openrouterApiKey", "review-free",     true),
             new Default("ollama",     "qwen2.5:7b",                             "Qwen2.5 7B (lokal)",            "ollamaApiKey",     "review-local",    false),

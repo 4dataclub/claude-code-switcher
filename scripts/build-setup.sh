@@ -15,10 +15,12 @@ SCRIPT_DIR="$ROOT/scripts"
 HEADER_SH="$SCRIPT_DIR/setup-header.sh.tpl"
 HEADER_PS1="$SCRIPT_DIR/setup-header.ps1.tpl"
 CLAUDE_TPL="$SCRIPT_DIR/templates/CLAUDE.md.tpl"
+SUPERMODEL_TPL="$SCRIPT_DIR/templates/supermodel-policy.md.tpl"
 
 [[ -f "$HEADER_SH" ]]  || { echo "✗ Fehlt: $HEADER_SH"  >&2; exit 1; }
 [[ -f "$HEADER_PS1" ]] || { echo "✗ Fehlt: $HEADER_PS1" >&2; exit 1; }
 [[ -f "$CLAUDE_TPL" ]] || { echo "✗ Fehlt: $CLAUDE_TPL" >&2; exit 1; }
+[[ -f "$SUPERMODEL_TPL" ]] || { echo "✗ Fehlt: $SUPERMODEL_TPL" >&2; exit 1; }
 
 # Source-Files einsammeln. Reihenfolge:
 #   1) docker-compose.yml (Root)
@@ -49,6 +51,10 @@ build_manifest() {
   if [[ -d "$ROOT/wrapper" ]]; then
     (cd "$ROOT" && find wrapper -type f | sort)
   fi
+  # agents recursive (Supermodell-Opt-in: @supermodel-Agent)
+  if [[ -d "$ROOT/agents" ]]; then
+    (cd "$ROOT" && find agents -type f | sort)
+  fi
   # docs/screenshots
   if [[ -d "$ROOT/docs/screenshots" ]]; then
     (cd "$ROOT" && find docs/screenshots -type f -name '*.png' | sort)
@@ -78,6 +84,12 @@ emit_claude_md_block() {
   printf '\n__END_claude_md__\n'
 }
 
+emit_supermodel_policy_block() {
+  printf '\n__BEGIN_supermodel_policy__\n'
+  base64 < "$SUPERMODEL_TPL" | tr -d '\n'
+  printf '\n__END_supermodel_policy__\n'
+}
+
 # Manifest-Liste fuer die Header (eingebettet als Bash-Array bzw. PowerShell-Array)
 emit_manifest_block_sh() {
   printf '\n__BEGIN_manifest__\n'
@@ -95,6 +107,7 @@ build_one() {
   {
     cat "$header"
     emit_claude_md_block
+    emit_supermodel_policy_block
     emit_manifest_block_sh
     while IFS= read -r path; do
       [[ -z "$path" ]] && continue
