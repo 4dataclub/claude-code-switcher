@@ -212,6 +212,25 @@ Was das Skript automatisch macht:
 
 Danach nur noch: Terminal neu öffnen + API-Keys auf [http://localhost:2000](http://localhost:2000) eintragen → fertig.
 
+### Noch einfacher: geführtes Setup in Claude Code
+
+Wenn du das Repo klonst und Claude Code nutzt, geht alles als geführter Skill — kein manuelles Skript-Hantieren:
+
+```bash
+git clone https://github.com/4dataclub/claude-code-switcher.git
+cd claude-code-switcher
+claude        # Claude Code im Repo öffnen
+```
+
+Dann im Chat:
+
+| Befehl | Was er macht |
+|---|---|
+| `/setup-switcher` | Komplette Installation Schritt für Schritt (Prereq-Check, amd64-Workaround, Container-Start, API-Keys, Health-Check). Idempotent. |
+| `/setup-superpowers` | Optionale Erweiterung: installiert das **superpowers**-Plugin (strukturierte Arbeitsmodi — wirkt besonders im Supermodell-Modus). |
+
+> Die Skills liegen im Repo unter `.claude/commands/` — sobald du das Repo klonst und Claude Code darin startest, stehen sie automatisch zur Verfügung. Du brauchst **keinen Schreibzugriff**, nur Clone + Read.
+
 ---
 
 ## Setup macOS
