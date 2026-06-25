@@ -443,6 +443,10 @@ public class ApiController {
         ObjectNode sw = cfg.has("_switcher") && cfg.get("_switcher").isObject()
             ? (ObjectNode) cfg.get("_switcher") : configs.mapper().createObjectNode();
 
+        // Alt-Werte für das Event-Logging (v0.19.0) festhalten, bevor sw überschrieben wird.
+        String oldPool = sw.path("pool").asText("cloud");
+        boolean oldSuper = sw.path("supermodel").asBoolean(false);
+
         // 1) Pool (validiert + persistiert; Default cloud)
         String pool = sw.path("pool").asText("cloud");
         if (req != null && req.pool != null && !req.pool.isBlank()) {
@@ -481,6 +485,16 @@ public class ApiController {
         cfg.set("_switcher", sw);
         configs.writeConfig(cfg);
         router.writeRouterConfig();
+
+        // v0.19.0 — Pool-/Supermodell-Umschaltungen in die Cascade-Events-Timeline
+        // loggen (best-effort, blockiert den Switch nie). Nur bei echter Änderung.
+        if (!pool.equals(oldPool)) {
+            cascade.logEvent("pool_switch", oldPool, pool, "user_mode");
+        }
+        if (superOn != oldSuper) {
+            cascade.logEvent(superOn ? "supermodel_on" : "supermodel_off", null, null, "user_mode");
+        }
+
         if (needRestart) {
             configs.writeRestartMarker("local".equals(pool) ? "supermodel-local" : "supermodel-on", null);
         }
@@ -1043,6 +1057,22 @@ public class ApiController {
         return Map.of("ok", ok, "key", key);
     }
 
+    // ─── Library-Settings-Vertrag (ki-models-ui ≥ 0.17.0) ───────────────────
+    // Die Library trifft {base}/settings (GET) + {base}/settings/{key} (POST).
+    // Dünne Aliase auf die bestehenden /cascade-settings-Methoden — gleiche
+    // Daten (z. B. logPromptSnippet für <ki-privacy-settings>).
+
+    @GetMapping("/settings")
+    public List<Map<String, Object>> settings() {
+        return cascadeSettings();
+    }
+
+    @PostMapping("/settings/{key}")
+    public Map<String, Object> setSetting(@PathVariable String key,
+                                          @RequestBody CascadeSettingRequest req) {
+        return setCascadeSetting(key, req);
+    }
+
     @GetMapping("/cascade-models")
     public Map<String, Object> cascadeModels() {
         List<AiModelConfig> models = modelSvc.listModels();
@@ -1220,6 +1250,57 @@ public class ApiController {
     @GetMapping("/cooldown-state")
     public JsonNode cooldownState() {
         return cascade.getCooldownStateList();
+    }
+
+    /**
+     * Letzte Delegations-Calls für {@code <ki-delegation-live>} (Library
+     * v0.17.0). Proxy zu llm-cascade GET /api/stats/calls; bei Cascade
+     * unreachable liefert der Client ein leeres Array (kein Crash).
+     */
+    @GetMapping("/stats/calls")
+    public JsonNode statsCalls() {
+        return cascade.getDelegationCalls();
+    }
+
+    // ─── Shared-Analytics-Proxies (Library v0.18.0 / Cascade ≥ 0.9) ──────────
+
+    /**
+     * Erfolgs-Trend für {@code <ki-call-overview>}. Proxy zu llm-cascade
+     * GET /api/stats/trend; Leer-Array bei Cascade unreachable.
+     */
+    @GetMapping("/stats/trend")
+    public JsonNode statsTrend(
+            @org.springframework.web.bind.annotation.RequestParam(name = "days", required = false, defaultValue = "30") int days) {
+        return cascade.getStatsTrend(days);
+    }
+
+    /**
+     * KI-Calls-Totals für {@code <ki-call-overview>}. Proxy zu llm-cascade
+     * GET /api/stats/totals; Leer-Objekt bei Cascade unreachable.
+     */
+    @GetMapping("/stats/totals")
+    public JsonNode statsTotals() {
+        return cascade.getStatsTotals();
+    }
+
+    /**
+     * Failover-Aufschlüsselung für {@code <ki-failover-analytics>}. Proxy zu
+     * llm-cascade GET /api/stats/failover-breakdown; Leer-Objekt bei
+     * Cascade unreachable.
+     */
+    @GetMapping("/stats/failover-breakdown")
+    public JsonNode statsFailoverBreakdown() {
+        return cascade.getStatsFailoverBreakdown();
+    }
+
+    /**
+     * Failover-Events-Timeline für {@code <ki-failover-analytics>}. Proxy zu
+     * llm-cascade GET /api/stats/failover; Leer-Objekt
+     * ({@code {recent:[],total30d:0}}) bei Cascade unreachable.
+     */
+    @GetMapping("/stats/failover")
+    public JsonNode statsFailover() {
+        return cascade.getStatsFailover();
     }
 
     // ─── Quality Auto-Disable Proxy (Library v0.12.1 / Cascade ≥ 0.7.3) ──────

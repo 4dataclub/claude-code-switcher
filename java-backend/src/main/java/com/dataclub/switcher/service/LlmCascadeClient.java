@@ -280,6 +280,103 @@ public class LlmCascadeClient {
     }
 
     /**
+     * Letzte Delegations-Calls (Tail aus dem call_log) — Proxy zu
+     * GET /api/stats/calls. Wird vom <ki-delegation-live> im Auto-Refresh
+     * aufgerufen. Bei Cascade unreachable: leeres Array (graceful fallback).
+     */
+    public JsonNode getDelegationCalls() {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/stats/calls", String.class);
+            return json == null ? mapper.createArrayNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createArrayNode();
+        }
+    }
+
+    /**
+     * v0.18.0 — Erfolgs-Trend (Calls/Tag, success/failed) — Proxy zu
+     * GET /api/stats/trend. Speist {@code <ki-call-overview>}. Leeres
+     * Array bei Cascade unreachable.
+     */
+    public JsonNode getStatsTrend(int days) {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/stats/trend?days=" + days, String.class);
+            return json == null ? mapper.createArrayNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createArrayNode();
+        }
+    }
+
+    /**
+     * v0.18.0 — KI-Calls-Totals (24h/7d/30d + Erfolg/Fehlschlag + Chars) —
+     * Proxy zu GET /api/stats/totals. Leeres Objekt bei Cascade unreachable.
+     */
+    public JsonNode getStatsTotals() {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/stats/totals", String.class);
+            return json == null ? mapper.createObjectNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createObjectNode();
+        }
+    }
+
+    /**
+     * v0.18.0 — Failover-Aufschluesselung (Provider/Grund) — Proxy zu
+     * GET /api/stats/failover-breakdown. Speist {@code <ki-failover-analytics>}.
+     * Leeres Objekt bei Cascade unreachable.
+     */
+    public JsonNode getStatsFailoverBreakdown() {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/stats/failover-breakdown", String.class);
+            return json == null ? mapper.createObjectNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createObjectNode();
+        }
+    }
+
+    /**
+     * v0.19.0 — Failover-Events-Timeline (letzte 50 + total30d) — Proxy zu
+     * GET /api/stats/failover. Speist die Timeline in {@code <ki-failover-analytics>}.
+     * Leeres Objekt ({@code {recent:[],total30d:0}}) bei Cascade unreachable.
+     */
+    public JsonNode getStatsFailover() {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/stats/failover", String.class);
+            if (json == null) {
+                var fallback = mapper.createObjectNode();
+                fallback.set("recent", mapper.createArrayNode());
+                fallback.put("total30d", 0);
+                return fallback;
+            }
+            return mapper.readTree(json);
+        } catch (Exception e) {
+            var fallback = mapper.createObjectNode();
+            fallback.set("recent", mapper.createArrayNode());
+            fallback.put("total30d", 0);
+            return fallback;
+        }
+    }
+
+    /**
+     * v0.19.0 — Loggt eine Host-seitige Umschaltung (Pool-Wechsel / Supermodell
+     * an-aus) in die Cascade-Events-Timeline. Fire-and-forget: Fehler werden
+     * geschluckt, ein nicht erreichbares Cascade-Backend darf den Mode-Switch
+     * NIE blockieren.
+     */
+    public void logEvent(String type, String fromModel, String toModel, String reason) {
+        try {
+            com.fasterxml.jackson.databind.node.ObjectNode req = mapper.createObjectNode();
+            req.put("type", type);
+            if (fromModel != null) req.put("fromModel", fromModel);
+            if (toModel != null) req.put("toModel", toModel);
+            if (reason != null) req.put("reason", reason);
+            rest.postForObject(cascadeUrl + "/api/events/log", req, String.class);
+        } catch (Exception ignored) {
+            // Logging ist best-effort — nie den Mode-Switch hängen lassen.
+        }
+    }
+
+    /**
      * Cooldown + Auto-Disable State pro Modell. Wird mit Auto-Refresh
      * vom <ki-models-cooldown-state> aufgerufen.
      */
