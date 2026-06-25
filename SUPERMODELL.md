@@ -90,11 +90,11 @@ normales Pool-Routing.
 
 |  | **cloud** | **free** | **local** |
 |---|---|---|---|
-| **orchestrator** *(Hirn, gepinnt)* | Opus 4.8 → Sonnet 4.6 | *(leer — editierbar)* | qwen2.5:14b (aus bis Ollama) |
+| **orchestrator** *(Hirn, gepinnt)* | Opus 4.8 → Sonnet 4.6 | *(leer — editierbar)* | qwen2.5-coder:7b (aus bis Ollama) |
 | **implement** | DeepSeek V3.1 + Gemini Flash | Qwen3-Coder + Qwen3-Next 80B | qwen2.5-coder:7b |
 | **review** | GPT-4o-mini | GPT-OSS 120B | qwen2.5:7b |
-| **research** | Gemini Pro (OR + nativ) | *(Gemini-MCP)* | qwen2.5:7b — intern/offline, nichts raus |
-| **dispatch** | Gemini Flash-Lite | Llama 3.3 + GPT-OSS 20B | gemma3:4b |
+| **research** | Gemini Pro (OR + nativ) | *(Gemini-MCP)* | qwen2.5:7b *(intern/Intranet, offline, nichts raus)* |
+| **dispatch** | Gemini Flash-Lite | Llama 3.3 + GPT-OSS 20B | llama3.2:3b |
 
 Jede Zelle ist eine **Failover-Kette** (mehrere Modelle, Cooldown). Fällt eins aus, rückt
 das nächste nach — der Plan läuft weiter. Modelle/Reihenfolge jederzeit in der UI änderbar
@@ -102,12 +102,18 @@ das nächste nach — der Plan läuft weiter. Modelle/Reihenfolge jederzeit in d
 
 > **Sonderrolle `orchestrator`:** Anders als die 4 Worker ist der Orchestrator **Claude Code
 > selbst** (der laufende Main-Loop) — **kein** `@supermodel`-Delegationsziel (der Agent delegiert
-> nur implement/review/research/dispatch). Die `orchestrator-{pool}`-Zelle *pinnt* das Hirn:
-> **cloud/free** → Opus, mit `orchestrator-cloud` (Sonnet 4.6) + Failover-Kette (Sonnet → Gemini
-> Pro → Flash) via `pinOrchestratorForPool`. **local** → fail-closed, **nie Cloud**: die
-> `orchestrator-local`-Zelle ist, wo du dein lokales Hirn wählst; ohne aktives lokales Modell →
-> `localOrchestratorPending` (gelbe Warnung). Das Live-Routing des Main-Loops aufs lokale Modell
-> (ccr → Ollama) ist **Phase E**.
+> nur implement/review/research/dispatch). **Konsistenz-Invariante (für alle Pools gleich):
+> Das laufende Session-Modell == das oberste aktivierte Modell von `orchestrator-{pool}`** (kleinster
+> `orderIdx`); der Rest der Zelle ist die Failover-Kette. `pinOrchestratorForPool` setzt das durch:
+> **cloud/free** → Top-Modell der `orchestrator-{pool}`-Zelle wird die Session — ist es ein
+> Anthropic-Modell, läuft die Session Anthropic-direkt; ist es Google/OpenRouter, wird sie über
+> ccr dorthin geroutet (Failover-Kette dahinter). **local** → fail-closed, **nie Cloud**: die
+> Session läuft **echt über ccr → Ollama** auf das `orchestrator-local`-Top (Werks-Seed
+> `qwen2.5-coder:7b`); die Router-Config enthält bei local **ausschließlich** den Ollama-Provider,
+> keinen Cloud-Fallback. **Opus verschwindet** beim Umschalten auf local — kein versteckter
+> Hintergrund-Opus. Ohne aktives lokales Modell → `localOrchestratorPending` (gelbe Warnung),
+> **kein** Cloud-Ausweich (lieber STOPP als Leak). Dieses Live-Routing des Main-Loops aufs lokale
+> Modell (früher „Phase E") ist **umgesetzt**.
 
 ## Routing — woher weiß er, welche Aufgabe in welchen Bereich?
 
@@ -154,11 +160,11 @@ das nächste nach — der Plan läuft weiter. Modelle/Reihenfolge jederzeit in d
 ```
 
 **Daraus folgt:** Rollen + Pools sind `Kategorien = Daten` (voll CRUD-bar) — änderst du eine
-Beschreibung oder ein Modell, folgt das Routing, **kein Code-Eingriff**. `research`: cloud/free
-verlässt die Cascade (Gemini-MCP/Grounding); **local** routet auf das lokale Modell
-(`research-local`, Doc-Analyse/Reasoning) und darf lokale Docs + interne/VPN-erreichbare
-Ressourcen nutzen — **nichts verlässt das interne Netz**, kein öffentliches Web/Cloud; reine
-Public-Web-Recherche verweigert der Agent (fail-closed). Delegation-Fehler:
+Beschreibung oder ein Modell, folgt das Routing, **kein Code-Eingriff**. `research` nutzt in
+**cloud/free** Gemini-MCP/Grounding (öffentliches Web); im **Local-Pool** läuft `research-local`
+(lokales Modell, offline) und darf lokale Docs + interne/VPN-erreichbare Ressourcen verarbeiten —
+**nichts verlässt das interne Netz** (kein öffentliches Web, kein Cloud); reine Public-Web-Research
+verweigert der Agent. Delegation-Fehler:
 **cloud/free = fail-open** (Opus macht's selbst), **local = fail-closed** (Stopp, nie Cloud).
 
 ## Ohne Supermodell — der klassische Lauf (Gegenstück)
@@ -209,10 +215,10 @@ sequenziell, ein Modell macht alles). **Mit** Supermodell werden dieselben Berei
 ## 🔒 Lokal = fail-closed (die wichtigste Garantie)
 
 Im **Local-Pool** verlässt **nichts** automatisch das **interne Netz** — auch nicht „um die
-Funktion am Leben zu halten". **Lieber STOPP als Leak.** Die fail-closed-Grenze ist das
-**interne Netz-Perimeter**, nicht „die Maschine": der Pool ist **offline-fähig** (läuft ohne
-Internet, sobald die Modelle gezogen sind), **Intranet/VPN-erreichbare Ressourcen sind ok**,
-aber **nichts geht ins öffentliche Web / in die Cloud / zu einem Cloud-LLM**.
+Funktion am Leben zu halten". Die Grenze ist das interne Perimeter, nicht der einzelne Rechner:
+lokale Modelle + lokale Docs + interne/VPN-erreichbare Ressourcen sind erlaubt, **öffentliches
+Web und Cloud-LLM nicht**. Local läuft dabei garantiert **ohne Internet** (kein Cloud-Eintrag in
+einer `*-local`-Zelle). **Lieber STOPP als Leak.**
 
 - Der **Orchestrator selbst ist lokal** (NICHT Opus — Opus = Anthropic = Cloud würde die
   Planung rausgeben). Das Backend pinnt im Local-Pool **niemals** Opus/Anthropic.
@@ -349,7 +355,7 @@ claude mcp list                      # 'gemini-cli' muss auftauchen
 
 **b) `@supermodel`-Agent** — `~/.claude/agents/supermodel.md` (ein Haiku-Relay, liest den
 aktiven Pool via `curl :2000/api/supermodel` und delegiert an `category={kind}-{pool}`;
-research → Gemini-MCP; local fail-closed). Die kanonische Version liegt im Repo unter
+research → cloud/free via Gemini-MCP, local via `research-local` intern/offline). Die kanonische Version liegt im Repo unter
 [`agents/supermodel.md`](agents/supermodel.md) — nach `~/.claude/agents/` kopieren.
 
 **c) Policy-Block** in `~/.claude/CLAUDE.md` (nach dem Switcher-Block):
@@ -385,21 +391,43 @@ Oder einfach die Toggles in der UI (`localhost:2000`).
 - Modelle ziehen: `ollama pull qwen2.5-coder:7b qwen2.5:7b gemma3:4b`, dann die
   `*-local`-Zellen in der UI aktivieren + provider-server zuweisen.
 
-## Hardware-Stufen (Local-Pool, alle 100 % lokal — Orchestrator inkl., nie Opus)
+## Hardware-Stufen (Local-Pool)
 
-| | **A · Einstieg (16 GB)** | **B · echtes Coding (32–48 GB)** | **C · Voll-lokal (128 GB+)** | **D · Mac Studio Ultra (256–512 GB)** |
-|---|---|---|---|---|
-| Orchestrator | kleines Modell (schwach) | qwq:32b / qwen2.5:32b | llama-3.3:70b / qwen2.5:72b | großes MoE: Qwen3-235B-A22B (~130 GB) / DeepSeek-V3.1 671B (~380 GB @4-bit, 37B aktiv) |
-| implement | qwen2.5-coder:7b | qwen2.5-coder:32b | qwen2.5-coder:32b | Qwen3-Coder / qwen2.5-coder:32b — **parallel resident** zum Orchestrator |
-| Qualität | leicht/begrenzt | gut | sehr gut (nur nicht ganz Opus) | **nahe Frontier** (MoE-Brain + Coder + Reviewer gleichzeitig im RAM, kein Nachladen) |
+Autoritatives Config-Framework (A/B/C). Der **Werks-Default ist die Stufe „jetzt" (8 GB,
+unter A)** — das verdrahtet der Seeder (`DataInitializer.seedDefaultChain`), damit jeder
+Kollege out-of-the-box dieselbe local-Matrix bekommt. **B+ = Mac Studio M4 Max 64 GB (eBay)**,
+unsere geplante Upgrade-Stufe (zwischen B und C); dort greift das XDA-Hybrid-Muster.
 
-> **Ehrlich:** Opus-4.8-Frontier-Niveau ist voll-lokal **nicht ganz** erreichbar — aber **D
-> (Studio Ultra) schließt die Lücke am weitesten**: ein 235B/671B-MoE-Orchestrator + dedizierte
-> Coder/Reviewer liegen gleichzeitig im Unified Memory. MoE ist der Apple-Silicon-Sweet-Spot
-> (riesige Kapazität, nur Bruchteil aktiv → brauchbarer Speed). **Der eigentliche Mac-Engpass ist
-> nicht RAM, sondern Prompt-Processing / Time-to-First-Token** bei langen Kontexten (zäher als
-> NVIDIA); Token-Generierung ist ok. Willst du das letzte Quäntchen Opus-Hirn → bewusst die
-> **Cloud-Lane**. Bester P/L bleibt **Hybrid** (Opus Cloud nur für Plan/Synthese + lokale Kollegen).
+| Rolle | **jetzt · 8 GB** (RTX 4060 Laptop, Werks-Default) | **A · Hybrid-Einstieg · 16 GB** | **B · echtes Coding · 32–48 GB** | **B+ · Mac Studio M4 Max 64 GB (eBay)** | **C · Voll-lokal · 128 GB+** |
+|---|---|---|---|---|---|
+| **Orchestrator** | `qwen2.5-coder:7b` (aus bis Ollama) | Opus (Cloud) — lokal zu schwach | Opus (hybrid, empf.) *oder* `qwq:32b` lokal | Opus Cloud (Plan/Synthese, XDA-Hybrid) *oder* `qwq:32b`/`qwen2.5:32b` lokal | `llama-3.3:70b` → `qwen2.5:72b` |
+| **implement** | `qwen2.5-coder:7b` | `qwen2.5-coder:7b` | `qwen2.5-coder:32b` | `qwen2.5-coder:32b` | `qwen2.5-coder:32b` |
+| **review** | `qwen2.5:7b` | `qwen2.5-coder:7b` → `gemma3:4b` | `qwen2.5-coder:32b` | `qwen2.5-coder:32b` | `qwen2.5-coder:32b` |
+| **dispatch** | `gemma3:4b` | `gemma3:4b` | `qwen2.5:7b` → `qwen2.5-coder:32b` | `qwen2.5:7b` | `gemma3:4b` → `qwen2.5:7b` |
+| **research** | `qwen2.5:7b` (intern/offline, nichts raus) | Gemini-MCP (Cloud, hybrid) | Gemini-MCP (Cloud, hybrid) | Gemini-MCP (Cloud, hybrid) *oder* lokale Docs | nur lokal/intern — nichts raus |
+| **Qualität** | Einstieg/begrenzt — nur **EIN** 7b resident (~4.9 GB), 7b+4b ko-resident, zwei 7b ✗ | leicht/begrenzt — Bulk lokal, Frontier=Opus | gut — ~80 % lokal, Orchestrierung grenzwertig-lokal/hybrid | sehr gut — 32b-Orch + 32b-Coder ko-resident im Unified Memory | sehr gut (nur nicht ganz Opus) — nichts verlässt die Infra |
+
+Der **Werks-Default (8 GB)** liegt bewusst **unter A**: bei 8 GB VRAM passt nur ein heißes
+7b-Q4 (~4.9 GB) resident; 7b + kleines Dispatch-Modell (3–4b) ko-residieren (~6.9 GB), zwei
+7b (9.8 GB) **nicht** → Swap/Thrashing. Darum ein gepinntes `qwen2.5-coder:7b` für
+orchestrator/implement/review + `gemma3:4b` für dispatch. Alle `*-local` starten
+`enabled=false` bis `ollama pull` lief.
+
+> **B+ (Mac Studio M4 Max 64 GB, eBay) — Upgrade-Pfad, NUR auf explizite Anweisung umstellen.**
+> 64 GB Unified liegt zwischen B (32–48) und C (128+) → trägt einen 32b-Orchestrator **plus**
+> 32b-Coder gleichzeitig im Memory. Hier greift das **XDA-Muster** (cloud-Opus nur für
+> Plan/Synthese, lokale Großmodelle für Bulk) — genau das, was unser Supermodell automatisiert.
+> Umstellung: nur die Modell-Einträge der `*-local`-Kategorien tauschen (Bereichs-Struktur
+> bleibt fest). Vor Tausch `ollama list` + `nvidia-smi`/Activity-Monitor prüfen (muss real ins
+> Memory passen). Nicht eigenmächtig switchen.
+
+> **Ehrlich:** Opus-4.8-Frontier-Niveau ist voll-lokal **nicht ganz** erreichbar. C (bzw. ein
+> Studio Ultra mit 256–512 GB für 235B/671B-MoE-Orchestratoren) schließt die Lücke am weitesten —
+> MoE ist der Apple-Silicon-Sweet-Spot (riesige Kapazität, nur Bruchteil aktiv → brauchbarer
+> Speed). **Der eigentliche Mac-Engpass ist nicht RAM, sondern Prompt-Processing /
+> Time-to-First-Token** bei langen Kontexten (zäher als NVIDIA); Token-Generierung ist ok. Willst
+> du das letzte Quäntchen Opus-Hirn → bewusst die **Cloud-Lane**. Bester P/L bleibt **Hybrid**
+> (Opus Cloud nur für Plan/Synthese + lokale Kollegen).
 
 ## Verteiltes Setup (ein Rechner = Server, anderer = Consumer)
 

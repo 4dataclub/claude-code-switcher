@@ -138,6 +138,10 @@ public class ApiController {
             };
             return model + " via OpenRouter — entwickelt von " + builder;
         }
+        if ("ollama".equals(provider)) {
+            String model = ar.path("model").asText("?");
+            return model + " via Ollama (lokal) — läuft lokal, nichts verlässt das interne Netz";
+        }
         String m = cfg.path("model").asText("claude-sonnet-4-5-20250929");
         return pretty(m) + " (Anthropic direkt) — entwickelt von Anthropic";
     }
@@ -495,6 +499,12 @@ public class ApiController {
             cascade.logEvent(superOn ? "supermodel_on" : "supermodel_off", null, null, "user_mode");
         }
 
+        // Läuft die Session über den ccr-Router (local→ollama oder cloud/free google/
+        // openrouter-Top), muss ccr die neue Config laden. Anthropic-direkt = kein Router.
+        if ("local".equals(pool) || (sw.has("activeRoute") && sw.get("activeRoute").isObject())) {
+            router.restartRouter();
+        }
+
         if (needRestart) {
             configs.writeRestartMarker("local".equals(pool) ? "supermodel-local" : "supermodel-on", null);
         }
@@ -532,6 +542,21 @@ public class ApiController {
     }
 
     /**
+     * Oberstes aktiviertes Modell der {@code orchestrator-{pool}}-Zelle (kleinster
+     * orderIdx) = das Session-Modell (Konsistenz-Invariante). Anders als
+     * {@link #orchestratorFailoverChain} wird hier NICHT auf Cloud-Provider gefiltert —
+     * local/ollama ist als Session-Ziel legitim (Phase E). {@code null} = leere Zelle.
+     */
+    AiModelConfig orchestratorTopModel(String pool) {
+        String cat = "orchestrator-" + pool;
+        return modelSvc.listModels().stream()
+            .filter(m -> cat.equals(m.getCategory()) && Boolean.TRUE.equals(m.getEnabled()))
+            .min(java.util.Comparator.comparingInt(
+                m -> m.getOrderIdx() == null ? Integer.MAX_VALUE : m.getOrderIdx()))
+            .orElse(null);
+    }
+
+    /**
      * DATENGETRIEBENE Orchestrator-Failover-Kette aus der {@code orchestrator-{pool}}-Zelle
      * — editierbar wie jede andere Rolle (Modelle hinzufügen/entfernen/umsortieren = orderIdx).
      * Opus am Limit schaltet der Reihe nach durch genau diese Modelle (Cooldown-Failover),
@@ -559,43 +584,93 @@ public class ApiController {
         return chain.isEmpty() ? supermodelFailoverChain() : chain;
     }
 
+    private ObjectNode envOf(ObjectNode cfg) {
+        return cfg.has("env") && cfg.get("env").isObject()
+            ? (ObjectNode) cfg.get("env") : configs.mapper().createObjectNode();
+    }
+
+    /** Session direkt an Anthropic (kein Router), Modell = das Cascade-Top. */
+    private void pinAnthropicDirect(ObjectNode cfg, ObjectNode sw, String model) {
+        ObjectNode env = envOf(cfg);
+        env.remove("ANTHROPIC_API_KEY");
+        env.remove("ANTHROPIC_BASE_URL");
+        cfg.set("env", env);
+        if (model != null && !model.isBlank()) cfg.put("model", model); else cfg.remove("model");
+        sw.put("provider", "anthropic");
+        sw.remove("activeRoute");
+    }
+
+    /** Session über den ccr-Router (BASE_URL→:3456), Route = swProvider,model. */
+    private void pinViaRouter(ObjectNode cfg, ObjectNode sw, String swProvider, String model) {
+        ObjectNode env = envOf(cfg);
+        env.put("ANTHROPIC_API_KEY", "sk-ccr-anything");
+        env.put("ANTHROPIC_BASE_URL", HOST_ROUTER_URL);
+        cfg.set("env", env);
+        cfg.put("model", "claude-sonnet-4-5-20250929"); // ccr-Platzhalter, Route entscheidet
+        ObjectNode ar = configs.mapper().createObjectNode();
+        ar.put("provider", swProvider); ar.put("model", model);
+        sw.set("activeRoute", ar);
+        sw.put("provider", swProvider);
+    }
+
     /**
-     * Pool-bewusstes Orchestrator-Pinning. cloud/free → Opus; local → fail-closed
-     * (nie Cloud). Gibt zurück, ob ein Wrapper-Restart nötig ist.
+     * Pool-bewusstes Orchestrator-Pinning. cloud/free → Session = Cascade-Top;
+     * local → fail-closed (nie Cloud). Gibt zurück, ob ein Wrapper-Restart nötig ist.
      */
     private boolean pinOrchestratorForPool(ObjectNode cfg, ObjectNode sw, String pool) {
         if ("local".equals(pool)) {
-            // FAIL-CLOSED: in Local NIE auf Anthropic/Cloud pinnen. Wir lösen
-            // keinen Cloud-Pin aus; ob ein lokales Orchestrator-Modell verfügbar
-            // ist, signalisiert localOrchestratorPending (echtes ccr-Routing aufs
-            // lokale Main-Loop-Modell ist Phase E, sobald Ollama-Modelle da sind).
-            sw.put("localOrchestratorPending", !hasEnabledLocalOrchestrator());
+            // local kennt keine Cloud-Failover-Kette (fail-closed) — ererbte Kette verwerfen
+            sw.remove("fallback_chain");
+            // FAIL-CLOSED: NIE auf Cloud pinnen. Session läuft echt über ccr→Ollama
+            // auf dem orchestrator-local-Top (Phase E) — Opus verschwindet.
+            AiModelConfig localTop = orchestratorTopModel(pool);
+            if (localTop == null) {
+                // Kein aktiviertes lokales Modell → pending. FAIL-CLOSED: jede ererbte Cloud-Route
+                // abräumen und die Session auf den ccr-Router (bei local = ollama-only, ohne gültige
+                // Route) zeigen → Anfragen scheitern lokal, NICHTS verlässt das interne Netz, Opus
+                // bleibt weg. KEIN Anthropic-direkt (das wäre wieder Cloud/Opus).
+                sw.put("localOrchestratorPending", true);
+                sw.remove("activeRoute");
+                ObjectNode env = envOf(cfg);
+                env.put("ANTHROPIC_API_KEY", "sk-ccr-anything");
+                env.put("ANTHROPIC_BASE_URL", HOST_ROUTER_URL);
+                cfg.set("env", env);
+                cfg.put("model", "claude-sonnet-4-5-20250929");
+                sw.put("provider", "ollama");
+                sw.put("chain_position", 0);
+                return true; // Restart: ererbte Cloud-Env aus dem laufenden Prozess entfernen
+            }
+            sw.remove("localOrchestratorPending");
+            pinViaRouter(cfg, sw, "ollama", localTop.getModelId());
+            sw.put("chain_position", 0);
+            return true; // Restart: Wrapper zieht die Session aufs lokale Modell hoch
+        }
+        // cloud/free → Session = oberstes aktiviertes Modell der orchestrator-{pool}-Zelle
+        sw.remove("localOrchestratorPending");
+        AiModelConfig top = orchestratorTopModel(pool);
+        if (top == null) {
+            // Sicherheitsnetz: leere Zelle → Anthropic-direkt (Opus-Default), wie bisher.
+            if (!"anthropic".equals(sw.path("provider").asText(""))) {
+                pinAnthropicDirect(cfg, sw, null);
+                sw.put("chain_position", 0);
+                return true;
+            }
             return false;
         }
-        // cloud/free → Opus pinnen (idempotent, analog chain-promote)
-        sw.remove("localOrchestratorPending");
-        if (!"anthropic".equals(sw.path("provider").asText(""))) {
-            ObjectNode env = cfg.has("env") && cfg.get("env").isObject()
-                ? (ObjectNode) cfg.get("env") : configs.mapper().createObjectNode();
-            env.remove("ANTHROPIC_API_KEY");
-            env.remove("ANTHROPIC_BASE_URL");
-            cfg.set("env", env);
-            sw.put("provider", "anthropic");
+        String swProv = CASCADE_TO_SWITCHER.getOrDefault(top.getProvider(), top.getProvider());
+        if ("anthropic".equals(swProv)) {
+            boolean changed = !"anthropic".equals(sw.path("provider").asText(""))
+                || !top.getModelId().equals(cfg.path("model").asText(""));
+            pinAnthropicDirect(cfg, sw, top.getModelId());
             sw.put("chain_position", 0);
-            sw.remove("activeRoute");
-            return true;
+            return changed;
         }
-        return false;
-    }
-
-    /** Existiert ein aktiviertes lokales (Ollama/openai_compat) Modell als Orchestrator? */
-    private boolean hasEnabledLocalOrchestrator() {
-        for (AiModelConfig m : modelSvc.listModels()) {
-            if (!Boolean.TRUE.equals(m.getEnabled())) continue;
-            String p = m.getProvider() == null ? "" : m.getProvider().toLowerCase();
-            if (p.equals("ollama") || p.equals("openai_compat")) return true;
-        }
-        return false;
+        // google/openrouter → Session via ccr-Router auf das Top-Modell
+        boolean changed = !swProv.equals(sw.path("provider").asText(""))
+            || !top.getModelId().equals(sw.path("activeRoute").path("model").asText(""));
+        pinViaRouter(cfg, sw, swProv, top.getModelId());
+        sw.put("chain_position", 0);
+        return changed;
     }
 
     // ─── Wrapper-Endpoints (warn / quota-error / recheck-now / restart) ──────
@@ -775,27 +850,32 @@ public class ApiController {
     public com.fasterxml.jackson.databind.JsonNode cascades() {
         JsonNode all = cascade.getCascades();
         if (all == null || !all.isArray()) return all;
-        // Nur die Cascaden des aktiven Pools zeigen (Übersichtlichkeit) — der
-        // Bereich-Toggle wählt cloud|free|local, die Cascade-Bereiche-View
-        // spiegelt nur diesen Pool. Compound-Kategorien {rolle}-{pool} + die
-        // Pool-Kategorie selbst zählen dazu.
-        String pool = configs.getSwitcher().path("pool").asText("cloud");
+        // Supermodell-bewusste Sicht (2-Achsen-Modus):
+        //   AUS → genau 1 Cascade = die Pool-Kategorie selbst (cloud|free|local) —
+        //         das Modell, das Claude Code direkt faehrt (mit Failover).
+        //   AN  → die Rollen-Compounds {rolle}-{pool} des aktiven Pools.
+        ObjectNode sw = configs.getSwitcher();
+        String pool = sw.path("pool").asText("cloud");
+        boolean supermodel = sw.path("supermodel").asBoolean(false);
         ArrayNode out = configs.mapper().createArrayNode();
         for (JsonNode c : all) {
-            if (matchesPool(c.path("name").asText(""), pool)) out.add(c);
+            if (matchesPoolMode(c.path("name").asText(""), pool, supermodel)) out.add(c);
         }
         return out;
     }
 
-    /** Backend-Spiegel der Frontend-matchesPool: Kategorie == Pool ODER endet auf
-     *  -pool; free matcht zusätzlich die Legacy-Kategorie free-only. */
-    static boolean matchesPool(String cat, String pool) {
+    /** Supermodell-bewusste Pool-Filterung fuer die Cascade-Bereiche-View:
+     *  AUS → genau die Pool-Kategorie selbst (cloud|free|local; free matcht auch
+     *  die Legacy-Kategorie free-only). AN → nur die Rollen-Compounds {rolle}-{pool}. */
+    static boolean matchesPoolMode(String cat, String pool, boolean supermodel) {
         if (cat == null || cat.isBlank()) return false;
-        return switch (pool) {
-            case "free"  -> cat.equals("free") || cat.equals("free-only") || cat.endsWith("-free");
-            case "local" -> cat.equals("local") || cat.endsWith("-local");
-            default      -> cat.equals("cloud") || cat.endsWith("-cloud");
-        };
+        if (supermodel) {
+            return cat.endsWith("-" + pool);
+        }
+        if ("free".equals(pool)) {
+            return cat.equals("free") || cat.equals("free-only");
+        }
+        return cat.equals(pool);
     }
 
     /**
@@ -806,7 +886,20 @@ public class ApiController {
      */
     @GetMapping("/categories")
     public com.fasterxml.jackson.databind.JsonNode categories() {
-        return cascade.getCategories();
+        JsonNode all = cascade.getCategories();
+        if (all == null || !all.isArray()) return all;
+        // Spiegelt cascades(): das Add-Model-Dropdown bietet nur die zum aktiven
+        // 2-Achsen-Zustand passenden Kategorien an (AUS → Pool selbst, AN → die
+        // Rollen-Compounds {rolle}-{pool}). Die Library priorisiert dieses
+        // Backend-Resultat vor L.categoryOptions.
+        ObjectNode sw = configs.getSwitcher();
+        String pool = sw.path("pool").asText("cloud");
+        boolean supermodel = sw.path("supermodel").asBoolean(false);
+        ArrayNode out = configs.mapper().createArrayNode();
+        for (JsonNode c : all) {
+            if (matchesPoolMode(c.path("name").asText(""), pool, supermodel)) out.add(c);
+        }
+        return out;
     }
 
     @PutMapping("/categories/{name}")
@@ -1115,13 +1208,17 @@ public class ApiController {
     public com.fasterxml.jackson.databind.JsonNode listAiModels() {
         JsonNode all = cascade.getModels();
         if (all == null || !all.isArray()) return all;
-        // Nur die Modelle des aktiven Pools — die Modell-Tabelle + Matrix/Picker
-        // spiegeln den im Bereich-Toggle gewählten Pool (cloud/free/local), genau
-        // wie die Cascade-Bereiche. matchesPool = dieselbe Logik wie bei /cascades.
-        String pool = configs.getSwitcher().path("pool").asText("cloud");
+        // Zustands-bewusst (2 Achsen), identisch zu /cascades + /categories:
+        //   AUS → nur die Plain-Pool-Kategorie (cloud|free|local) — die OFF-Chain.
+        //   AN  → nur die Rollen-Compounds {rolle}-{pool}; die Plain-Pool-Cascade
+        //         (OFF-Chain) wird ausgeblendet (Orchestrator-Modelle stehen in
+        //         orchestrator-{pool}). So zeigt die Tabelle nie modus-fremde Cascaden.
+        ObjectNode sw = configs.getSwitcher();
+        String pool = sw.path("pool").asText("cloud");
+        boolean supermodel = sw.path("supermodel").asBoolean(false);
         ArrayNode out = configs.mapper().createArrayNode();
         for (JsonNode m : all) {
-            if (matchesPool(m.path("category").asText(""), pool)) out.add(m);
+            if (matchesPoolMode(m.path("category").asText(""), pool, supermodel)) out.add(m);
         }
         return out;
     }
