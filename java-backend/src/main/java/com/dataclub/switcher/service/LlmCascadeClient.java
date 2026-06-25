@@ -294,6 +294,47 @@ public class LlmCascadeClient {
     }
 
     /**
+     * v0.18.0 — Erfolgs-Trend (Calls/Tag, success/failed) — Proxy zu
+     * GET /api/stats/trend. Speist {@code <ki-call-overview>}. Leeres
+     * Array bei Cascade unreachable.
+     */
+    public JsonNode getStatsTrend(int days) {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/stats/trend?days=" + days, String.class);
+            return json == null ? mapper.createArrayNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createArrayNode();
+        }
+    }
+
+    /**
+     * v0.18.0 — KI-Calls-Totals (24h/7d/30d + Erfolg/Fehlschlag + Chars) —
+     * Proxy zu GET /api/stats/totals. Leeres Objekt bei Cascade unreachable.
+     */
+    public JsonNode getStatsTotals() {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/stats/totals", String.class);
+            return json == null ? mapper.createObjectNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createObjectNode();
+        }
+    }
+
+    /**
+     * v0.18.0 — Failover-Aufschluesselung (Provider/Grund) — Proxy zu
+     * GET /api/stats/failover-breakdown. Speist {@code <ki-failover-analytics>}.
+     * Leeres Objekt bei Cascade unreachable.
+     */
+    public JsonNode getStatsFailoverBreakdown() {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/stats/failover-breakdown", String.class);
+            return json == null ? mapper.createObjectNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createObjectNode();
+        }
+    }
+
+    /**
      * Cooldown + Auto-Disable State pro Modell. Wird mit Auto-Refresh
      * vom <ki-models-cooldown-state> aufgerufen.
      */

@@ -1248,6 +1248,37 @@ public class ApiController {
         return cascade.getDelegationCalls();
     }
 
+    // ─── Shared-Analytics-Proxies (Library v0.18.0 / Cascade ≥ 0.9) ──────────
+
+    /**
+     * Erfolgs-Trend für {@code <ki-call-overview>}. Proxy zu llm-cascade
+     * GET /api/stats/trend; Leer-Array bei Cascade unreachable.
+     */
+    @GetMapping("/stats/trend")
+    public JsonNode statsTrend(
+            @org.springframework.web.bind.annotation.RequestParam(name = "days", required = false, defaultValue = "30") int days) {
+        return cascade.getStatsTrend(days);
+    }
+
+    /**
+     * KI-Calls-Totals für {@code <ki-call-overview>}. Proxy zu llm-cascade
+     * GET /api/stats/totals; Leer-Objekt bei Cascade unreachable.
+     */
+    @GetMapping("/stats/totals")
+    public JsonNode statsTotals() {
+        return cascade.getStatsTotals();
+    }
+
+    /**
+     * Failover-Aufschlüsselung für {@code <ki-failover-analytics>}. Proxy zu
+     * llm-cascade GET /api/stats/failover-breakdown; Leer-Objekt bei
+     * Cascade unreachable.
+     */
+    @GetMapping("/stats/failover-breakdown")
+    public JsonNode statsFailoverBreakdown() {
+        return cascade.getStatsFailoverBreakdown();
+    }
+
     // ─── Quality Auto-Disable Proxy (Library v0.12.1 / Cascade ≥ 0.7.3) ──────
 
     /**
