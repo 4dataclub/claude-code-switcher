@@ -443,6 +443,10 @@ public class ApiController {
         ObjectNode sw = cfg.has("_switcher") && cfg.get("_switcher").isObject()
             ? (ObjectNode) cfg.get("_switcher") : configs.mapper().createObjectNode();
 
+        // Alt-Werte für das Event-Logging (v0.19.0) festhalten, bevor sw überschrieben wird.
+        String oldPool = sw.path("pool").asText("cloud");
+        boolean oldSuper = sw.path("supermodel").asBoolean(false);
+
         // 1) Pool (validiert + persistiert; Default cloud)
         String pool = sw.path("pool").asText("cloud");
         if (req != null && req.pool != null && !req.pool.isBlank()) {
@@ -481,6 +485,16 @@ public class ApiController {
         cfg.set("_switcher", sw);
         configs.writeConfig(cfg);
         router.writeRouterConfig();
+
+        // v0.19.0 — Pool-/Supermodell-Umschaltungen in die Cascade-Events-Timeline
+        // loggen (best-effort, blockiert den Switch nie). Nur bei echter Änderung.
+        if (!pool.equals(oldPool)) {
+            cascade.logEvent("pool_switch", oldPool, pool, "user_mode");
+        }
+        if (superOn != oldSuper) {
+            cascade.logEvent(superOn ? "supermodel_on" : "supermodel_off", null, null, "user_mode");
+        }
+
         if (needRestart) {
             configs.writeRestartMarker("local".equals(pool) ? "supermodel-local" : "supermodel-on", null);
         }
@@ -1277,6 +1291,16 @@ public class ApiController {
     @GetMapping("/stats/failover-breakdown")
     public JsonNode statsFailoverBreakdown() {
         return cascade.getStatsFailoverBreakdown();
+    }
+
+    /**
+     * Failover-Events-Timeline für {@code <ki-failover-analytics>}. Proxy zu
+     * llm-cascade GET /api/stats/failover; Leer-Objekt
+     * ({@code {recent:[],total30d:0}}) bei Cascade unreachable.
+     */
+    @GetMapping("/stats/failover")
+    public JsonNode statsFailover() {
+        return cascade.getStatsFailover();
     }
 
     // ─── Quality Auto-Disable Proxy (Library v0.12.1 / Cascade ≥ 0.7.3) ──────

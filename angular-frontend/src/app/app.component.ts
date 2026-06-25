@@ -1,7 +1,9 @@
-import { Component, OnDestroy, ViewChild, inject, signal } from '@angular/core';
+import { Component, OnDestroy, ViewChild, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   ModelsPageComponent,
+  ModeEventsComponent,
+  ModeEventsLabels,
   KiModelsPageConfig,
   CascadesViewLabels,
   FailoverChainLabels,
@@ -43,6 +45,7 @@ import {
     BannerComponent,
     ModePanelComponent,
     ModelsPageComponent,
+    ModeEventsComponent,
   ],
   template: `
     <main class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 space-y-6">
@@ -82,6 +85,12 @@ import {
           (categoryChanged)="onPoolChange($event)"
           (supermodelChanged)="onSupermodelChange($event)"
         ></sw-mode-panel>
+
+        <!-- Liste der letzten Modus-/Toggle-Umschaltungen (Modell an/aus, Pool,
+             Supermodell) mit Datum — gespeist aus /api/stats/failover. -->
+        <div class="mt-6 border-t border-slate-200 dark:border-slate-800 pt-5">
+          <ki-mode-events [labels]="modeEventsLabels"></ki-mode-events>
+        </div>
       </section>
 
       <!-- Gemeinsame KI-Modell-Seite (Library) — alle Sektionen, identisch zu EduPro.
@@ -90,6 +99,7 @@ import {
         [config]="pageConfig"
         [activePool]="activePool()"
         [supermodelOn]="supermodel()"
+        [visibleCategories]="visibleCategories()"
         [localOrchestratorPending]="localOrchestratorPending()"
         (activeModelChanged)="onSwitchToModel($event)"
         (modelChanged)="reload()"
@@ -152,6 +162,19 @@ export class AppComponent implements OnDestroy {
   readonly failoverChainLabels: Partial<FailoverChainLabels> = FAILOVER_CHAIN_LABELS_DE;
   readonly apiKeysSectionLabels = API_KEYS_SECTION_LABELS_DE;
   readonly providerServersLabels = PROVIDER_SERVERS_LABELS_DE;
+
+  // v0.20.0 — Deutsche Labels für die Modus-/Toggle-Umschaltungs-Liste.
+  readonly modeEventsLabels: Partial<ModeEventsLabels> = {
+    title: 'Letzte Umschaltungen',
+    subtitle: 'Modell an/aus, Pool-Wechsel und Supermodell an/aus — letzte 50.',
+    empty: 'Noch keine Umschaltungen geloggt.',
+    loading: 'Lade Umschaltungen…',
+    colType: 'Typ',
+    colTransition: 'Von → Zu',
+    colReason: 'Grund',
+    colWhen: 'Wann',
+    filterPlaceholder: 'Filtern…',
+  };
 
   // v0.18.0 — Deutsche Labels für die geteilten Analytics-Panels.
   readonly callOverviewLabels = {
@@ -263,6 +286,25 @@ export class AppComponent implements OnDestroy {
   readonly activePool = signal<string>('cloud');
   /** v2 — Local-Orchestrator gewählt, aber kein lokales Modell aktiv (fail-closed). */
   readonly localOrchestratorPending = signal<boolean>(false);
+
+  /**
+   * Whitelist der sichtbaren Kategorien/Cascaden — wird an `<ki-models-page>`
+   * gereicht und dort an Tabelle + Cascades-View weiterverteilt.
+   * Supermodell AUS → nur die Pool-Kategorie (z. B. 'cloud').
+   * Supermodell AN → nur die Rollen-Kategorien des aktiven Pools.
+   * Naming-Konvention (switcher-spezifisch, asymmetrisch):
+   *   cloud → plain 'cloud',   Rollen '{role}-cloud'
+   *   free  → plain 'free-only', Rollen '{role}-free'
+   *   local → plain 'local',   Rollen '{role}-local'
+   */
+  readonly visibleCategories = computed<string[]>(() => {
+    const pool = this.activePool();
+    const plain = pool === 'free' ? 'free-only' : pool;
+    if (!this.supermodel()) return [plain];
+    const suffix = pool === 'free' ? '-free' : pool === 'local' ? '-local' : '-cloud';
+    const roles = ['orchestrator', 'implement', 'review', 'research', 'dispatch'];
+    return roles.map((r) => `${r}${suffix}`);
+  });
 
   /** EventSource für SSE-Live-Updates. Wird in ngOnInit aufgemacht + ngOnDestroy geschlossen. */
   private es: EventSource | null = null;
