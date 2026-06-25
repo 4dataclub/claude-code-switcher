@@ -280,6 +280,23 @@ chmod +x setup.sh && ./setup.sh
 # Terminal neu öffnen → claude funktioniert
 ```
 
+### Linux amd64: llm-cascade aus Source bauen
+
+Das Image `ghcr.io/4dataclub/llm-cascade:0.2.0` ist aktuell nur für `linux/arm64` veröffentlicht. Auf `x86_64`-Hosts (also den meisten Linux-Desktops und -Servern) bricht `setup.sh` daher beim Docker-Pull mit:
+
+```
+no matching manifest for linux/amd64 in the manifest list entries
+```
+
+Workaround: das llm-cascade-Repo daneben klonen und das Compose-File aus dem Switcher-Verzeichnis darauf zeigen lassen — die `Dockerfile` baut amd64 + arm64 nativ:
+
+```bash
+cd ~/claude-switcher          # oder das Verzeichnis das setup.sh entpackt hat
+git clone https://github.com/4dataclub/llm-cascade.git
+sed -i 's|image: ghcr.io/4dataclub/llm-cascade:.*|build: ./llm-cascade|' docker-compose.yml
+docker compose up -d --build
+```
+
 > Alle Bash-Hooks, der Watcher (`router-watch.sh`), der Wrapper (`claude-auto`) und die `settings.json`-Mergung sind plattformidentisch zu macOS — Linux ist hier der „Standard-Pfad".
 
 ---
