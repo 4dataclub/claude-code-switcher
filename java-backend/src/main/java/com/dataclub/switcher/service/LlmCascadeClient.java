@@ -280,6 +280,20 @@ public class LlmCascadeClient {
     }
 
     /**
+     * Letzte Delegations-Calls (Tail aus dem call_log) — Proxy zu
+     * GET /api/stats/calls. Wird vom <ki-delegation-live> im Auto-Refresh
+     * aufgerufen. Bei Cascade unreachable: leeres Array (graceful fallback).
+     */
+    public JsonNode getDelegationCalls() {
+        try {
+            String json = rest.getForObject(cascadeUrl + "/api/stats/calls", String.class);
+            return json == null ? mapper.createArrayNode() : mapper.readTree(json);
+        } catch (Exception e) {
+            return mapper.createArrayNode();
+        }
+    }
+
+    /**
      * Cooldown + Auto-Disable State pro Modell. Wird mit Auto-Refresh
      * vom <ki-models-cooldown-state> aufgerufen.
      */

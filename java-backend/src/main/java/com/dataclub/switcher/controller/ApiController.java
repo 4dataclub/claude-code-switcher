@@ -1043,6 +1043,22 @@ public class ApiController {
         return Map.of("ok", ok, "key", key);
     }
 
+    // ─── Library-Settings-Vertrag (ki-models-ui ≥ 0.17.0) ───────────────────
+    // Die Library trifft {base}/settings (GET) + {base}/settings/{key} (POST).
+    // Dünne Aliase auf die bestehenden /cascade-settings-Methoden — gleiche
+    // Daten (z. B. logPromptSnippet für <ki-privacy-settings>).
+
+    @GetMapping("/settings")
+    public List<Map<String, Object>> settings() {
+        return cascadeSettings();
+    }
+
+    @PostMapping("/settings/{key}")
+    public Map<String, Object> setSetting(@PathVariable String key,
+                                          @RequestBody CascadeSettingRequest req) {
+        return setCascadeSetting(key, req);
+    }
+
     @GetMapping("/cascade-models")
     public Map<String, Object> cascadeModels() {
         List<AiModelConfig> models = modelSvc.listModels();
@@ -1220,6 +1236,16 @@ public class ApiController {
     @GetMapping("/cooldown-state")
     public JsonNode cooldownState() {
         return cascade.getCooldownStateList();
+    }
+
+    /**
+     * Letzte Delegations-Calls für {@code <ki-delegation-live>} (Library
+     * v0.17.0). Proxy zu llm-cascade GET /api/stats/calls; bei Cascade
+     * unreachable liefert der Client ein leeres Array (kein Crash).
+     */
+    @GetMapping("/stats/calls")
+    public JsonNode statsCalls() {
+        return cascade.getDelegationCalls();
     }
 
     // ─── Quality Auto-Disable Proxy (Library v0.12.1 / Cascade ≥ 0.7.3) ──────
