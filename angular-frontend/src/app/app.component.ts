@@ -1,17 +1,10 @@
 import { Component, OnDestroy, ViewChild, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
-  ModelsTableComponent,
-  AddModelFormComponent,
-  CascadesViewComponent,
-  ApiKeysSectionComponent,
-  ModelsQualityStatsComponent,
-  ModelsPerformanceComponent,
-  ModelsCooldownStateComponent,
-  ProviderServersComponent,
+  ModelsPageComponent,
+  KiModelsPageConfig,
   CascadesViewLabels,
   FailoverChainLabels,
-  ProviderServersLabels,
 } from '@4dataclub/ki-models-ui';
 import { SwitcherApiService, SwitcherStatus, SwitcherAiModel } from './services/switcher-api.service';
 import { StatusBarComponent } from './components/status-bar.component';
@@ -27,17 +20,19 @@ import {
 } from './labels.de';
 
 /**
- * Switcher Angular-App — Phase L.4 (Vanilla abgelöst, Angular ist alleinige UI auf :2000).
+ * Switcher Angular-App — Single-Source-Composer (consolidation).
  *
- * Look-and-Feel: **exakt wie EduPro Admin-Tab „KI-Modelle"** — Tailwind, slate-50/
- * slate-950 Page-BG, rounded-[40px] weiße bzw. dark-slate-900 Cards, gemeinsame
- * `@4dataclub/ki-models-ui` Library-Components. Switcher-spezifische Ergänzung:
- * der **Modus-Panel** oben (Manuell vs. Auto-Failover + Chain-Editor) plus
- * Status-Bar, Banner und Restart-Button.
+ * Die komplette KI-Modell-Verwaltung (Cascade-Cooldown, Cascades-View,
+ * Modell-Tabelle, Add-Form, API-Keys, Datenschutz, Supermodell-Matrix sowie
+ * alle Statistiken) wird jetzt vom gemeinsamen `<ki-models-page>` gerendert —
+ * **identisch zu EduPro**, keine Switcher-Sonderflocke mehr.
  *
- * Das alte dunkle Provider-Grid („AKTIVER ANBIETER (MANUELL)") ist entfernt —
- * Modell-Auswahl + Cascade-Verwaltung passieren ausschließlich über die Library-
- * Components, identisch zu EduPro.
+ * Switcher-spezifisches Chrome bleibt drumherum: Status-Bar, Banner,
+ * **Modus-Panel** (Manuell vs. Auto-Failover + Pool-Toggle + Supermodell-
+ * Schalter) und der Claude-Restart-Button. Der Pool/Supermodell-State wird
+ * über die `[activePool]`/`[supermodelOn]`-Inputs in die Library gereicht; bei
+ * Pool-Wechsel ruft der Host `modelsPage.reload()` (Tabelle + Cascades + Matrix
+ * neu nach dem aktiven Pool).
  */
 @Component({
   selector: 'app-root',
@@ -47,14 +42,7 @@ import {
     StatusBarComponent,
     BannerComponent,
     ModePanelComponent,
-    ModelsTableComponent,
-    AddModelFormComponent,
-    CascadesViewComponent,
-    ApiKeysSectionComponent,
-    ModelsQualityStatsComponent,
-    ModelsPerformanceComponent,
-    ModelsCooldownStateComponent,
-    ProviderServersComponent,
+    ModelsPageComponent,
   ],
   template: `
     <main class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 space-y-6">
@@ -77,7 +65,7 @@ import {
         (promoteNow)="onPromote()"
       ></sw-banner>
 
-      <!-- Switcher-spezifische Sektion: Manuell vs. Auto-Failover + Chain-Editor -->
+      <!-- Switcher-spezifische Sektion: Manuell vs. Auto-Failover + Pool/Supermodell -->
       <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
         <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 mb-4">
           Modus
@@ -96,127 +84,18 @@ import {
         ></sw-mode-panel>
       </section>
 
-      <!-- Rollen pro Pool — erscheinen NUR bei Supermodell AN (additiv, im aktiven
-           Pool), verschwinden bei AUS. Jede Rolle = Compound-Kategorie {rolle}-{pool}
-           mit ihrer Failover-Kette ① ②. -->
-      <section *ngIf="supermodel()" class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
-        <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 mb-1">
-          Rollen im Pool „{{ poolTitles[activePool()] }}"
-        </h2>
-        <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">
-          Opus plant, delegiert pro Schritt an die günstigste Rolle (über <code class="px-1 rounded bg-slate-100 dark:bg-slate-800">&#64;supermodel</code>) und prüft am Ende. ① ② = Failover-Kette mit Cooldown.
-        </p>
-
-        <p *ngIf="activePool() === 'local' && localOrchestratorPending()"
-           class="mb-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 ring-1 ring-amber-300 dark:ring-amber-800 px-4 py-3 text-xs font-semibold text-amber-700 dark:text-amber-300">
-          ⚠ Lokaler Orchestrator gewählt, aber kein lokales Modell aktiv — <strong>fail-closed</strong> (kein automatischer Cloud-Ausweich). Ollama-Modell ziehen + aktivieren.
-        </p>
-
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div *ngFor="let role of ROLES" class="rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 ring-1 ring-slate-200 dark:ring-slate-700">
-            <div class="flex items-baseline justify-between gap-2">
-              <strong class="text-sm font-bold text-slate-900 dark:text-slate-100">{{ roleMeta[role].label }}</strong>
-              <code class="text-[10px] text-slate-400">{{ role }}-{{ activePool() }}</code>
-            </div>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mb-2">{{ roleMeta[role].desc }}</p>
-            <ng-container *ngIf="cellModels(role).length; else emptyCell">
-              <div *ngFor="let m of cellModels(role); let i = index" class="text-xs font-mono text-slate-700 dark:text-slate-300">
-                {{ i + 1 }}. {{ m.displayName }}
-                <span class="text-slate-400">· {{ m.provider }}</span>
-                <span *ngIf="!m.enabled" class="text-amber-500"> · aus</span>
-              </div>
-            </ng-container>
-            <ng-template #emptyCell>
-              <p class="text-xs italic text-slate-400">
-                <ng-container *ngIf="role === 'research'; else genericEmpty">
-                  <span *ngIf="activePool() === 'local'">Nicht im Local-Pool (Web = Cloud, fail-closed).</span>
-                  <span *ngIf="activePool() !== 'local'">Über Gemini-MCP (Grounding) — kein Cascade-Modell nötig.</span>
-                </ng-container>
-                <ng-template #genericEmpty>Kein Modell — unten in der Tabelle anlegen (Kategorie <code>{{ role }}-{{ activePool() }}</code>).</ng-template>
-              </p>
-            </ng-template>
-          </div>
-        </div>
-      </section>
-
-      <!-- Cascade-Bereiche (Phase S') — N Karten dynamisch, jede mit eigener Failover-Chain + Cooldown.
-           id="cascade-bereiche-section" ist Scroll-Target für den Auto-Mode-Info-Card-Button im sw-mode-panel. -->
-      <section id="cascade-bereiche-section" class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
-        <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 mb-4">
-          Cascade-Bereiche <span class="text-slate-400 dark:text-slate-500 normal-case tracking-normal font-semibold">— nur Pool „{{ poolTitles[activePool()] }}"</span>
-        </h2>
-        <ki-cascades-view
-          [labels]="cascadesViewLabels"
-          [chainLabels]="failoverChainLabels"
-          [hintByCascade]="cascadeHints"
-        ></ki-cascades-view>
-      </section>
-
-      <!-- Modelle (Tabelle + Add-Form) — Library-Components, identisch zu EduPro -->
-      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800 space-y-8">
-        <ki-models-table
-          [labels]="modelsTableLabels"
-          [showActiveAction]="true"
-          [activeModelId]="activeModel()"
-          [categoryTitles]="categoryTitles()"
-          [categoryHints]="cascadeHints"
-          [categoryOrder]="cascadeOrder"
-          [keylessProviders]="switcherKeylessProviders"
-          (modelChanged)="reload()"
-          (activeModelChanged)="onSwitchToModel($event)"
-        ></ki-models-table>
-        <ki-add-model-form
-          [labels]="addModelFormLabels"
-          [defaultCategoryByProvider]="defaultCategoryByProvider"
-          (modelCreated)="onModelCreated()"
-        ></ki-add-model-form>
-      </section>
-
-      <!-- API-Keys (Library-Component, identisch zu EduPro) -->
-      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
-        <ki-api-keys-section [labels]="apiKeysSectionLabels" (keyChanged)="onKeyChanged()"></ki-api-keys-section>
-      </section>
-
-      <!-- Inferenz-Server (Library v0.15.0) — externe Server pro Modell (Ollama),
-           Default localhost. Verwaltung hier; Zuweisung pro Modell in der Tabelle. -->
-      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
-        <ki-provider-servers [labels]="providerServersLabels"></ki-provider-servers>
-      </section>
-
-      <!-- Quality-Stats (Library v0.12.0, llm-cascade ≥ 0.7.2).
-           Worst-first: KILL-Kandidaten (✗ Score < 0.1) stehen oben damit der
-           User sofort sieht welche Modelle Probleme machen. Switcher delegiert
-           via cascade.getQualityStats() an die llm-cascade-Sidecar (gemeinsame
-           DB mit Switcher) — bei Cascade < 0.7.2 zeigt die Component „keine
-           Daten" statt zu crashen. -->
-      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
-        <ki-models-quality-stats
-          [title]="'Modell-Qualität — letzte 30 Tage'"
-          [subtitle]="'Schlechte Modelle stehen oben. KILL-Kandidaten sollten deaktiviert werden.'">
-        </ki-models-quality-stats>
-      </section>
-
-      <!-- Performance-Stats (Library v0.14.0, llm-cascade ≥ 0.7.6).
-           Calls, Success-Rate, Cost-Schätzung pro Modell. Switcher hat
-           keinen eigenen costMapping-Input gesetzt → Cost-Spalte versteckt
-           (Switcher wird normalerweise nicht für Bulk-Generate genutzt). -->
-      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
-        <ki-models-performance
-          [title]="'Modell-Performance — letzte 30 Tage'"
-          [subtitle]="'Calls und Erfolgsrate pro Provider/Modell.'">
-        </ki-models-performance>
-      </section>
-
-      <!-- Cooldown-State Live-View (Library v0.14.0, llm-cascade ≥ 0.7.6).
-           Auto-Refresh 30s. Rote Zeilen = auto-disabled, gelb = Cooldown,
-           grün = ready. Zeigt sofort wenn ein Modell Probleme hat. -->
-      <section class="rounded-[40px] bg-white dark:bg-slate-900 p-6 sm:p-8 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800">
-        <ki-models-cooldown-state
-          [title]="'Cooldown-State — Live'"
-          [subtitle]="'Auto-Disabled (rot) → Cooldown (gelb) → ready (grün). Auto-Refresh 30s.'"
-          [autoRefreshSec]="30">
-        </ki-models-cooldown-state>
-      </section>
+      <!-- Gemeinsame KI-Modell-Seite (Library) — alle Sektionen, identisch zu EduPro.
+           Supermodell-Matrix erscheint NUR bei [supermodelOn]=true (Schalter im Modus-Panel). -->
+      <ki-models-page
+        [config]="pageConfig"
+        [activePool]="activePool()"
+        [supermodelOn]="supermodel()"
+        [localOrchestratorPending]="localOrchestratorPending()"
+        (activeModelChanged)="onSwitchToModel($event)"
+        (modelChanged)="reload()"
+        (modelCreated)="reload()"
+        (keyChanged)="reload()"
+      ></ki-models-page>
 
       <!-- Switcher-spezifisch: Claude-Restart-Trigger -->
       <div class="pt-2">
@@ -260,18 +139,11 @@ export class AppComponent implements OnDestroy {
   private readonly api = inject(SwitcherApiService);
 
   /**
-   * Referenz auf die Library-Modell-Tabelle. Wird gebraucht um sie nach
-   * externen Aktionen (Add-Model-Form, API-Key-Save) zu refreshen — die
-   * Library hört nicht selbst auf SSE und hat keinen [refreshTrigger]-Input.
+   * Referenz auf die gemeinsame Library-Seite. Wird gebraucht um sie nach
+   * externen Aktionen (Pool-Wechsel, SSE-Events) zu refreshen — die Library
+   * hört nicht selbst auf SSE. `reload()` lädt Tabelle + Cascades + Matrix neu.
    */
-  @ViewChild(ModelsTableComponent) modelsTable?: ModelsTableComponent;
-
-  /**
-   * Cascade-Bereiche-View. Das Backend filtert `/api/cascades` nach dem aktiven
-   * Pool → bei Pool-Wechsel rufen wir hier `reload()`, damit nur die Cascaden
-   * des gewählten Pools angezeigt werden (Übersichtlichkeit).
-   */
-  @ViewChild(CascadesViewComponent) cascadesView?: CascadesViewComponent;
+  @ViewChild(ModelsPageComponent) modelsPage?: ModelsPageComponent;
 
   // Deutsche Labels für die Library-Components (analog zu EduPros i18n-Pipe).
   readonly modelsTableLabels = MODELS_TABLE_LABELS_DE;
@@ -284,7 +156,6 @@ export class AppComponent implements OnDestroy {
   /**
    * Sub-Hints pro Cascade-Name — wird als Untertitel unter dem Cascade-Namen angezeigt.
    * Switcher nutzt „cloud" (bezahlte Tier-Modelle) + „free-only" (kostenfreie OR-Modelle).
-   * Phase S'': Umbenennung default→cloud, fallback→free-only.
    */
   readonly cascadeHints: Record<string, string> = {
     cloud:       'Bezahlte Tier-Modelle (Anthropic / Google / OpenRouter) — eigener Cooldown.',
@@ -293,18 +164,14 @@ export class AppComponent implements OnDestroy {
   };
 
   /**
-   * Anzeige-Titel pro Kategorie in der Modelle-Tabelle — jetzt **dynamisch**
-   * aus `/api/categories` (displayName || humanize). Bugfix: Renames der
-   * Kategorie-DisplayNames propagieren live an Tabelle + Toggle, kein Hardcode
-   * mehr (vorher fest auf cloud/free-only/general → Compound-Kategorien +
-   * Umbenennungen erschienen nie). Wird bei jedem reload() neu gebaut.
+   * Anzeige-Titel pro Kategorie — dynamisch aus `/api/categories`
+   * (displayName || humanize). Renames propagieren live an Tabelle + Toggle.
+   * Wird bei jedem reload() neu gebaut und via pageConfig in die Library gereicht.
    */
   readonly categoryTitles = signal<Record<string, string>>({});
 
   /** Die 3 Pools — der Bereich-Toggle zeigt NUR diese (nie Rollen, nie „Auto"). */
   readonly POOLS = ['cloud', 'free', 'local'];
-  /** Die Rollen — erscheinen pro Pool NUR wenn Supermodell AN ist. */
-  readonly ROLES = ['orchestrator', 'implement', 'review', 'research', 'dispatch'];
 
   readonly poolTitles: Record<string, string> = {
     cloud: 'Cloud — Premium (bezahlt)',
@@ -315,13 +182,6 @@ export class AppComponent implements OnDestroy {
     cloud: 'Beste Qualität (DeepSeek/GPT/Gemini), kostet.',
     free:  '€0, stark rate-limited, NICHT privat (Daten ggf. fürs Training).',
     local: 'Eigene Infra, privat, fail-closed — nichts verlässt den Rechner.',
-  };
-  readonly roleMeta: Record<string, { label: string; desc: string }> = {
-    orchestrator: { label: 'Orchestrator', desc: 'Plant + synthetisiert (Claude Code selbst)' },
-    implement: { label: 'Implement', desc: 'Bulk-Code, Backend, Boilerplate, CRUD' },
-    review:    { label: 'Review',    desc: 'Korrektheit, Sicherheit, Tests' },
-    research:  { label: 'Research',  desc: 'Web/Google, große Docs' },
-    dispatch:  { label: 'Dispatch',  desc: 'Triviales: Commit-Msgs, Summaries' },
   };
 
   /**
@@ -339,22 +199,16 @@ export class AppComponent implements OnDestroy {
 
   /**
    * v0.11.3 — Switcher-spezifischer Override für die ki-models-table.
-   * Anthropic via Switcher braucht NICHT zwingend einen sk-ant-Key,
-   * weil Claude Code via Max-OAuth-Cookie zum nächsten Modell wechselt
-   * (kein direkter api.anthropic.com-Call vom Switcher selbst). Daher
-   * zeigt die Tabelle "Lokal" statt "Key fehlt" — und der "Aktiv setzen"-
-   * Button ist auch ohne Key verfügbar.
-   *
-   * Ollama ist immer keyless (vom Backend markiert), egal ob hier
-   * gelistet oder nicht.
+   * Anthropic via Switcher braucht NICHT zwingend einen sk-ant-Key
+   * (Max-OAuth-Cookie). Daher zeigt die Tabelle "Lokal" statt "Key fehlt"
+   * und der "Aktiv setzen"-Button ist auch ohne Key verfügbar.
    */
   readonly switcherKeylessProviders: string[] = ['anthropic'];
 
   /**
-   * Default-Kategorie pro Provider — wird beim Provider-Wechsel im "Neues
-   * Modell hinzufügen"-Form vorgewählt. Switcher-Schema: Anthropic/Gemini
-   * sind cloud (bezahlt), OpenRouter ist free-only (typisch :free), Ollama
-   * läuft lokal und kommt nicht in die Cascade.
+   * Default-Kategorie pro Provider — wird beim Provider-Wechsel im „Neues
+   * Modell hinzufügen"-Form vorgewählt. Anthropic/Gemini = cloud (bezahlt),
+   * OpenRouter = free-only, Ollama = lokal (general).
    */
   readonly defaultCategoryByProvider: Record<string, string> = {
     anthropic:     'cloud',
@@ -379,11 +233,34 @@ export class AppComponent implements OnDestroy {
   readonly activePool = signal<string>('cloud');
   /** v2 — Local-Orchestrator gewählt, aber kein lokales Modell aktiv (fail-closed). */
   readonly localOrchestratorPending = signal<boolean>(false);
-  /** v2 — Alle Modelle gruppiert nach Compound-Kategorie {rolle}-{pool} (Rollen-Panel). */
-  readonly matrixModels = signal<Record<string, { provider: string; modelId: string; displayName: string; enabled: boolean }[]>>({});
 
   /** EventSource für SSE-Live-Updates. Wird in ngOnInit aufgemacht + ngOnDestroy geschlossen. */
   private es: EventSource | null = null;
+
+  /**
+   * Config-Bundle für `<ki-models-page>`. Reicht alle switcher-spezifischen
+   * Labels/Kategorien durch, damit die gemeinsame Library-Seite die deutschen
+   * Texte + die Pool/Compound-Reihenfolge des Switchers nutzt. Getter, weil
+   * `categoryTitles` + `activeModelId` dynamisch sind (Signal/Status).
+   */
+  get pageConfig(): KiModelsPageConfig {
+    return {
+      modelsTableLabels: this.modelsTableLabels,
+      addModelFormLabels: this.addModelFormLabels,
+      cascadesViewLabels: this.cascadesViewLabels,
+      cascadeChainLabels: this.failoverChainLabels,
+      apiKeysSectionLabels: this.apiKeysSectionLabels,
+      providerServersLabels: this.providerServersLabels,
+      cascadeHints: this.cascadeHints,
+      categoryHints: this.cascadeHints,
+      categoryTitles: this.categoryTitles(),
+      categoryOrder: this.cascadeOrder,
+      keylessProviders: this.switcherKeylessProviders,
+      defaultCategoryByProvider: this.defaultCategoryByProvider,
+      showActiveAction: true,
+      activeModelId: this.activeModel(),
+    };
+  }
 
   ngOnInit(): void {
     this.reload();
@@ -426,11 +303,6 @@ export class AppComponent implements OnDestroy {
   /** `implement-cloud` → `Implement · Cloud` (Fallback ohne displayName). */
   private humanizeCategory(name: string): string {
     return name.split(/[-_]/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' · ');
-  }
-
-  /** Modelle der Compound-Zelle {role}-{activePool} (für das Rollen-Panel). */
-  cellModels(role: string): { provider: string; modelId: string; displayName: string; enabled: boolean }[] {
-    return this.matrixModels()[`${role}-${this.activePool()}`] ?? [];
   }
 
   ngOnDestroy(): void {
@@ -492,9 +364,8 @@ export class AppComponent implements OnDestroy {
     toastReloadOn('auto-promoted', (d) => `Auto-Promote → Anthropic (Cooldown ${d.hoursSinceFailover ?? '?'} h abgelaufen)`);
 
     // 'switch'-Event mit Toast + Reload — wird vom Backend gefeuert wenn
-    // /api/switch erfolgreich war. Wir hängen einen Toast dran damit der
-    // User unabhängig vom Trigger-Pfad (Picker, Per-Row-„Als aktiv", Chat-
-    // Command „wechsel auf X") visuelles Feedback bekommt.
+    // /api/switch erfolgreich war. Toast unabhängig vom Trigger-Pfad (Picker,
+    // Per-Row-„Als aktiv", Chat-Command „wechsel auf X").
     toastReloadOn('switch', (d) => `Wechsel auf ${d.provider}${d.model ? ' · ' + d.model : ''} — Wrapper startet neu`);
     reloadOn('auto-config');
     reloadOn('model-toggled');
@@ -522,9 +393,7 @@ export class AppComponent implements OnDestroy {
         const d = JSON.parse(e.data);
         if (d.pool && d.pool !== this.activePool()) {
           this.activePool.set(d.pool);
-          this.cascadesView?.reload(); // anderer Pool → Cascade-Bereiche neu filtern
-          this.modelsTable?.reload();
-          this.reloadMatrixModels();
+          this.modelsPage?.reload(); // anderer Pool → Tabelle + Cascades + Matrix neu filtern
         }
         if (typeof d.supermodel === 'boolean') this.supermodel.set(d.supermodel);
         this.localOrchestratorPending.set(!!d.localOrchestratorPending);
@@ -549,6 +418,11 @@ export class AppComponent implements OnDestroy {
     setTimeout(() => this.toast.set(null), 4000);
   }
 
+  /**
+   * Genereller Refresh: Status + dynamische Kategorie-Titel + die gemeinsame
+   * Library-Seite (Tabelle + Cascades + Matrix). Wird bei Mount + jedem
+   * relevanten SSE-Event aufgerufen.
+   */
   reload(): void {
     this.api.status().subscribe({
       next: (s) => {
@@ -562,52 +436,8 @@ export class AppComponent implements OnDestroy {
       },
       error: (e) => this.error.set('Status nicht erreichbar: ' + (e?.message ?? e)),
     });
-    this.reloadMatrixModels();
     this.reloadCategoryTitles();
-  }
-
-  /**
-   * Lädt die Cascade-Modell-Liste und gruppiert ALLE Modelle (auch disabled)
-   * nach Compound-Kategorie {rolle}-{pool} für das Rollen-Panel (Matrix).
-   * API-Reihenfolge = orderIdx (Failover-Kette). Provider-Namensraum wird
-   * auf die Switcher-UI gemappt (`gemini` → `google`).
-   */
-  private reloadMatrixModels(): void {
-    this.api.listAiModels().subscribe({
-      next: (models) => {
-        const matrix: Record<string, { provider: string; modelId: string; displayName: string; enabled: boolean }[]> = {};
-        for (const m of models) {
-          const cat = m.category || 'general';
-          (matrix[cat] ??= []).push({
-            provider: m.provider === 'gemini' ? 'google' : m.provider,
-            modelId: m.modelId,
-            displayName: m.displayName || m.modelId,
-            enabled: !!m.enabled,
-          });
-        }
-        this.matrixModels.set(matrix);
-      },
-      error: () => this.matrixModels.set({}),
-    });
-  }
-
-  /**
-   * Wird vom Add-Model-Form gefeuert. Library-Tabelle weiß nichts vom Form,
-   * also triggern wir hier explizit ihr `reload()` + zusätzlich unseren
-   * eigenen Status- + Picker-Refresh.
-   */
-  onModelCreated(): void {
-    this.modelsTable?.reload();
-    this.reload();
-  }
-
-  /**
-   * Wird von der API-Keys-Section gefeuert. Tabelle muss refreshen damit
-   * die „Key gesetzt"-Spalte korrekt ist, und der Picker muss neu evaluieren.
-   */
-  onKeyChanged(): void {
-    this.modelsTable?.reload();
-    this.reload();
+    this.modelsPage?.reload();
   }
 
   onModeChange(mode: 'manual' | 'auto'): void {
@@ -632,10 +462,8 @@ export class AppComponent implements OnDestroy {
         this.localOrchestratorPending.set(!!r.localOrchestratorPending);
         this.showToast(r.note ? r.note : 'Pool: ' + (this.poolTitles[pool] || pool), r.note ? 'err' : 'ok');
         // Backend filtert /api/cascades + /api/ai-models jetzt nach dem neuen Pool →
-        // Cascade-View, Modell-Tabelle und Matrix/Picker neu laden.
-        this.cascadesView?.reload();
-        this.modelsTable?.reload();
-        this.reloadMatrixModels();
+        // Cascade-View, Modell-Tabelle und Matrix neu laden.
+        this.modelsPage?.reload();
         if (r.restart) this.reload();
       },
       error: () => {
@@ -661,7 +489,7 @@ export class AppComponent implements OnDestroy {
             : 'Supermodell AUS',
           type: 'ok',
         });
-        this.reload(); // Rollen-Panel + Pending-State auffrischen
+        this.reload(); // Rollen-Matrix + Pending-State auffrischen
       },
       error: () => {
         this.supermodel.set(!on); // rollback
