@@ -45,3 +45,4 @@ angular-frontend/dist/
 # Aber: angular-frontend/package-lock.json wird für reproducible
 # Container-Builds gebraucht (Dockerfile macht npm ci).
 !angular-frontend/package-lock.json
+docker-compose.override.yml
