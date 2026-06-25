@@ -153,6 +153,36 @@ export class AppComponent implements OnDestroy {
   readonly apiKeysSectionLabels = API_KEYS_SECTION_LABELS_DE;
   readonly providerServersLabels = PROVIDER_SERVERS_LABELS_DE;
 
+  // v0.18.0 — Deutsche Labels für die geteilten Analytics-Panels.
+  readonly callOverviewLabels = {
+    title: 'KI-Calls — Übersicht',
+    subtitle: 'Erfolgs-Trend, Call-Summen und geschätzte Kosten über alle Provider.',
+    trendTitle: 'Erfolgs-Trend (30 Tage)',
+    card24h: 'Calls 24h',
+    card7d: 'Calls 7d',
+    card30d: 'Calls 30d',
+    cardSuccess30d: 'Erfolg 30d',
+    cardFailed30d: 'Fehler 30d',
+    costTitle: 'Geschätzte Kosten (30 Tage)',
+    costChars: 'Output-Zeichen',
+    costTokens: 'Tokens (≈Zeichen/4)',
+    costMoney: 'Kosten',
+    loading: 'Lade Call-Stats…',
+    empty: 'Noch keine Calls erfasst.',
+  };
+  readonly failoverAnalyticsLabels = {
+    title: 'Failover-Analyse',
+    subtitle: 'Wo die Kaskade ein Modell gedroppt hat (letzte 30 Tage) — nach Provider und Grund.',
+    donutTitle: 'Failover-out / Provider',
+    donutCenter: 'OUT',
+    tableTitle: 'Provider × Grund',
+    colProvider: 'Provider',
+    colReason: 'Grund',
+    colCount: 'Anzahl',
+    loading: 'Lade Failover-Stats…',
+    empty: 'Keine Failover-Events in den letzten 30 Tagen.',
+  };
+
   /**
    * Sub-Hints pro Cascade-Name — wird als Untertitel unter dem Cascade-Namen angezeigt.
    * Switcher nutzt „cloud" (bezahlte Tier-Modelle) + „free-only" (kostenfreie OR-Modelle).
@@ -259,6 +289,8 @@ export class AppComponent implements OnDestroy {
       defaultCategoryByProvider: this.defaultCategoryByProvider,
       showActiveAction: true,
       activeModelId: this.activeModel(),
+      callOverviewLabels: this.callOverviewLabels,
+      failoverAnalyticsLabels: this.failoverAnalyticsLabels,
     };
   }
 
