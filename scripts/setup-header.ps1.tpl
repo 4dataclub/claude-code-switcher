@@ -194,11 +194,95 @@ if ($WithSupermodel) {
     Write-Host "  ✓ Supermodell-Modus installiert — im UI (http://localhost:2000) einschalten + Keys (OpenRouter/Gemini) eintragen." -ForegroundColor Green
 }
 
-# Docker
+# Docker — detect-or-provision Ollama (Windows = Base/CPU, kein GPU-Override).
+$CascadeUrl     = 'http://localhost:8091'
+$HostProbeUrl   = 'http://localhost:11434'
+$OllamaTagsUrl  = 'http://localhost:11434/api/tags'
+$AdoptBaseUrl   = 'http://host.docker.internal:11434/v1'
+$InstackBaseUrl = 'http://ollama:11434/v1'
+$OllamaContainer = 'claude-switcher-ollama-1'
+$DefaultModels  = @('qwen2.5-coder:7b','qwen2.5:7b','llama3.2:3b')
+
+function Test-HostOllama {
+    try { Invoke-RestMethod -Uri $OllamaTagsUrl -TimeoutSec 5 | Out-Null; return $true }
+    catch { return $false }
+}
+function Get-OllamaModelIds {
+    try {
+        $models = Invoke-RestMethod -Uri "$CascadeUrl/api/models" -TimeoutSec 10
+        $ids = $models | Where-Object { $_.provider -eq 'ollama' -and $_.modelId } |
+               ForEach-Object { $_.modelId } | Sort-Object -Unique
+        if ($ids) { return $ids }
+    } catch {}
+    return $DefaultModels
+}
+function Set-DefaultServer {
+    param([string]$BaseUrl)
+    $body = @{ baseUrl = $BaseUrl; isDefault = $true; description = 'Auto: detect-or-provision' } | ConvertTo-Json
+    Invoke-RestMethod -Uri "$CascadeUrl/api/provider-servers/localhost" -Method Put `
+        -ContentType 'application/json' -Body $body -TimeoutSec 10 | Out-Null
+}
+function Test-HostHasModel {
+    param([string]$Model)
+    try {
+        $tags = Invoke-RestMethod -Uri $OllamaTagsUrl -TimeoutSec 5
+        return @($tags.models | ForEach-Object { $_.name }) -contains $Model
+    } catch { return $false }
+}
+function Invoke-PullHost {
+    param([string]$Model)
+    $body = @{ name = $Model; stream = $false } | ConvertTo-Json
+    Invoke-RestMethod -Uri "$HostProbeUrl/api/pull" -Method Post `
+        -ContentType 'application/json' -Body $body -TimeoutSec 1800 | Out-Null
+}
+
 $dockerOk = (Get-Command docker -ErrorAction SilentlyContinue) -ne $null
 if ($dockerOk) {
-    Write-Host "▸ Baue + starte Docker-Container" -ForegroundColor Cyan
-    & docker compose up -d --build 2>&1 | Select-Object -Last 5
+    # Windows ist immer x86_64 → llm-cascade-Image (arm64-only) nicht nutzbar, also aus Source bauen.
+    $LlmCascadeRef  = if ($env:LLM_CASCADE_REF)  { $env:LLM_CASCADE_REF }  else { 'main' }
+    $LlmCascadeRepo = if ($env:LLM_CASCADE_REPO) { $env:LLM_CASCADE_REPO } else { 'https://github.com/4dataclub/llm-cascade.git' }
+    if (-not (Test-Path 'llm-cascade')) {
+        Write-Host "  ▸ amd64 (Windows) → klone llm-cascade ($LlmCascadeRef) für Source-Build" -ForegroundColor Cyan
+        & git clone --depth 1 --branch $LlmCascadeRef $LlmCascadeRepo llm-cascade
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "✗ git clone llm-cascade fehlgeschlagen — Image auf amd64 nicht nutzbar. Abbruch." -ForegroundColor Red
+            exit 1
+        }
+    } else {
+        Write-Host "  ✓ llm-cascade-Source bereits vorhanden → kein erneuter Clone" -ForegroundColor Green
+    }
+    $ComposeFiles = @('-f','docker-compose.yml','-f','docker-compose.amd64.yml')
+    Write-Host "▸ Baue + starte Stack (ohne in-stack Ollama)" -ForegroundColor Cyan
+    & docker compose @ComposeFiles up -d --build 2>&1 | Select-Object -Last 5
+
+    Write-Host "▸ Warte auf llm-cascade (:8091) …" -ForegroundColor Cyan
+    for ($i = 0; $i -lt 60; $i++) {
+        try { Invoke-RestMethod -Uri "$CascadeUrl/api/health" -TimeoutSec 2 | Out-Null; break } catch { Start-Sleep -Seconds 2 }
+    }
+
+    $models = Get-OllamaModelIds
+    if (Test-HostOllama) {
+        Write-Host "▸ Host-Ollama gefunden → adoptiere (kein eigener Container)" -ForegroundColor Cyan
+        Set-DefaultServer $AdoptBaseUrl
+        foreach ($m in $models) {
+            if (Test-HostHasModel $m) { Write-Host "  ✓ $m bereits auf Host-Ollama" -ForegroundColor Green }
+            else { Write-Host "  ▸ pulle $m auf Host-Ollama …"; try { Invoke-PullHost $m } catch { Write-Host "  ⚠ pull $m fehlgeschlagen" -ForegroundColor Yellow } }
+        }
+    } else {
+        Write-Host "▸ Kein Host-Ollama gefunden → starte in-stack Ollama (Profil local-llm)" -ForegroundColor Cyan
+        & docker compose @ComposeFiles --profile local-llm up -d 2>&1 | Select-Object -Last 3
+        Write-Host "  ▸ warte auf Ollama-Container …"
+        for ($i = 0; $i -lt 30; $i++) {
+            & docker exec $OllamaContainer ollama list *> $null
+            if ($LASTEXITCODE -eq 0) { break }
+            Start-Sleep -Seconds 2
+        }
+        Set-DefaultServer $InstackBaseUrl
+        foreach ($m in $models) {
+            Write-Host "  ▸ pulle $m in in-stack Ollama …"
+            & docker exec $OllamaContainer ollama pull $m
+        }
+    }
 } else {
     Write-Host "  ⚠ docker nicht installiert (Docker Desktop für Windows benötigt)" -ForegroundColor Yellow
 }

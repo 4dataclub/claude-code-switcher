@@ -93,7 +93,7 @@ normales Pool-Routing.
 | **orchestrator** *(Hirn, gepinnt)* | Opus 4.8 → Sonnet 4.6 | *(leer — editierbar)* | qwen2.5:14b (aus bis Ollama) |
 | **implement** | DeepSeek V3.1 + Gemini Flash | Qwen3-Coder + Qwen3-Next 80B | qwen2.5-coder:7b |
 | **review** | GPT-4o-mini | GPT-OSS 120B | qwen2.5:7b |
-| **research** | Gemini Pro (OR + nativ) | *(Gemini-MCP)* | *— Web=Cloud* |
+| **research** | Gemini Pro (OR + nativ) | *(Gemini-MCP)* | qwen2.5:7b — intern/offline, nichts raus |
 | **dispatch** | Gemini Flash-Lite | Llama 3.3 + GPT-OSS 20B | gemma3:4b |
 
 Jede Zelle ist eine **Failover-Kette** (mehrere Modelle, Cooldown). Fällt eins aus, rückt
@@ -154,8 +154,11 @@ das nächste nach — der Plan läuft weiter. Modelle/Reihenfolge jederzeit in d
 ```
 
 **Daraus folgt:** Rollen + Pools sind `Kategorien = Daten` (voll CRUD-bar) — änderst du eine
-Beschreibung oder ein Modell, folgt das Routing, **kein Code-Eingriff**. `research` verlässt die
-Cascade (Gemini-MCP/Grounding; im Local-Pool verweigert = Web=Cloud, fail-closed). Delegation-Fehler:
+Beschreibung oder ein Modell, folgt das Routing, **kein Code-Eingriff**. `research`: cloud/free
+verlässt die Cascade (Gemini-MCP/Grounding); **local** routet auf das lokale Modell
+(`research-local`, Doc-Analyse/Reasoning) und darf lokale Docs + interne/VPN-erreichbare
+Ressourcen nutzen — **nichts verlässt das interne Netz**, kein öffentliches Web/Cloud; reine
+Public-Web-Recherche verweigert der Agent (fail-closed). Delegation-Fehler:
 **cloud/free = fail-open** (Opus macht's selbst), **local = fail-closed** (Stopp, nie Cloud).
 
 ## Ohne Supermodell — der klassische Lauf (Gegenstück)
@@ -205,11 +208,17 @@ sequenziell, ein Modell macht alles). **Mit** Supermodell werden dieselben Berei
 
 ## 🔒 Lokal = fail-closed (die wichtigste Garantie)
 
-Im **Local-Pool** verlässt **nichts** automatisch den Rechner — auch nicht „um die Funktion
-am Leben zu halten". **Lieber STOPP als Leak.**
+Im **Local-Pool** verlässt **nichts** automatisch das **interne Netz** — auch nicht „um die
+Funktion am Leben zu halten". **Lieber STOPP als Leak.** Die fail-closed-Grenze ist das
+**interne Netz-Perimeter**, nicht „die Maschine": der Pool ist **offline-fähig** (läuft ohne
+Internet, sobald die Modelle gezogen sind), **Intranet/VPN-erreichbare Ressourcen sind ok**,
+aber **nichts geht ins öffentliche Web / in die Cloud / zu einem Cloud-LLM**.
 
 - Der **Orchestrator selbst ist lokal** (NICHT Opus — Opus = Anthropic = Cloud würde die
   Planung rausgeben). Das Backend pinnt im Local-Pool **niemals** Opus/Anthropic.
+- **`research-local` ist legitim:** ein lokales Modell darf lokale Docs + interne/VPN-erreichbare
+  Ressourcen verarbeiten. Verweigert wird nur, was **zwingend das öffentliche Web** braucht
+  (`Public-Web-Research nicht im Local-Pool`). Reine Public-Web-Recherche = fail-closed.
 - Solange kein lokales Modell aktiv ist → `localOrchestratorPending` (Warnung im UI), aber
   **kein Cloud-Ausweich**.
 - Der `@supermodel`-Agent delegiert im Local-Pool nur an `{rolle}-local`; schlägt das fehl,
@@ -407,11 +416,88 @@ curl -X POST :8091/api/generate -d '{"category":"review-cloud","prompt":"ping"}'
 # Fail-closed (Local): Local aktiv + Ollama killen → 0 Cloud-Calls (Stats prüfen).
 ```
 
+## Supermodell vs. EduPros semantisches Routing — gleiche Maschine, andere Tür
+
+Häufige Erkenntnis (und sie stimmt): **ganz unten machen beide dasselbe** — *„nimm dieses Stück
+Arbeit und schick es zum passenden Spezialisten-Modell."* Es ist sogar **derselbe Code-Pfad**:
+Kategorie → Failover-Kaskade → live Modell. Der Unterschied ist **nur, WER die Kategorie wählt und
+WORAUF basierend.**
+
+**Bild: llm-cascade ist eine Poststelle mit beschrifteten Fächern.** Jede Anfrage ist ein Brief,
+der in genau **ein** Fach muss. Es gibt **eine Frage** — *„welches Fach / welcher Spezialist?"* — und
+**drei Türen** zur Antwort, mit fester Präzedenz (`ApiController` Z.99-114):
+
+```
+   Frage: "Welcher Spezialist macht das?"
+   │
+ ① Der CHEF sagt es        → er hat die Arbeit selbst zerlegt und weiß
+   (explizites category-Etikett)  "das ist ein review"          → SUPERMODELL
+   │   schlägt …
+ ② DU legst den Hebel um   → preferredCategory: "alles nach Cloud / nach Content"
+   (manueller Override)                              → Pool-Toggle / Bereich-erzwingen
+   │   schlägt …
+ ③ Der SCANNER rät         → liest purpose/Inhalt: "das ist eine Übersetzung"
+   (Semantic Router)                                → EduPro Auto-Mode
+```
+
+**Immer nur EINE Tür pro Brief** — alle drei füllen denselben einen `category`-Schlitz
+(① Etikett > ② Hebel > ③ Scanner). **Nicht** zwei gleichzeitig am selben Call.
+
+**EduPro — der Scanner liest den Inhalt (1 Reihe, Tür ③):** Briefe kommen ohne Etikett, der Router
+klassifiziert pro Call nach Task-Typ. **1 Achse**, das Gehirn ist der Scanner:
+
+```
+┌─────────┬──────┬─────────┬─────────┐
+│ Content │ Dev  │ Utility │ General │   ← Router sucht selbst aus (purpose → Bereich)
+└─────────┴──────┴─────────┴─────────┘
+```
+
+**Supermodell — der Chef klebt Etiketten vorher (5×3-Raster, Tür ①):** Opus zerlegt den Job in
+rollen-getaggte Subtasks und kennt die Rolle **schon vor dem Versand**; du wählst die Pool-Spalte.
+**2 Achsen** (Rolle × Pool), das Gehirn ist der Chef, der Scanner steht still:
+
+```
+              cloud      free      local     ← Pool: DU wählst die Spalte (Hebel ②)
+          ┌──────────┬──────────┬──────────┐
+orchestr. │  o-cloud │  o-free  │  o-local │
+implement │  i-cloud │  i-free  │  i-local │
+review    │  r-cloud │  r-free  │  r-local │  ← Rolle: der CHEF klebt die Zeile (Etikett ①)
+research  │ rs-cloud │ rs-free  │ rs-local │
+dispatch  │  d-cloud │  d-free  │  d-local │
+          └──────────┴──────────┴──────────┘
+```
+
+**Der Kern-Unterschied:** Supermodell ist **nicht** „semantisches Routing mit Extraschritten",
+sondern der **umgekehrte Weg** — statt *den Inhalt raten zu lassen* (③), **weiß der Chef es schon**,
+weil er die Arbeit selbst in Rollen zerschnitten hat (①). Plus die zweite Achse (Pool = Kostenstufe),
+die der Scanner gar nicht kennt.
+
+| | **EduPro Bereiche** | **Switcher Supermodell=AN** |
+|---|---|---|
+| Genutzte Tür | ③ Semantic Router (purpose) — bzw. ② Override | ① explizites `category` im Body |
+| Kategorie = | Task-Typ (content/dev/utility/general) | Compound `<rolle>-<pool>` (5×3=15) |
+| Achsen | 1 (Inhaltsklassifikation) | 2 (Rolle × Pool) |
+| Wer wählt | llm-cascade klassifiziert **automatisch** | **Orchestrator-Agent** + manueller Pool |
+| Semantik aktiv? | Ja — Router ist der Entscheider | Nein — deterministischer Etikett-Override |
+
+**„Switcher hat beides":** richtig — der Switcher nutzt dieselbe Maschine, also sind **alle drei
+Türen** verfügbar. Ohne Agent und ohne Hebel würde auch er semantisch raten (③), genau wie EduPro.
+EduPro lebt auf ③ (+② Override); Supermodell auf ① (+② für die Pool-Spalte).
+
 ## Architektur-Hinweis: EduPro bleibt unberührt
 
-Switcher + EduPro teilen die **Software** (llm-cascade-Image), laufen aber als **getrennte
-Instanzen mit eigener DB**. EduPro kennt die Rollen-Kategorien nicht → verhält sich exakt
-wie bisher. Alle Erweiterungen hier sind additiv.
+Switcher + EduPro teilen die **Software** (llm-cascade-Image + `ki-models-ui`-Library), laufen aber
+als **getrennte Instanzen mit eigener DB**. EduPro kennt die Rollen-Kategorien nicht → verhält sich
+exakt wie bisher. Alle Erweiterungen hier sind additiv.
+
+**Warum EduPro die Supermodell-Matrix gesperrt (`disabled`) statt versteckt mountet:** Die Rollen-Achse
+hat nur Sinn, wenn *etwas* Jobs in rollen-getaggte Subtasks zerlegt — der **Orchestrator-Agent**
+(`agents/supermodel.md`), der **nur in der Claude-Code-Session** lebt. EduPros Calls sind Single-Shot-
+Service-Calls (i18n, exam, pool) mit `purpose` → kein Rollen-Decompose → ohne Chef bliebe jede
+Raster-**Zeile** leer. „Sichtbar aber gesperrt" ist daher die ehrliche Darstellung: **Mechanik ist da,
+aber ohne Chef nicht befüllbar.** Aktivieren später = (1) Compound-Kategorien `<rolle>-<pool>` in
+EduPros `DataInitializer` seeden + (2) `disabled=false`. Leitprinzip: **gleiche Basis für beide, UI
+ein-/ausblenden ist nur die dünne Host-Schicht** — der Unterschied ist Daten/Konfig, kein Code-Fork.
 
 ## Quellen
 

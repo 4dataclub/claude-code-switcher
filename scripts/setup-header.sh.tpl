@@ -176,11 +176,96 @@ PYEOF
 fi
 
 if command -v docker >/dev/null 2>&1; then
-  echo "▸ Baue + starte Docker-Container"
-  if docker compose version >/dev/null 2>&1; then
-    docker compose up -d --build 2>&1 | tail -5
-  elif command -v docker-compose >/dev/null 2>&1; then
-    docker-compose up -d --build 2>&1 | tail -5
+  DC="docker compose"
+  docker compose version >/dev/null 2>&1 || { command -v docker-compose >/dev/null 2>&1 && DC="docker-compose"; }
+
+  # --- Arch-Lane: amd64 (x86_64) baut llm-cascade aus Source; arm64 nutzt das Image. ---
+  # Grund: das veroeffentlichte Image ist arm64-only.
+  CF="-f docker-compose.yml"
+  ARCH="$(uname -m)"
+  if [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "amd64" ]; then
+    LLM_CASCADE_REF="${LLM_CASCADE_REF:-main}"
+    LLM_CASCADE_REPO="${LLM_CASCADE_REPO:-https://github.com/4dataclub/llm-cascade.git}"
+    if [ ! -d llm-cascade ]; then
+      echo "  ▸ amd64 ($ARCH) erkannt → klone llm-cascade ($LLM_CASCADE_REF) für Source-Build"
+      if ! git clone --depth 1 --branch "$LLM_CASCADE_REF" "$LLM_CASCADE_REPO" llm-cascade; then
+        echo "✗ git clone llm-cascade fehlgeschlagen — auf amd64 ist das Image nicht nutzbar. Abbruch." >&2
+        exit 1
+      fi
+    else
+      echo "  ✓ llm-cascade-Source bereits vorhanden → kein erneuter Clone"
+    fi
+    CF="$CF -f docker-compose.amd64.yml"
+  fi
+
+  # --- GPU-Lane (orthogonal): NVIDIA auf Linux layert gpu.yml. CPU = Warnung + weiterlaufen. ---
+  # Override-Escape-Hatch: SWITCHER_GPU=auto|nvidia|none. AMD/Intel sind YAGNI → expliziter Seam.
+  GPU_VENDOR="${SWITCHER_GPU:-auto}"
+  if [ "$GPU_VENDOR" = "auto" ]; then
+    if [ "$(uname -s)" = "Linux" ] && command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+      GPU_VENDOR="nvidia"
+    else
+      GPU_VENDOR="none"
+    fi
+  fi
+  case "$GPU_VENDOR" in
+    nvidia)
+      CF="$CF -f docker-compose.gpu.yml"
+      echo "  ▸ NVIDIA-GPU aktiv → GPU-Override (docker-compose.gpu.yml)" ;;
+    none)
+      echo "  ⚠ Keine NVIDIA-GPU → CPU-Modus (läuft weiter)" ;;
+    *)
+      echo "  ⚠ SWITCHER_GPU=${SWITCHER_GPU} nicht unterstützt (nur 'nvidia' vorgebaut) → CPU-Modus" ;;
+  esac
+
+  echo "▸ Baue + starte Stack (ohne in-stack Ollama)"
+  $DC $CF up -d --build 2>&1 | tail -5
+
+  if [ -f "$(pwd)/scripts/lib/ollama-provision.sh" ]; then
+    . "$(pwd)/scripts/lib/ollama-provision.sh"
+
+    echo "▸ Warte auf llm-cascade (:8091) …"
+    for _ in $(seq 1 60); do
+      curl -fsS --max-time 2 "${OP_CASCADE_URL}/api/health" >/dev/null 2>&1 && break
+      sleep 2
+    done
+
+    MODE=$(op_detect_mode)
+    if [ "$MODE" = provision ] && [ "$(uname -s)" = "Darwin" ]; then
+      # macOS: GPU (Metal) ist aus Containern nicht erreichbar → natives Ollama bevorzugen.
+      if command -v ollama >/dev/null 2>&1; then
+        echo "▸ macOS: starte natives Ollama (Metal-GPU) statt CPU-Container"
+        ollama serve >/dev/null 2>&1 &
+      elif [ -t 0 ] && command -v brew >/dev/null 2>&1; then
+        printf "  ? Ollama nicht installiert. Für GPU (Metal) per Homebrew installieren? [y/N] "
+        read -r ans
+        case "$ans" in
+          y|Y) if brew install ollama; then ollama serve >/dev/null 2>&1 & fi ;;
+          *)   echo "  ⚠ übersprungen → CPU-Container-Fallback" ;;
+        esac
+      fi
+      if command -v ollama >/dev/null 2>&1; then
+        echo "  ▸ warte auf natives Ollama (:11434) …"
+        for _ in $(seq 1 30); do
+          curl -fsS --max-time 2 "${OP_HOST_PROBE_URL}/api/tags" >/dev/null 2>&1 && { MODE=adopt; break; }
+          sleep 1
+        done
+      fi
+    fi
+    if [ "$MODE" = provision ]; then
+      echo "▸ Kein Host-Ollama gefunden → starte in-stack Ollama (Profil local-llm)"
+      $DC $CF --profile local-llm up -d 2>&1 | tail -3
+      echo "  ▸ warte auf Ollama-Container …"
+      for _ in $(seq 1 30); do
+        docker exec "$OP_OLLAMA_CONTAINER" ollama list >/dev/null 2>&1 && break
+        sleep 2
+      done
+    else
+      echo "▸ Host-Ollama gefunden → adoptiere (kein eigener Container)"
+    fi
+    op_apply "$MODE"
+  else
+    echo "  ⚠ scripts/lib/ollama-provision.sh fehlt — überspringe Ollama-Setup"
   fi
 else
   echo "  ⚠ docker nicht installiert"

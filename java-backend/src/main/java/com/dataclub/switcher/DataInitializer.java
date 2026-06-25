@@ -66,7 +66,7 @@ public class DataInitializer {
      *            cloud (bezahlt)        free (:free, €0)       local (Ollama, privat)
      * implement  DeepSeek V3.1 + Flash  Qwen3-Coder + Next-80B qwen2.5-coder:7b *
      * review     Haiku 4.5 + GPT-4o-mini GPT-OSS 120B          qwen2.5:7b *
-     * research   Gemini Pro (OR+nativ)  — (Gemini-MCP)         — (Web=Cloud)
+     * research   Gemini Pro (OR+nativ)  Gemma 4 31B (free)     qwen2.5:7b * (intern/Intranet, offline, nichts raus)
      * dispatch   Gemini Flash-Lite      Llama 3.3 + GPT-OSS-20 gemma3:4b *
      * </pre>
      * (* local = enabled=false bis die Ollama-Modelle gezogen sind — Phase E.)
@@ -74,6 +74,14 @@ public class DataInitializer {
      * {@code orchestrator-cloud} trägt Opus (Abo) als Orchestrator-Primary (Failover → Gemini Flash).
      * {@code utility}+{@code general} bewusst NICHT geseedet → Local hat
      * keinen Cloud-{@code general}-Fallback = automatisch fail-closed.
+     *
+     * <p><b>Offline-Garantie:</b> jede {@code *-local}-Zelle routet ausschließlich auf
+     * {@code ollama} — KEIN Cloud-Eintrag in irgendeiner local-Zelle. Damit läuft der
+     * Local-Pool ohne Internet (sobald die Modelle gezogen sind). {@code research-local}
+     * ist legitim: ein lokales Modell für Doc-Analyse/Reasoning, das lokale Docs +
+     * interne/VPN-erreichbare Ressourcen verarbeitet — die fail-closed-Grenze ist das
+     * <i>interne Netz</i>, nicht „die Maschine". Öffentliches Web/Cloud verlässt nie das
+     * interne Netz; reine Public-Web-Recherche verweigert der Agent (fail-closed).
      */
     private void seedDefaultChain(AiModelConfigRepository modelRepo) {
         LocalDateTime now = LocalDateTime.now();
@@ -96,10 +104,15 @@ public class DataInitializer {
             new Default("openrouter", "openai/gpt-4o-mini",                     "GPT-4o-mini",                   "openrouterApiKey", "review-cloud",    true),
             new Default("openrouter", "openai/gpt-oss-120b:free",               "GPT-OSS 120B (free)",           "openrouterApiKey", "review-free",     true),
             new Default("ollama",     "qwen2.5:7b",                             "Qwen2.5 7B (lokal)",            "ollamaApiKey",     "review-local",    false),
-            // ── research (Web/Docs · Large-Context) — Web-Grounding via Gemini-MCP ──
+            // ── research (Docs · Large-Context · Reasoning) ──
+            //    cloud/free: Web-Grounding via Gemini-MCP. local: lokales Modell für
+            //    Doc-Analyse/Reasoning (spiegelt review) — verarbeitet lokale Docs +
+            //    interne/VPN-erreichbare Ressourcen, nichts verlässt das interne Netz,
+            //    kein öffentliches Web/Cloud. enabled=false bis Ollama-Pull (Phase E).
             new Default("openrouter", "google/gemini-2.5-pro",                  "Gemini 2.5 Pro (research)",     "openrouterApiKey", "research-cloud",  true),
             new Default("gemini",     "gemini-2.5-pro",                         "Gemini 2.5 Pro (nativ · #2)",   "geminiApiKey",     "research-cloud",  true),
             new Default("openrouter", "google/gemma-4-31b-it:free",             "Gemma 4 31B (free · Research)",  "openrouterApiKey", "research-free",   true),
+            new Default("ollama",     "qwen2.5:7b",                             "Qwen2.5 7B (lokal · Research)", "ollamaApiKey",     "research-local",  false),
             // ── dispatch (Triviales) ──
             new Default("openrouter", "google/gemini-2.5-flash-lite",           "Gemini 2.5 Flash-Lite",         "openrouterApiKey", "dispatch-cloud",  true),
             new Default("openrouter", "meta-llama/llama-3.3-70b-instruct:free", "Llama 3.3 70B (free)",          "openrouterApiKey", "dispatch-free",   true),
@@ -108,8 +121,10 @@ public class DataInitializer {
         );
         int idx = 0;
         for (Default d : defaults) {
-            // Dedup falls llm-cascade dieselbe Tabelle bereits befuellt hat.
-            if (modelRepo.findFirstByProviderAndModelId(d.provider(), d.modelId()).isPresent()) {
+            // Dedup falls llm-cascade dieselbe Tabelle bereits befuellt hat — kategorie-bewusst,
+            // damit dasselbe Modell in mehreren Zellen stehen darf (z.B. qwen2.5:7b als
+            // review-local UND research-local).
+            if (modelRepo.findFirstByProviderAndModelIdAndCategory(d.provider(), d.modelId(), d.category()).isPresent()) {
                 continue;
             }
             modelRepo.save(AiModelConfig.builder()
