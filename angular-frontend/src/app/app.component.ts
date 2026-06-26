@@ -89,7 +89,7 @@ import {
         <!-- Liste der letzten Modus-/Toggle-Umschaltungen (Modell an/aus, Pool,
              Supermodell) mit Datum — gespeist aus /api/stats/failover. -->
         <div class="mt-6 border-t border-slate-200 dark:border-slate-800 pt-5">
-          <ki-mode-events [labels]="modeEventsLabels"></ki-mode-events>
+          <ki-mode-events [labels]="modeEventsLabels" [autoRefreshSec]="0"></ki-mode-events>
         </div>
       </section>
 
@@ -333,6 +333,9 @@ export class AppComponent implements OnDestroy {
       activeModelId: this.activeModel(),
       callOverviewLabels: this.callOverviewLabels,
       failoverAnalyticsLabels: this.failoverAnalyticsLabels,
+      // Kein Auto-Refresh — Aktualisierung nur per ↻-Button.
+      delegationAutoRefreshSec: 0,
+      cooldownAutoRefreshSec: 0,
     };
   }
 

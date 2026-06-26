@@ -1275,7 +1275,10 @@ public class ApiController {
      */
     @GetMapping("/api-keys")
     public List<Map<String, Object>> apiKeys() {
-        List<Map<String, Object>> source = cascadeSettings();
+        // Nur Credential-Settings (key/token/secret/…) — Nicht-Key-Settings wie
+        // logPromptSnippet gehoeren in die Privacy-Sektion (/settings), nicht
+        // unter „Konfigurierte Keys".
+        List<Map<String, Object>> source = modelSvc.listKeySettings();
         List<Map<String, Object>> out = new ArrayList<>(source.size());
         for (Map<String, Object> item : source) {
             Map<String, Object> mapped = new LinkedHashMap<>(item);

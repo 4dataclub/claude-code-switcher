@@ -180,6 +180,19 @@ public class SwitcherModelService {
         return out;
     }
 
+    /**
+     * Wie {@link #listSettings()}, aber nur Eintraege deren Schluessel wie ein
+     * Credential aussieht ({@code key|token|secret|password}) — fuer die
+     * API-Keys-Sektion. Nicht-Key-Settings wie {@code logPromptSnippet} bleiben
+     * der Privacy-Sektion ({@code /settings} → {@link #listSettings()})
+     * vorbehalten und tauchen nicht mehr unter „Konfigurierte Keys" auf.
+     */
+    public List<Map<String, Object>> listKeySettings() {
+        return listSettings().stream()
+            .filter(e -> SENSITIVE_KEY.matcher(String.valueOf(e.get("key"))).find())
+            .toList();
+    }
+
     /** Klartext-Setting (fuer interne Calls — z.B. Provider-Test). */
     public String getSettingRaw(String key) {
         return settingRepo.findById(key).map(AppSetting::getValue).orElse(null);
