@@ -10,10 +10,10 @@ set -euo pipefail
 
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$SRC_DIR/claude-auto"
-ROUTER_WATCH_SRC="$SRC_DIR/router-watch.sh"
+SWITCHER_WATCH_SRC="$SRC_DIR/switcher-watch.sh"
 DEST_DIR="$HOME/.local/bin"
 DEST="$DEST_DIR/claude-auto"
-ROUTER_WATCH_DEST="$DEST_DIR/router-watch"
+SWITCHER_WATCH_DEST="$DEST_DIR/switcher-watch"
 
 if [[ ! -f "$SRC" ]]; then
   echo "✗ Source nicht gefunden: $SRC" >&2
@@ -26,11 +26,12 @@ chmod +x "$SRC"
 ln -sf "$SRC" "$DEST"
 echo "✓ claude-auto installiert nach $DEST"
 
-# 1b. router-watch symlinken (Live-Anzeige der Router-Anfragen)
-if [[ -f "$ROUTER_WATCH_SRC" ]]; then
-  chmod +x "$ROUTER_WATCH_SRC"
-  ln -sf "$ROUTER_WATCH_SRC" "$ROUTER_WATCH_DEST"
-  echo "✓ router-watch installiert nach $ROUTER_WATCH_DEST"
+# 1b. switcher-watch symlinken (UI-Events + Router-Routing + Delegator in einem Fenster;
+#     löst das alte router-watch ab)
+if [[ -f "$SWITCHER_WATCH_SRC" ]]; then
+  chmod +x "$SWITCHER_WATCH_SRC"
+  ln -sf "$SWITCHER_WATCH_SRC" "$SWITCHER_WATCH_DEST"
+  echo "✓ switcher-watch installiert nach $SWITCHER_WATCH_DEST"
 fi
 
 # PATH-Check

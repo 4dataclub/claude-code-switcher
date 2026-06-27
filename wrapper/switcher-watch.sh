@@ -42,9 +42,13 @@ echo "  ${C_BLUE}[ROUTER]${C_RESET} welches Backend die Haupt-Session bedient (n
 echo "  ${C_CYAN}[DELEG]${C_RESET}  wohin der Delegator die Rollen-Subtasks schickt"
 echo ""
 
-# Aktueller Status
-echo -n "${C_DIM}Aktueller Switcher-Status: ${C_RESET}"
-curl -sS --max-time 3 "$SWITCHER_URL/api/status" 2>/dev/null | python3 -c "
+# Status-Helfer: pollt /api/status und druckt EINE aktuelle Zustands-Zeile.
+# Wird beim Start UND nach jedem [UI]-Event aufgerufen → Anzeige bleibt aktuell,
+# friert nicht mehr auf dem Start-Snapshot ein.
+print_status() {
+  local label="${1:-Status jetzt}"
+  echo -n "${C_DIM}${label}: ${C_RESET}"
+  curl -sS --max-time 3 "$SWITCHER_URL/api/status" 2>/dev/null | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
@@ -58,6 +62,10 @@ try:
 except Exception:
     print('(unbekannt — Switcher erreichbar?)')
 " 2>/dev/null || echo "(Switcher unter $SWITCHER_URL nicht erreichbar)"
+}
+
+# Start-Snapshot. Bei jeder Änderung erscheint unten ein [UI]-Event + eine frische Status-Zeile.
+print_status "Start-Status"
 echo ""
 
 # ─── [UI] SSE-Stream für State-Events ──────────────────────────────────────
@@ -83,6 +91,7 @@ try:
     sys.stdout.write(out); sys.stdout.flush()
 except: pass
 " 2>/dev/null
+        print_status "Status jetzt"
         ;;
       "event:auto-switched"|"event: auto-switched")
         read -r data_line
@@ -95,6 +104,7 @@ try:
     print(f'\n\033[1;35m[UI]\033[0m \033[1;33m▼▼▼ AUTO-SWITCH (Failover) ▼▼▼ → \033[1;35m{t.get(\"provider\")}\033[0m \033[1;33m/ \033[1;36m{t.get(\"model\")}\033[0m\n')
 except: pass
 " 2>/dev/null
+        print_status "Status jetzt"
         ;;
       "event:mode"|"event: mode")
         read -r data_line
@@ -110,6 +120,7 @@ try:
     print(f'\n\033[1;35m[UI]\033[0m \033[1;35m◆◆◆ SUPERMODELL {state}\033[0m  Pool: \033[1;36m{pool}\033[0m{extra}\n')
 except: pass
 " 2>/dev/null
+        print_status "Status jetzt"
         ;;
       "event:warn"|"event: warn")
         read -r data_line
@@ -117,6 +128,7 @@ except: pass
         ;;
       "event:chain-promoted"|"event: chain-promoted")
         echo "${C_MAGENTA}[UI]${C_RESET} ${C_GREEN}↺ Zurück auf Anthropic${C_RESET}"
+        print_status "Status jetzt"
         ;;
     esac
   done

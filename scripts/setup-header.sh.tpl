@@ -48,7 +48,7 @@ while IFS= read -r path; do
   [[ -z "$path" ]] && continue
   extract "$path"
 done <<< "$MANIFEST"
-chmod +x wrapper/claude-auto wrapper/install.sh wrapper/router-watch.sh wrapper/switcher-banner.sh 2>/dev/null || true
+chmod +x wrapper/claude-auto wrapper/install.sh wrapper/switcher-watch.sh wrapper/router-watch.sh wrapper/switcher-banner.sh 2>/dev/null || true
 echo "  ✓ Source entpackt ($(echo "$MANIFEST" | grep -c '^.' || true) Files)"
 
 if (( WITH_USER_CONFIG )); then
@@ -306,5 +306,5 @@ echo ""
 echo "Dann:"
 echo "  claude                  # läuft jetzt durch den Wrapper mit Auto-Failover"
 echo "  http://localhost:2000   # UI zum Provider/Modell wählen"
-echo "  $(pwd)/wrapper/router-watch.sh   # live anschauen welches Modell antwortet"
+echo "  switcher-watch           # live: UI-Events + welches Modell antwortet + Delegationen"
 exit 0

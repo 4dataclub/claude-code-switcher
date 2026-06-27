@@ -316,7 +316,7 @@ sed -i 's|image: ghcr.io/4dataclub/llm-cascade:.*|build: ./llm-cascade|' docker-
 docker compose up -d --build
 ```
 
-> Alle Bash-Hooks, der Watcher (`router-watch.sh`), der Wrapper (`claude-auto`) und die `settings.json`-Mergung sind plattformidentisch zu macOS — Linux ist hier der „Standard-Pfad".
+> Alle Bash-Hooks, der Watcher (`switcher-watch.sh`), der Wrapper (`claude-auto`) und die `settings.json`-Mergung sind plattformidentisch zu macOS — Linux ist hier der „Standard-Pfad".
 
 ---
 
