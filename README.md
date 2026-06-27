@@ -301,7 +301,7 @@ chmod +x setup.sh && ./setup.sh
 
 ### Linux amd64: llm-cascade aus Source bauen
 
-Das Image `ghcr.io/4dataclub/llm-cascade:0.2.0` ist aktuell nur für `linux/arm64` veröffentlicht. Auf `x86_64`-Hosts (also den meisten Linux-Desktops und -Servern) bricht `setup.sh` daher beim Docker-Pull mit:
+Das Image `ghcr.io/4dataclub/llm-cascade:0.8.1` ist aktuell nur für `linux/arm64` veröffentlicht. Auf `x86_64`-Hosts (also den meisten Linux-Desktops und -Servern) bricht `setup.sh` daher beim Docker-Pull mit:
 
 ```
 no matching manifest for linux/amd64 in the manifest list entries
