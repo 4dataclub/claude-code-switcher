@@ -212,6 +212,11 @@ public class ApiController {
         ObjectNode sw = cfg.has("_switcher") && cfg.get("_switcher").isObject() ? (ObjectNode) cfg.get("_switcher") : configs.mapper().createObjectNode();
         ObjectNode keys = sw.has("keys") && sw.get("keys").isObject() ? (ObjectNode) sw.get("keys") : configs.mapper().createObjectNode();
 
+        // Aktives Modell VOR der Mutation festhalten — sw/cfg werden unten in-place
+        // geändert, danach ist der alte Wert weg. Wird nach erfolgreichem Switch
+        // als model_switch-Event geloggt (Timeline).
+        String oldModelStr = describeActiveModel(sw, cfg);
+
         // Nur anthropic (OAuth/Long-Token) wird hier noch in settings.json gepflegt.
         // google/openrouter leben in der DB (app_settings) — ki-models-ui pflegt sie,
         // der Router liest sie via resolveKey(). Kein settings.json-Schreiben mehr
@@ -282,6 +287,12 @@ public class ApiController {
         switchEvent.put("activeRoute", sw.has("activeRoute") ? sw.get("activeRoute") : null);
         sse.broadcast("switch", switchEvent);
 
+        // Manuellen Modell-Switch in der Cascade-Timeline loggen (fire-and-forget).
+        // Pool-/Supermodell-Switches werden bereits geloggt; der reine Modell-Switch
+        // fehlte bisher → in der Mode-Events-Ansicht unsichtbar.
+        String newModelStr = describeActiveModel(sw, cfg);
+        cascade.logEvent("model_switch", oldModelStr, newModelStr, "user_switch");
+
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("success", routerOk);
         out.put("provider", req.provider);
@@ -289,6 +300,24 @@ public class ApiController {
         out.put("router", Map.of("ok", routerOk, "restarted", routerNeedsRestart));
         out.put("wrapperNotified", true);
         return ResponseEntity.ok(out);
+    }
+
+    /**
+     * Beschreibt das aktive Modell als {@code provider:model}-String — für die
+     * Timeline. Bei aktiver Route (google/openrouter) wird diese verwendet, sonst
+     * das settings.json-Modell (anthropic-direkt).
+     */
+    private static String describeActiveModel(ObjectNode sw, ObjectNode cfg) {
+        if (sw.has("activeRoute") && sw.get("activeRoute").isObject()) {
+            JsonNode ar = sw.get("activeRoute");
+            String p = ar.path("provider").asText("");
+            String m = ar.path("model").asText("");
+            if (!p.isEmpty() && !m.isEmpty()) return p + ":" + m;
+            if (!m.isEmpty()) return m;
+            if (!p.isEmpty()) return p;
+        }
+        String m = cfg.path("model").asText("");
+        return m.isEmpty() ? "anthropic" : "anthropic:" + m;
     }
 
     // ─── Auto-Mode-Config ────────────────────────────────────────────────────
