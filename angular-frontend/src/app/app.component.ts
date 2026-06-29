@@ -2,8 +2,6 @@ import { Component, OnDestroy, ViewChild, computed, inject, signal } from '@angu
 import { CommonModule } from '@angular/common';
 import {
   ModelsPageComponent,
-  ModeEventsComponent,
-  ModeEventsLabels,
   KiModelsPageConfig,
   CascadesViewLabels,
   FailoverChainLabels,
@@ -45,7 +43,6 @@ import {
     BannerComponent,
     ModePanelComponent,
     ModelsPageComponent,
-    ModeEventsComponent,
   ],
   template: `
     <main class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8 space-y-6">
@@ -86,11 +83,6 @@ import {
           (supermodelChanged)="onSupermodelChange($event)"
         ></sw-mode-panel>
 
-        <!-- Liste der letzten Modus-/Toggle-Umschaltungen (Modell an/aus, Pool,
-             Supermodell) mit Datum — gespeist aus /api/stats/failover. -->
-        <div class="mt-6 border-t border-slate-200 dark:border-slate-800 pt-5">
-          <ki-mode-events [labels]="modeEventsLabels" [autoRefreshSec]="0"></ki-mode-events>
-        </div>
       </section>
 
       <!-- Gemeinsame KI-Modell-Seite (Library) — alle Sektionen, identisch zu EduPro.
@@ -162,19 +154,6 @@ export class AppComponent implements OnDestroy {
   readonly failoverChainLabels: Partial<FailoverChainLabels> = FAILOVER_CHAIN_LABELS_DE;
   readonly apiKeysSectionLabels = API_KEYS_SECTION_LABELS_DE;
   readonly providerServersLabels = PROVIDER_SERVERS_LABELS_DE;
-
-  // v0.20.0 — Deutsche Labels für die Modus-/Toggle-Umschaltungs-Liste.
-  readonly modeEventsLabels: Partial<ModeEventsLabels> = {
-    title: 'Letzte Umschaltungen',
-    subtitle: 'Modell an/aus, Pool-Wechsel und Supermodell an/aus — letzte 50.',
-    empty: 'Noch keine Umschaltungen geloggt.',
-    loading: 'Lade Umschaltungen…',
-    colType: 'Typ',
-    colTransition: 'Von → Zu',
-    colReason: 'Grund',
-    colWhen: 'Wann',
-    filterPlaceholder: 'Filtern…',
-  };
 
   // v0.18.0 — Deutsche Labels für die geteilten Analytics-Panels.
   readonly callOverviewLabels = {
