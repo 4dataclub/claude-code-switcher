@@ -87,12 +87,11 @@ services:
       start_period: 10s
 
   llm-cascade:
-    # 0.8.1 — per-Modell Inferenz-Server-Routing + Auto-Provision (Modell wird
-    # auf dem zugewiesenen Server automatisch gepullt). Image lokal gebaut; fuer
-    # Anar/Prod nach ghcr pushen:
-    #   docker build -t ghcr.io/4dataclub/llm-cascade:0.8.1 <llm-cascade-repo>
-    #   docker push ghcr.io/4dataclub/llm-cascade:0.8.1
-    image: ghcr.io/4dataclub/llm-cascade:0.8.1
+    # 0.9.0 — Shared-Analytics-Endpoints (/api/stats/*) + per-Modell Inferenz-
+    # Server-Routing + Auto-Provision. Publish laeuft ueber CI (git-Tag →
+    # .github/workflows/publish-image.yml im llm-cascade-Repo) nach
+    # ghcr.io/4dataclub/llm-cascade:<tag>. Multi-Arch (amd64+arm64) via PR #20.
+    image: ghcr.io/4dataclub/llm-cascade:0.9.0
     container_name: claude-switcher-llm-cascade-1
     ports:
       - "127.0.0.1:8091:8090"
