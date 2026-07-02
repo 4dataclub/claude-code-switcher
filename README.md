@@ -299,15 +299,11 @@ chmod +x setup.sh && ./setup.sh
 # Terminal neu öffnen → claude funktioniert
 ```
 
-### Linux amd64: llm-cascade aus Source bauen
+### llm-cascade-Image (multi-arch)
 
-Das Image `ghcr.io/4dataclub/llm-cascade:0.8.1` ist aktuell nur für `linux/arm64` veröffentlicht. Auf `x86_64`-Hosts (also den meisten Linux-Desktops und -Servern) bricht `setup.sh` daher beim Docker-Pull mit:
+Das Image `ghcr.io/4dataclub/llm-cascade:0.9.0` wird **multi-arch** (`linux/amd64` + `linux/arm64`) über CI publiziert (`publish-image.yml` im llm-cascade-Repo) — `setup.sh` zieht es auf allen Hosts direkt, kein Source-Build nötig.
 
-```
-no matching manifest for linux/amd64 in the manifest list entries
-```
-
-Workaround: das llm-cascade-Repo daneben klonen und das Compose-File aus dem Switcher-Verzeichnis darauf zeigen lassen — die `Dockerfile` baut amd64 + arm64 nativ:
+Falls du gegen einen ungetaggten `main`-Stand bauen willst (oder das Image mal fehlt), das llm-cascade-Repo daneben klonen und das Compose auf `build:` zeigen lassen — die `Dockerfile` baut amd64 + arm64 nativ:
 
 ```bash
 cd ~/claude-switcher          # oder das Verzeichnis das setup.sh entpackt hat
