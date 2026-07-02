@@ -226,9 +226,20 @@ SSE_PID=$!
       sleep 2
     done
   ' 2>/dev/null | python3 -u -c "
-import sys, json, re
+import sys, json, re, subprocess
 from datetime import datetime
 def color(s, c): return f'\033[{c}m{s}\033[0m'
+
+# currentModel -> Kategorie-Map aus /api/cascades (z.B. 'anthropic:claude-opus-4-8' -> 'orchestrator-cloud')
+model_to_cat = {}
+try:
+    r = subprocess.run(['curl','-sS','--max-time','3','http://localhost:8091/api/cascades'],
+        capture_output=True, text=True)
+    for cas in json.loads(r.stdout):
+        cm = cas.get('currentModel','')
+        if cm: model_to_cat[cm] = cas.get('name','')
+except: pass
+
 pending = {}
 for line in sys.stdin:
     try: d = json.loads(line)
@@ -258,10 +269,16 @@ for line in sys.stdin:
         elif 'anthropic.com' in url: real, cc = 'ANTHROPIC (DIRECT)', '33'
         else: real, cc = url[:40], '37'
         m = re.search(r'/models/([^:?/]+)', url)
-        real_model = m.group(1) if m else '?'
+        real_model = m.group(1) if m else p.get('claude_model', '?')
+        # Cascade-Kategorie nachschlagen: provider:model -> cascadeName
+        prov_key = ('anthropic' if 'anthropic.com' in url else
+                    'openrouter' if 'openrouter.ai' in url else
+                    'gemini' if 'googleapis.com' in url else '')
+        cat = model_to_cat.get(f'{prov_key}:{real_model}', '')
+        cat_s = f' {color(\"[\"+cat+\"]\",\"1;33\")}' if cat else ''
         ok = '✓' if status == 200 else '✗'; ok_c = '32' if status == 200 else '31'
         print(f\"{color('[ROUTER]','34')} {color(p['started'], '2')} {color(ok, ok_c)} \"
-              f\"{color(real, cc)} {color(real_model, '36;1')} {color(f'({int(rt_ms)}ms)', '2')}\", flush=True)
+              f\"{color(real, cc)} {color(real_model, '36;1')}{cat_s} {color(f'({int(rt_ms)}ms)', '2')}\", flush=True)
         if 'user_text' in p:
             print(f\"          {color('→', '2')} {color(p['user_text'], '37')}\", flush=True)
 " 2>/dev/null
@@ -291,9 +308,11 @@ for c in new:
     t = (c.get("calledAt") or "")[11:19]
     prov = c.get("provider") or "?"; model = c.get("model") or "?"
     svc = c.get("service") or ""; chars = c.get("outputChars")
-    svc_s = f"{D}[{svc}]{X}" if svc and svc != "unknown" else ""
+    cat = c.get("category") or ""
+    if not cat: continue
+    cat_s = f"\033[1;33m[{cat}]\033[0m"
     extra = f"{D}{chars} chars{X}" if chars else ""
-    line = f"\033[36m[DELEG]\033[0m {D}{t}{X} {mark} {C}{prov}:{model}{X} {svc_s} {extra}".rstrip()
+    line = f"\033[36m[DELEG]\033[0m {D}{t}{X} {mark} {C}{prov}:{model}{X} {cat_s} {extra}".rstrip()
     snip = c.get("promptSnippet")  # nur befuellt wenn Datenschutz-Schalter logPromptSnippet=AN
     if snip:
         s = snip if len(snip) <= 70 else snip[:70] + "…"

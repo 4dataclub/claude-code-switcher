@@ -167,25 +167,14 @@ class ApiControllerTest {
     }
 
     @Test
-    void orchestratorChain_emptyCell_fallsBackToSafetyNet() {
+    void orchestratorChain_emptyCell_returnsEmpty() {
         when(modelSvc.listModels()).thenReturn(List.of()); // keine orchestrator-Modelle
         ArrayNode chain = controller.orchestratorFailoverChain("cloud");
 
-        // leere Zelle → supermodelFailoverChain() (Sicherheitsnetz: Opus nie ganz ohne Fallback)
-        assertThat(chain).hasSize(3);
-        assertThat(chain.get(0).get("provider").asText()).isEqualTo("anthropic");
-        assertThat(chain.get(0).get("model").asText()).isEqualTo("claude-sonnet-4-6");
-    }
-
-    @Test
-    void supermodelFailoverChain_hasSonnetNativeThenCloud() {
-        ArrayNode chain = controller.supermodelFailoverChain();
-
-        assertThat(chain).hasSize(3);
-        assertThat(chain.get(0).get("provider").asText()).isEqualTo("anthropic"); // Sonnet nativ zuerst
-        assertThat(chain.get(0).get("model").asText()).isEqualTo("claude-sonnet-4-6");
-        assertThat(chain.get(1).get("provider").asText()).isEqualTo("google");
-        assertThat(chain.get(2).get("provider").asText()).isEqualTo("google");
+        // Leere Kategorie → leere Chain (fail-explicit; keine hartcodierte
+        // Rückfall-Kette mehr, damit im UI immer sichtbar ist was konfiguriert
+        // wurde. Das alte supermodelFailoverChain() Sicherheitsnetz ist entfernt.)
+        assertThat(chain).isEmpty();
     }
 
     // ════════════════════════════════════════════════════════════════════════

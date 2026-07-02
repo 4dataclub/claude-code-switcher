@@ -425,6 +425,58 @@ ohne lokale Modelle nicht ins Leere läuft. Modelle, Rollen-Zuordnung und Failov
 Reihenfolge sind im UI editierbar; die Kategorienamen kommen aus der Datenbank
 (geteilte `@4dataclub/ki-models-ui` Library, wie in EduPro).
 
+### Ziel-Architektur (Soll) — ein Backend, beide Projekte, beide Modi
+
+> Vollständige Herleitung, Implementierungs-Status und die offenen Schritte:
+> **[docs/ARCHITEKTUR-tool-calling-pfade.md](docs/ARCHITEKTUR-tool-calling-pfade.md)**.
+
+Der User wählt **einen festen Pool** (`cloud`/`free`/`local`) — der wird **nie
+automatisch gewechselt**, `local` ist **fail-closed**. *Innerhalb* des Pools wählt
+die **Area** entweder der Orchestrator (Supermodell AN) oder der Semantic-Router
+(Supermodell AUS). Switcher und EduPro laufen auf **derselben** tool-fähigen Cascade.
+
+```
+              User waehlt POOL (cloud|free|local) — FIX, fail-closed, BEIDE Projekte
+                                    │
+              ┌─────────────────────┴─────────────────────┐
+         supermodel = AN                             supermodel = AUS
+         AREA = fixe Rollen                          AREA = frei / Catch-All
+         Orchestrator delegiert (Tool-Call)          Semantic-Router resolve(purpose,pool)
+              │                                                   │
+         SWITCHER  ←──── strukturell gleich ────→  EDUPRO   (nur Area-Taxonomie unterschiedlich:
+         Coding-Rollen                             content/utility/dev/general)
+```
+
+**Endzustand — was dann funktioniert:**
+
+```
+   ✓ Tools fliessen ueberall durch     → Switcher agentisch in JEDEM Pool (nicht nur cloud)
+   ✓ Failover + Cooldown in AN & AUS   → opus→sonnet; deepseek→gemini ...
+   ✓ AUS waehlt Area semantisch selbst → resolve(purpose, pool)
+   ✓ AN delegiert per Orchestrator     → fixe Rollen, Worker pro Area
+   ✓ POOL fix, local fail-closed       → nie automatischer Pool-Wechsel
+   ✓ EIN Mechanismus, beide Projekte   → Switcher + EduPro, gleiche Engine
+```
+
+**Modellverteilung (Switcher, Endzustand — jedes Feld eine Failover-Kette):**
+
+```
+   AREA \ POOL  │ cloud                  │ free                        │ local
+   ─────────────┼────────────────────────┼─────────────────────────────┼──────────────────────────
+   orchestrator │ opus-4-8 → sonnet-4-6   │ (starkes free-Modell)       │ qwen-coder:7b (staerker = besser)
+   implement    │ deepseek → gemini-flash │ qwen3-coder → qwen3-next-80b│ qwen2.5-coder:7b
+   review       │ gpt-4o-mini             │ gpt-oss-120b                │ qwen2.5:7b
+   research     │ gemini-2.5-pro          │ gemma-4-31b                 │ qwen2.5:7b
+   dispatch     │ gemini-flash-lite       │ llama-3.3-70b → gpt-oss-20b │ llama3.2:3b
+   catch-all    │ opus-4-7 → sonnet-4-6   │ deepseek → qwen3-coder      │ qwen-coder:7b → qwen2.5:7b
+```
+
+**Voraussetzung (der Kern):** die Cascade muss **Tool-Calls durchreichen** (heute
+text-only). Das ist nötig, sobald Tool-Calls im Pfad sind — also bei **jedem
+agentischen Client** (Switcher, immer) **oder jeder Orchestrator-Delegation**
+(Supermodell AN). Reine Text-Nutzung (EduPro AUS) braucht es nicht — schadet dort
+aber auch nicht (No-Op). Status & Umsetzungsplan: siehe Architektur-Doc oben.
+
 ---
 
 ## Was kostet was
@@ -715,6 +767,85 @@ git push
 → Wenn du eine neue Datei zum Setup hinzufügen willst: ins MANIFEST in `scripts/build-setup.sh` eintragen + entsprechend im Bash-Header (`extract`-Aufruf) und PS-Header (Decode-Block) ergänzen.
 
 **Wichtig:** Frisch-Installs vom GitHub ziehen IMMER aus den Bundles. Wenn Source und Bundles auseinanderlaufen, läuft der frische Install mit altem Stand. Drum: nach Source-Edit immer Bundles neu bauen (oder einen Pre-Push-Hook setzen, siehe Issues).
+
+---
+
+---
+
+## Pool × Area Routing (ab v0.19.0)
+
+Der Switcher nutzt `llm-cascade` als einzigen Routing-Layer.
+Alle ccr-Router-Requests gehen durch llm-cascade statt direkt zu Providern —
+transparenter Failover ohne Session-Neustart.
+
+### supermodel=AUS
+
+```
+Claude Code
+    │
+    ▼  ANTHROPIC_BASE_URL=http://localhost:3456
+ccr-Router (port 3456)
+    │  model = "{pool}"   z.B. "cloud"
+    ▼
+llm-cascade  /v1/chat/completions
+    │  sucht: pool=cloud, area=cloud (Catch-All)
+    ▼
+Anthropic / Gemini / OpenRouter  (Failover intern)
+```
+
+**Areas:** Pool-benannte Catch-Alls — `cloud`, `free`, `local`
+(frei umbenennbar, keine festen Rollennamen)
+
+### supermodel=AN
+
+```
+Claude Code (Orchestrator)
+    │
+    ▼  ANTHROPIC_BASE_URL=http://localhost:3456
+ccr-Router (port 3456)
+    │  model = "orchestrator-{pool}"  z.B. "orchestrator-cloud"
+    ▼
+llm-cascade  /v1/chat/completions
+    │  sucht: pool=cloud, area=orchestrator (isOrchestrator=true)
+    ▼
+Orchestrator-Modell (z.B. Opus 4.8)
+    │
+    │  Delegation: /api/generate  category="{area}-{pool}"
+    ▼
+llm-cascade  →  implement/review/research/dispatch  (Failover intern)
+```
+
+**Areas (beide Projekte):** `implement` · `review` · `research` · `dispatch` · `orchestrator`
+(frei umbenennbar — Struktur: 1 orchestrator + N delegates bleibt)
+
+### Pool × Area Vergleich
+
+```
+                    supermodel=AUS          supermodel=AN
+────────────────    ──────────────────────  ──────────────────────────
+SWITCHER Areas      cloud / free / local    implement/review/research/
+                    (1 Area pro Pool,        dispatch/orchestrator
+                     kein Semantic-          (gleiche Rollen in
+                     Routing)                jedem Pool)
+
+EDUPRO Areas        content / dev /         implement/review/research/
+                    utility / general        dispatch/orchestrator
+                    (SemanticRouter          (gleiche Struktur wie
+                     wählt Area)             Switcher supermodel=AN)
+
+Routing             ccr→llm-cascade         ccr→llm-cascade
+                    model=pool              model=orchestrator-pool
+                    (z.B. "cloud")          (z.B. "orchestrator-cloud")
+```
+
+### API-Änderungen
+
+| Endpoint | Änderung |
+|----------|---------|
+| `POST /api/mode` | `pinOrchestratorForPool()` setzt immer `ANTHROPIC_BASE_URL=http://localhost:3456` |
+| `writeRouterConfig()` | llm-cascade als erster Provider; `Router.default=llm-cascade,{pool}` |
+| llm-cascade: `POST /v1/chat/completions` | **Neu** — OpenAI-Compat für ccr-Router |
+| llm-cascade: `AiModelConfig` | **Neu** — Felder `pool`, `area`, `orchestrator` |
 
 ---
 

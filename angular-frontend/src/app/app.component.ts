@@ -93,6 +93,7 @@ import {
         [supermodelOn]="supermodel()"
         [visibleCategories]="visibleCategories()"
         [localOrchestratorPending]="localOrchestratorPending()"
+        [addModelFilterEnabled]="true"
         (activeModelChanged)="onSwitchToModel($event)"
         (modelChanged)="reload()"
         (modelCreated)="reload()"
@@ -221,11 +222,19 @@ export class AppComponent implements OnDestroy {
    * dann die Compound-Matrix Rolle×Pool, `general` ganz hinten.
    */
   readonly cascadeOrder: string[] = [
-    'cloud', 'free-only', 'local',
-    'orchestrator-cloud', 'orchestrator-free', 'orchestrator-local',
-    'implement-cloud', 'review-cloud', 'research-cloud', 'dispatch-cloud',
-    'implement-free', 'review-free', 'dispatch-free',
-    'implement-local', 'review-local', 'dispatch-local',
+    // Pool-gruppiert (cloud → free → local): pro Pool zuerst die AUS-Areas
+    // (bare Pool + area-Compounds), dann die AN-Rollen. So folgt die
+    // Anzeige-Reihenfolge der neuen Pool-Gruppierung in Tabelle + Cascades.
+    // Cloud
+    'cloud', 'general-cloud', 'dev-cloud', 'utility-cloud', 'content-cloud',
+    'orchestrator-cloud', 'implement-cloud', 'review-cloud', 'research-cloud', 'dispatch-cloud',
+    // Free (bare 'free' + Legacy 'free-only')
+    'free', 'free-only', 'general-free', 'dev-free', 'utility-free', 'content-free',
+    'orchestrator-free', 'implement-free', 'review-free', 'research-free', 'dispatch-free',
+    // Local
+    'local', 'general-local', 'dev-local', 'utility-local', 'content-local',
+    'orchestrator-local', 'implement-local', 'review-local', 'research-local', 'dispatch-local',
+    // Globaler Fallback ganz hinten
     'general',
   ];
 
@@ -269,20 +278,36 @@ export class AppComponent implements OnDestroy {
   /**
    * Whitelist der sichtbaren Kategorien/Cascaden — wird an `<ki-models-page>`
    * gereicht und dort an Tabelle + Cascades-View weiterverteilt.
-   * Supermodell AUS → nur die Pool-Kategorie (z. B. 'cloud').
-   * Supermodell AN → nur die Rollen-Kategorien des aktiven Pools.
-   * Naming-Konvention (switcher-spezifisch, asymmetrisch):
-   *   cloud → plain 'cloud',   Rollen '{role}-cloud'
-   *   free  → plain 'free-only', Rollen '{role}-free'
-   *   local → plain 'local',   Rollen '{role}-local'
+   *
+   * NEU (Pool-Matrix): Es werden nicht mehr nur die Kategorien des AKTIVEN
+   * Pools gezeigt, sondern die aller 3 Pools (cloud → free → local) für den
+   * aktuellen Modus — Tabelle + Cascades gruppieren sie dann nach Pool.
+   * Der aktive Pool bleibt separater State (für Switch/Toggle etc.).
+   *
+   * Naming-Konvention pro Pool:
+   *   AUS (supermodel=false): bare Pool-Name + {general,dev,utility,content}-{pool}
+   *     (cloud → 'cloud'; free → 'free' + Legacy 'free-only'; local → 'local')
+   *   AN  (supermodel=true):  {orchestrator,implement,review,research,dispatch}-{pool}
+   * Reihenfolge pool-gruppiert: erst alle cloud, dann free, dann local.
    */
   readonly visibleCategories = computed<string[]>(() => {
-    const pool = this.activePool();
-    const plain = pool === 'free' ? 'free-only' : pool;
-    if (!this.supermodel()) return [plain];
-    const suffix = pool === 'free' ? '-free' : pool === 'local' ? '-local' : '-cloud';
+    const pools = ['cloud', 'free', 'local'];
+    const out: string[] = [];
+    if (!this.supermodel()) {
+      const areas = ['general', 'dev', 'utility', 'content'];
+      for (const pool of pools) {
+        out.push(pool); // bare Pool-Name
+        // Legacy: Backend akzeptiert 'free-only' als bare Free-Kategorie.
+        if (pool === 'free') out.push('free-only');
+        for (const a of areas) out.push(`${a}-${pool}`);
+      }
+      return out;
+    }
     const roles = ['orchestrator', 'implement', 'review', 'research', 'dispatch'];
-    return roles.map((r) => `${r}${suffix}`);
+    for (const pool of pools) {
+      for (const r of roles) out.push(`${r}-${pool}`);
+    }
+    return out;
   });
 
   /** EventSource für SSE-Live-Updates. Wird in ngOnInit aufgemacht + ngOnDestroy geschlossen. */
@@ -425,7 +450,6 @@ export class AppComponent implements OnDestroy {
     toastReloadOn('switch', (d) => `Wechsel auf ${d.provider}${d.model ? ' · ' + d.model : ''} — Wrapper startet neu`);
     reloadOn('auto-config');
     reloadOn('model-toggled');
-    reloadOn('model-tested');
     reloadOn('model-created');
     reloadOn('model-deleted');
     reloadOn('models-reordered');
@@ -577,7 +601,7 @@ export class AppComponent implements OnDestroy {
   /** Best-Effort: aktives Modell aus activeRoute oder Top-Level-model. */
   activeModel(): string | null {
     const s = this.status();
-    return s?.activeRoute?.model || s?.model || null;
+    return s?.activeRoute?.topModel || s?.activeRoute?.model || s?.model || null;
   }
 
   onSwitchNow(): void {

@@ -21,7 +21,10 @@ ctx = (
     f"Supermodell-Modus ist AN (Pool: {pool}). Delegiere selbst-enthaltene Teilaufgaben an den "
     f"EINEN @supermodel-Agenten (kind = implement | review | research | dispatch); er routet zur "
     f"llm-cascade (Kategorie {{kind}}-{pool}) bzw. zur Gemini-MCP (research). Du bleibst Orchestrator "
-    f"+ finale Synthese; Planung/Architektur behaeltst du selbst. Lokaler Pool = fail-closed."
+    f"+ finale Synthese; Planung/Architektur behaeltst du selbst. Lokaler Pool = fail-closed. "
+    f"KRITISCH: Wenn @supermodel einen DELEGATION FEHLER meldet, implementiere NIEMALS selbst — "
+    f"auch nicht bei kleinen Aufgaben. Melde den Fehler dem User und stoppe. "
+    f"Der Orchestrator orchestriert, er implementiert nicht."
 )
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx}}))
 ' 2>/dev/null || exit 0
