@@ -85,21 +85,51 @@ import {
 
       </section>
 
-      <!-- Anzeige-Umschalter: Default zeigt nur den aktiven Pool; optional alle 3
-           Pools als Matrix — reine ANZEIGE (Routing bleibt der aktive Pool), damit
-           man ohne Pool-Wechsel sieht, was in den anderen Pools konfiguriert ist. -->
-      <div class="flex items-center justify-end gap-2 text-xs text-slate-500 dark:text-slate-400">
-        <span>Anzeige:</span>
-        <button
-          type="button"
-          (click)="toggleShowAllPools()"
-          class="rounded-md border border-slate-300 px-2.5 py-1 font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
-          [class.bg-indigo-600]="showAllPools()"
-          [class.text-white]="showAllPools()"
-          [class.border-indigo-600]="showAllPools()"
+      <!-- Modell-/Cascaden-Bereich: Kopfzeile mit Anzeige-Umschalter.
+           Default zeigt nur den aktiven Pool; optional alle 3 Pools als Matrix —
+           reine ANZEIGE (Routing bleibt der aktive Pool), damit man ohne
+           Pool-Wechsel sieht, was in den anderen Pools konfiguriert ist. -->
+      <div class="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 class="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400">
+            Modelle &amp; Cascaden
+          </h2>
+          <p class="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
+            Anzeige · das Routing gilt immer dem aktiven Pool
+          </p>
+        </div>
+        <div
+          class="inline-flex self-start rounded-full bg-slate-100 dark:bg-slate-800 p-1 text-xs font-semibold sm:self-auto"
+          role="group"
+          aria-label="Anzeige-Bereich"
         >
-          {{ showAllPools() ? 'Alle Pools' : 'Nur aktiver Pool (' + activePool() + ')' }}
-        </button>
+          <button
+            type="button"
+            (click)="showAllPools.set(false)"
+            class="rounded-full px-3.5 py-1.5 transition"
+            [class.bg-white]="!showAllPools()"
+            [class.dark:bg-slate-950]="!showAllPools()"
+            [class.shadow-sm]="!showAllPools()"
+            [class.text-slate-900]="!showAllPools()"
+            [class.dark:text-slate-100]="!showAllPools()"
+            [class.text-slate-500]="showAllPools()"
+          >
+            Nur {{ activePool() }}
+          </button>
+          <button
+            type="button"
+            (click)="showAllPools.set(true)"
+            class="rounded-full px-3.5 py-1.5 transition"
+            [class.bg-white]="showAllPools()"
+            [class.dark:bg-slate-950]="showAllPools()"
+            [class.shadow-sm]="showAllPools()"
+            [class.text-slate-900]="showAllPools()"
+            [class.dark:text-slate-100]="showAllPools()"
+            [class.text-slate-500]="!showAllPools()"
+          >
+            Alle Pools
+          </button>
+        </div>
       </div>
 
       <!-- Gemeinsame KI-Modell-Seite (Library) — alle Sektionen, identisch zu EduPro.
