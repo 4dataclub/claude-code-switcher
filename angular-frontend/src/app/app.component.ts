@@ -85,6 +85,23 @@ import {
 
       </section>
 
+      <!-- Anzeige-Umschalter: Default zeigt nur den aktiven Pool; optional alle 3
+           Pools als Matrix — reine ANZEIGE (Routing bleibt der aktive Pool), damit
+           man ohne Pool-Wechsel sieht, was in den anderen Pools konfiguriert ist. -->
+      <div class="flex items-center justify-end gap-2 text-xs text-slate-500 dark:text-slate-400">
+        <span>Anzeige:</span>
+        <button
+          type="button"
+          (click)="toggleShowAllPools()"
+          class="rounded-md border border-slate-300 px-2.5 py-1 font-medium hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800"
+          [class.bg-indigo-600]="showAllPools()"
+          [class.text-white]="showAllPools()"
+          [class.border-indigo-600]="showAllPools()"
+        >
+          {{ showAllPools() ? 'Alle Pools' : 'Nur aktiver Pool (' + activePool() + ')' }}
+        </button>
+      </div>
+
       <!-- Gemeinsame KI-Modell-Seite (Library) — alle Sektionen, identisch zu EduPro.
            Supermodell-Matrix erscheint NUR bei [supermodelOn]=true (Schalter im Modus-Panel). -->
       <ki-models-page
@@ -276,22 +293,30 @@ export class AppComponent implements OnDestroy {
   readonly localOrchestratorPending = signal<boolean>(false);
 
   /**
+   * Steuert, ob die Anzeige (Cascades-View + Models-Tabelle) NUR den aktiven Pool
+   * zeigt (Default) oder ALLE 3 Pools als Matrix. Das ROUTING ist davon unberührt
+   * — es gilt immer nur der aktive Pool (siehe RouterService.writeRouterConfig).
+   * Rein eine Sichtbarkeits-/Anzeige-Achse, per Button umschaltbar.
+   */
+  readonly showAllPools = signal(false);
+  toggleShowAllPools(): void { this.showAllPools.update((v) => !v); }
+
+  /**
    * Whitelist der sichtbaren Kategorien/Cascaden — wird an `<ki-models-page>`
    * gereicht und dort an Tabelle + Cascades-View weiterverteilt.
    *
-   * NEU (Pool-Matrix): Es werden nicht mehr nur die Kategorien des AKTIVEN
-   * Pools gezeigt, sondern die aller 3 Pools (cloud → free → local) für den
-   * aktuellen Modus — Tabelle + Cascades gruppieren sie dann nach Pool.
-   * Der aktive Pool bleibt separater State (für Switch/Toggle etc.).
+   * DEFAULT: nur der AKTIVE Pool (mit seinen Area- bzw. Rollen-Compounds). Über
+   * {@link showAllPools} auf die volle 3-Pool-Matrix umschaltbar.
    *
    * Naming-Konvention pro Pool:
    *   AUS (supermodel=false): bare Pool-Name + {general,dev,utility,content}-{pool}
    *     (cloud → 'cloud'; free → 'free' + Legacy 'free-only'; local → 'local')
    *   AN  (supermodel=true):  {orchestrator,implement,review,research,dispatch}-{pool}
-   * Reihenfolge pool-gruppiert: erst alle cloud, dann free, dann local.
    */
   readonly visibleCategories = computed<string[]>(() => {
-    const pools = ['cloud', 'free', 'local'];
+    const pools = this.showAllPools()
+      ? ['cloud', 'free', 'local']
+      : [this.activePool()];
     const out: string[] = [];
     if (!this.supermodel()) {
       const areas = ['general', 'dev', 'utility', 'content'];
