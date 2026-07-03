@@ -511,6 +511,7 @@ public class ApiController {
             pool = req.pool;
         }
         sw.put("pool", pool);
+        boolean poolChanged = !pool.equals(oldPool);
 
         // 2) Supermodell (null = unverändert)
         boolean superOn = req != null && req.supermodel != null
@@ -539,54 +540,19 @@ public class ApiController {
                 sw.put("chain_position", 0);
             }
         } else {
-            // Supermodell aus: Orchestrator-Pinning vollständig zurückbauen, sonst
-            // läuft die Session weiter über ccr→llm-cascade mit Kategorie
-            // orchestrator-{pool} obwohl Supermodell deaktiviert ist. Räumen nur
-            // wenn vorher AN war ODER der State eindeutig orchestrator-gepinnt ist
-            // — manuelle /api/switch-Routen (z. B. Gemini direkt) bleiben unberührt.
-            JsonNode ar = sw.get("activeRoute");
-            boolean orchPinned = oldSuper
-                || (ar != null && ar.isObject() && (
-                       "llm-cascade".equals(ar.path("provider").asText(""))
-                    || ar.path("model").asText("").startsWith("orchestrator-")));
-            if (orchPinned) {
-                ObjectNode env = envOf(cfg);
-                env.remove("ANTHROPIC_API_KEY");
-                env.remove("ANTHROPIC_BASE_URL");
-                cfg.set("env", env);
-                sw.remove("activeRoute");
-                sw.put("provider", "anthropic");
-                // Pool-Top der plain-Kategorie pinnen statt cfg.model leer zu lassen.
-                // Sonst nimmt claude sein internes Default (sonnet-4.5) statt opus-4-7,
-                // und die UI-Library findet kein "aktives" Modell zum Markieren in der
-                // Tabelle. Nur anthropic-Provider sinnvoll (OAuth-Pfad ohne BASE_URL);
-                // free/local laufen sowieso nicht im AUS-Zweig durch hier.
-                String cat = "cloud".equals(pool) ? "cloud"
-                    : "free".equals(pool) ? "free" : "local";
-                AiModelConfig poolTop = modelSvc.listModels().stream()
-                    .filter(m -> cat.equals(m.getCategory()) && Boolean.TRUE.equals(m.getEnabled()))
-                    .min(java.util.Comparator.comparingInt(
-                        m -> m.getOrderIdx() == null ? Integer.MAX_VALUE : m.getOrderIdx()))
-                    .orElse(null);
-                if (poolTop != null && "anthropic".equalsIgnoreCase(poolTop.getProvider())) {
-                    cfg.put("model", poolTop.getModelId());
-                } else {
-                    cfg.remove("model");
-                }
-                needRestart = true;
+            // Supermodell AUS (klassisch): das Top des gewählten Pools wird die aktive
+            // Session. So läuft nach einem Pool-Wechsel IMMER ein Modell des Pools —
+            // kein „Pool gewechselt, aber nichts davon aktiv"-Zustand. Für anthropic-
+            // Top (OAuth) direkt, sonst via ccr→llm-cascade (free/local). Repin nur bei
+            // echter Änderung (Pool gewechselt ODER gerade von Supermodell AN gekommen),
+            // sonst kein ungefragter Restart der laufenden Session.
+            if (poolChanged || oldSuper) {
+                needRestart = pinPoolTop(cfg, sw, pool);
             }
-            // Chain immer räumen — der AN-Zweig schreibt sie neu; im AUS-Modus
-            // wird sie via derivedFailoverChain() aus der plain-Pool-Kategorie
-            // der DB abgeleitet, statt aus einem hartkodierten Wert.
+            // Chain im AUS-Modus wird via derivedFailoverChain() aus der plain-Pool-
+            // Kategorie der DB abgeleitet (kein hartkodierter Wert).
             sw.remove("fallback_chain");
             sw.put("chain_position", 0);
-            sw.remove("localOrchestratorPending");
-            // NICHT pinPoolDefaultModel hier: Pool-Wechsel soll die laufende
-            // claude-Session nicht ungefragt restarten (Restart-Marker → Wrapper
-            // killt claude → OAuth-Logout-Path kann hängen). Pool ist eine
-            // SICHTBARKEITS-Achse; aktives Modell wechselt der User explizit
-            // über die Tabelle oder den Chat-Befehl. UI-Aktiv-Markierung pro
-            // Pool wird im Frontend behandelt.
         }
 
         cfg.set("_switcher", sw);
@@ -609,7 +575,7 @@ public class ApiController {
         }
 
         if (needRestart) {
-            String reason = !superOn ? "supermodel-off"
+            String reason = !superOn ? (poolChanged ? "pool-switch" : "supermodel-off")
                 : "local".equals(pool) ? "supermodel-local" : "supermodel-on";
             configs.writeRestartMarker(reason, null);
         }
@@ -640,7 +606,19 @@ public class ApiController {
      * local/ollama ist als Session-Ziel legitim (Phase E). {@code null} = leere Zelle.
      */
     AiModelConfig orchestratorTopModel(String pool) {
-        String cat = "orchestrator-" + pool;
+        return topModelOfCategory("orchestrator-" + pool);
+    }
+
+    /**
+     * Oberstes aktiviertes Modell der plain-{@code {pool}}-Kategorie (Supermodell AUS).
+     * Das ist das Session-Modell im klassischen Modus. {@code null} = leere Zelle.
+     */
+    AiModelConfig poolTopModel(String pool) {
+        return topModelOfCategory(pool);
+    }
+
+    /** Oberstes aktiviertes Modell (kleinster orderIdx) einer DB-Kategorie. */
+    private AiModelConfig topModelOfCategory(String cat) {
         return modelSvc.listModels().stream()
             .filter(m -> cat.equals(m.getCategory()) && Boolean.TRUE.equals(m.getEnabled()))
             .min(java.util.Comparator.comparingInt(
@@ -748,37 +726,52 @@ public class ApiController {
      * local = fail-closed: Ollama-only, kein Cloud-Ausweich.
      */
     private boolean pinOrchestratorForPool(ObjectNode cfg, ObjectNode sw, String pool) {
-        // Key-bedingter Sonderpfad: wenn das orchestrator-{pool}-Top ein anthropic-
-        // Modell ist UND kein anthropic-Key konfiguriert (claude.ai-OAuth-Setup),
-        // claude direkt an die Anthropic-API hängen — OAuth funktioniert NUR ohne
-        // ANTHROPIC_BASE_URL. Sobald ein sk-ant-Key reinkommt oder das Top kein
-        // anthropic ist, läuft pinning symmetrisch zu free/local durch ccr.
-        AiModelConfig topForKeyCheck = orchestratorTopModel(pool);
+        // Supermodell AN: Session-Modell = Top der orchestrator-{pool}-Zelle,
+        // Cascade-Routing-Target = orchestrator-{pool}.
+        return pinTopForPool(cfg, sw, pool, orchestratorTopModel(pool), "orchestrator-" + pool);
+    }
+
+    /**
+     * Supermodell AUS (klassisch): Session-Modell = Top der plain-{@code {pool}}-Zelle,
+     * Cascade-Routing-Target = {@code {pool}}. Damit ist nach einem Pool-Wechsel IMMER
+     * das Top des gewählten Pools aktiv (kein „nichts läuft"-Zustand).
+     */
+    private boolean pinPoolTop(ObjectNode cfg, ObjectNode sw, String pool) {
+        return pinTopForPool(cfg, sw, pool, poolTopModel(pool), pool);
+    }
+
+    /**
+     * Gemeinsame Pin-Logik für AN (orchestrator-{pool}) und AUS (plain {pool}).
+     * @param top           das zu pinnende Top-Modell (oder null = leere Zelle)
+     * @param cascadeTarget das ccr→llm-cascade Routing-Target (Kategorie-Name)
+     *
+     * Pfade: (1) anthropic-Top ohne anthropic-Key → anthropic-direkt (OAuth, Tools
+     * erhalten). (2) local → fail-closed via ccr→ollama (kein Top = pending). (3)
+     * cloud/free non-anthropic → ccr→llm-cascade auf den Kategorie-Target.
+     */
+    private boolean pinTopForPool(ObjectNode cfg, ObjectNode sw, String pool,
+                                  AiModelConfig top, String cascadeTarget) {
         boolean hasAnthropicKey = !configs.getSwitcher()
             .path("keys").path("anthropic").asText("").isBlank();
-        if (topForKeyCheck != null
-            && "anthropic".equalsIgnoreCase(topForKeyCheck.getProvider())
+        if (top != null
+            && "anthropic".equalsIgnoreCase(top.getProvider())
             && !hasAnthropicKey) {
-            pinAnthropicDirect(cfg, sw, topForKeyCheck.getModelId());
+            pinAnthropicDirect(cfg, sw, top.getModelId());
             sw.remove("localOrchestratorPending");
             sw.put("chain_position", 0);
             return true;
         }
 
-        // Sonst: Route ueber den ccr-Router (→ llm-cascade → richtiger Provider).
-        // ANTHROPIC_BASE_URL = HOST_ROUTER_URL gilt fuer alle restlichen Faelle.
+        // Route ueber den ccr-Router (→ llm-cascade → richtiger Provider).
         ObjectNode env = envOf(cfg);
         env.put("ANTHROPIC_API_KEY", "sk-ccr-anything");
         env.put("ANTHROPIC_BASE_URL", HOST_ROUTER_URL);
         cfg.set("env", env);
-        // Platzhalter-Modell — ccr-Router ignoriert es, Router.default entscheidet.
-        cfg.put("model", "claude-sonnet-4-5-20250929");
+        cfg.put("model", "claude-sonnet-4-5-20250929"); // ccr-Platzhalter, Route entscheidet
 
         if ("local".equals(pool)) {
-            // local = fail-closed: Failover nur innerhalb lokaler Modelle, nie zu Cloud.
-            // fallback_chain wird von orchestratorFailoverChain() mit lokalen Modellen gefuellt.
-            AiModelConfig localTop = orchestratorTopModel(pool);
-            if (localTop == null) {
+            // local = fail-closed: nur ollama, nie Cloud.
+            if (top == null) {
                 sw.put("localOrchestratorPending", true);
                 sw.remove("activeRoute");
                 sw.put("provider", "ollama");
@@ -786,26 +779,21 @@ public class ApiController {
                 return true;
             }
             sw.remove("localOrchestratorPending");
-            // activeRoute fuer den [ROUTER]-Log
             ObjectNode ar = configs.mapper().createObjectNode();
             ar.put("provider", "ollama");
-            ar.put("model", localTop.getModelId());
+            ar.put("model", top.getModelId());
             sw.set("activeRoute", ar);
             sw.put("provider", "ollama");
             sw.put("chain_position", 0);
             return true;
         }
 
-        // cloud/free: Route ueber llm-cascade, Orchestrator-Zelle
+        // cloud/free: Route ueber llm-cascade auf die Kategorie (Target).
         sw.remove("localOrchestratorPending");
-        // activeRoute zeigt auf llm-cascade als logischen Provider
         ObjectNode ar = configs.mapper().createObjectNode();
         ar.put("provider", "llm-cascade");
-        ar.put("model", "orchestrator-" + pool);
-        // Konkretes Top-Modell der Orchestrator-Kategorie fuer das UI-Highlight
-        // (activeRoute.model bleibt der Cascade-Kategorie-Name fuers Routing).
-        AiModelConfig orchTop = orchestratorTopModel(pool);
-        if (orchTop != null) ar.put("topModel", orchTop.getModelId());
+        ar.put("model", cascadeTarget);
+        if (top != null) ar.put("topModel", top.getModelId());
         sw.set("activeRoute", ar);
         sw.put("provider", "llm-cascade");
         sw.put("chain_position", 0);

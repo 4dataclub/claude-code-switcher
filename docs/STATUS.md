@@ -17,9 +17,13 @@
   via `category_meta.display_name` frei änderbar). **`local` ist der einzige Pool mit
   Key-Semantik** — der Code prüft literal `"local"` für fail-closed. Key `local`
   niemals umbenennen; Anzeige-Name ändern ist ok.
-- **Anzeige vs. Routing:** Die UI (Cascade-Bereiche + Modell-Tabelle) zeigt per
-  Default nur den aktiven Pool; das „Bereich"-Dropdown (Aktiver/Cloud/Free/Local/Alle)
-  ist reine **Anzeige**. Das Routing gilt immer nur dem aktiven Pool.
+- **Zwei getrennte Pool-Controls (nicht verwechseln):**
+  - **Bereich-Toggle** (Modus-Panel, `/api/mode`) = **echter Pool-Wechsel**: pinnt
+    IMMER das Top des gewählten Pools als aktive Session + Restart. AUS: plain
+    `{pool}`-Top (anthropic-direkt bei anthropic/kein-Key, sonst via ccr→llm-cascade);
+    AN: `orchestrator-{pool}`-Top. Kein „Pool gewechselt, aber nichts aktiv"-Zustand.
+  - **Anzeige-Dropdown** (Aktiver/Cloud/Free/Local/Alle) = reine **Anzeige/Filterung**
+    der Tabellen, kein Routing-Effekt.
 - **Cascade-Beschreibungen = semantischer Routing-Text:** Bei Supermodell AUS
   klassifiziert der Router jeden Request anhand dieser „Passt zu…/Passt NICHT zu…"-
   Texte in eine Area (general/dev/utility/content). Editierbar in der Cascade-Karte.
@@ -38,9 +42,10 @@
 
 ## Offen / To-Do
 
-- **Laufzeit-Tests noch offen:** server-seitiges Failover real (Cascade direkt per
-  curl gegen einen fehlschlagenden Provider), `free`/`local`-Pool-Routing, Pool-Toggle
-  live (jeweils Session-Restart / braucht gültige free-Keys bzw. laufende Ollama-Modelle).
+- **Laufzeit verifiziert (2026-07-03):** Pool-Routing (`local`→ollama, `free`→openrouter)
+  live; semantische Auflösung live (Code-Task→qwen2.5-coder, Gruß→llama3.1); Failover
+  real in Events (`switch_down` bei 503 + Cooldown, `promote_primary` nach Ablauf);
+  Quality-Auto-Disable real. Offen nur: AUS-Pool-Wechsel-Repin live durchklicken.
 - PR **#88** (`feat/pool-matrix-409-logpanel`) ist obsolet — abgelöst durch #89/#91/#93.
   Kann auf GitHub geschlossen werden.
 - Zukunft: **data-driven Pools** (Pools aus Tabelle statt hartkodiertem 3-Enum;
