@@ -35,14 +35,6 @@ public class ConfigService {
     @Value("${switcher.router.config}")
     private String routerConfigPath;
 
-    /** Default-Failover-Chain (analog server.js DEFAULT_CHAIN). */
-    public ArrayNode defaultChain() {
-        ArrayNode chain = mapper.createArrayNode();
-        ObjectNode a = mapper.createObjectNode(); a.put("provider", "google");     a.put("model", "gemini-2.5-pro");           chain.add(a);
-        ObjectNode b = mapper.createObjectNode(); b.put("provider", "openrouter"); b.put("model", "google/gemini-2.5-flash");  chain.add(b);
-        return chain;
-    }
-
     public synchronized ObjectNode readConfig() {
         File f = new File(configPath);
         if (!f.exists()) return mapper.createObjectNode();

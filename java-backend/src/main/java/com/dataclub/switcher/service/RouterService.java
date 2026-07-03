@@ -40,6 +40,9 @@ public class RouterService {
     @Value("${switcher.ollama.baseUrl:http://ollama:11434/v1/chat/completions}")
     private String ollamaBaseUrl = "http://ollama:11434/v1/chat/completions";
 
+    @Value("${llm.cascade.url:http://llm-cascade:8090}")
+    private String llmCascadeUrl = "http://llm-cascade:8090";
+
     public RouterService(ConfigService configs, SwitcherModelService modelSvc) {
         this.configs = configs;
         this.modelSvc = modelSvc;
@@ -63,26 +66,34 @@ public class RouterService {
     /** Switcher-Provider → DB-Setting-Key (app_settings, derselbe Store wie die Cascade).
      *  anthropic ist NICHT dabei: das ist OAuth/Long-Token, bleibt in settings.json. */
     private static final Map<String, String> PROVIDER_TO_SETTING = Map.of(
-        "google", "geminiApiKey",
-        "openrouter", "openrouterApiKey"
+        "google",     "geminiApiKey",
+        "openrouter", "openrouterApiKey",
+        "deepseek",   "deepseekApiKey",
+        "anthropic",  "anthropicApiKey"
     );
 
     /**
      * API-Key für einen Switcher-Provider. <b>Quelle der Wahrheit ist die geteilte DB</b>
      * ({@code app_settings}) — exakt der Store, den {@code ki-models-ui} pflegt und
-     * {@code llm-cascade} + EduPro lesen. Der klassische ccr-Router liest jetzt denselben
-     * Store ⇒ <b>keine architektonische Divergenz</b>, kein switcher-eigener Key-Ort mehr.
+     * {@code llm-cascade} + EduPro lesen.
      *
-     * <p>google/openrouter kommen <b>ausschließlich</b> aus der DB (kein settings.json-
-     * Fallback — der wäre selbst wieder eine Divergenz). {@code anthropic} ist
-     * OAuth/Long-Token, bleibt prinzipbedingt in settings.json (der Wrapper hat keinen
-     * DB-Zugriff) und gehört nicht in den geteilten API-Key-Store.
+     * <p>google/openrouter/deepseek kommen ausschließlich aus der DB. Für
+     * {@code anthropic} gilt: DB-Key ({@code anthropicApiKey}) hat Priorität; ist keiner
+     * gesetzt, fällt der Aufruf auf {@code settings.json._switcher.keys.anthropic}
+     * zurück (OAuth-Long-Token — den der Wrapper aus der Datei liest, weil er selbst
+     * keinen DB-Zugriff hat). So kann der User im UI einen echten sk-ant-Key
+     * hinterlegen und der nutzt Vorrang vor OAuth; ohne Key läuft OAuth wie bisher.
      */
     public String resolveKey(String provider) {
         String settingKey = PROVIDER_TO_SETTING.get(provider);
         if (settingKey != null) {
             String db = modelSvc.getSettingRaw(settingKey);
-            return db == null ? "" : db;
+            if (db != null && !db.isBlank()) return db;
+            // Für anthropic: settings.json als Fallback (OAuth-Long-Token)
+            if ("anthropic".equals(provider)) {
+                return configs.getSwitcher().path("keys").path("anthropic").asText("");
+            }
+            return "";
         }
         return configs.getSwitcher().path("keys").path(provider).asText("");
     }
@@ -117,7 +128,52 @@ public class RouterService {
             p.set("transformer", mapper.createObjectNode().set("use", mapper.createArrayNode().add("openrouter")));
             out.add(p);
         }
+        if (keys.has("deepseek") && !keys.get("deepseek").asText("").isBlank()) {
+            // DeepSeek direkt (api.deepseek.com) — OpenAI-kompatibles Format,
+            // günstiger als über OpenRouter geroutet. Cascade nutzt dieselbe
+            // Base-URL im OpenAiCompatProvider (LlmProviderConfig#deepseekProvider).
+            ObjectNode p = mapper.createObjectNode();
+            p.put("name", "deepseek");
+            p.put("api_base_url", "https://api.deepseek.com/v1/chat/completions");
+            p.put("api_key", keys.get("deepseek").asText());
+            ArrayNode m = p.putArray("models");
+            m.add("deepseek-chat");
+            m.add("deepseek-reasoner");
+            p.set("transformer", mapper.createObjectNode().set("use", mapper.createArrayNode().add("openrouter")));
+            out.add(p);
+        }
         return out;
+    }
+
+    /**
+     * ccr-Provider fuer llm-cascade. Alle Requests gehen an llm-cascade,
+     * das transparentes Failover + Pool x Area Routing durchfuehrt.
+     *
+     * Das "model"-Feld im ccr-Router-Call wird als Routing-Target interpretiert:
+     *  - supermodel=AUS: "{pool}"          z.B. "cloud"
+     *  - supermodel=AN:  "orchestrator-{pool}"  z.B. "orchestrator-cloud"
+     *
+     * <b>Pool-spezifisch (fail-closed):</b> die models-Liste enthaelt NUR die Targets
+     * des aktiven Pools. So kann der ccr-Router bei pool=local ausschliesslich
+     * {@code *-local}-Targets ansprechen — selbst eine fehlgeleitete model-Angabe
+     * kann die Cascade nicht auf einen Cloud-Pool schicken. Verteidigung in der Tiefe
+     * zusaetzlich zur ollama-only-Konfiguration des local-Cascade-Pools.
+     */
+    ObjectNode buildLlmCascadeProvider(String pool) {
+        ObjectNode p = mapper.createObjectNode();
+        p.put("name", "llm-cascade");
+        p.put("api_base_url", llmCascadeUrl + "/v1/chat/completions");
+        p.put("api_key", "sk-llm-cascade");
+        ArrayNode m = p.putArray("models");
+        // Pool-Catch-All (supermodel=AUS) + Orchestrator (supermodel=AN)
+        m.add(pool);
+        m.add("orchestrator-" + pool);
+        // Delegate-Areas (supermodel=AN) + edupro-Areas (supermodel=AUS, purpose-Routing)
+        for (String area : new String[]{"implement","review","research","dispatch","general","dev","utility","content"}) {
+            m.add(area + "-" + pool);
+        }
+        p.set("transformer", mapper.createObjectNode().set("use", mapper.createArrayNode().add("openrouter")));
+        return p;
     }
 
     /** ccr-Provider für lokales Ollama (OpenAI-kompatible API, Key ist Dummy). */
@@ -128,7 +184,16 @@ public class RouterService {
         p.put("api_key", "ollama"); // Ollama ignoriert den Key, ccr verlangt aber einen
         ArrayNode m = p.putArray("models");
         if (model != null && !model.isBlank()) m.add(model);
-        p.set("transformer", mapper.createObjectNode().set("use", mapper.createArrayNode().add("openai")));
+        // reasoning-Transformer mit enable:false löscht das thinking-Feld komplett aus dem Request
+        // (nach Patch in router/Dockerfile). Ohne Patch würde ccr thinking:{type:"disabled"} setzen,
+        // was Ollama trotzdem als thinking-Request interpretiert → 400 "does not support thinking".
+        ArrayNode useArr = mapper.createArrayNode();
+        ArrayNode reasoningEntry = mapper.createArrayNode();
+        reasoningEntry.add("reasoning");
+        reasoningEntry.add(mapper.createObjectNode().put("enable", false));
+        useArr.add(reasoningEntry);
+        useArr.add("streamoptions");
+        p.set("transformer", mapper.createObjectNode().set("use", useArr));
         return p;
     }
 
@@ -155,8 +220,10 @@ public class RouterService {
         ObjectNode keys = mapper.createObjectNode();
         String gKey = resolveKey("google");
         String oKey = resolveKey("openrouter");
+        String dKey = resolveKey("deepseek");
         if (!gKey.isBlank()) keys.put("google", gKey);
         if (!oKey.isBlank()) keys.put("openrouter", oKey);
+        if (!dKey.isBlank()) keys.put("deepseek", dKey);
 
         // aktive Route: explicit oder erstes Element der fallback_chain
         String routeProvider = null, routeModel = null;
@@ -175,16 +242,28 @@ public class RouterService {
         }
 
         String pool = sw.path("pool").asText("cloud");
+        boolean supermodelOn = sw.path("supermodel").asBoolean(false);
         String mappedProvider = routeProvider != null ? UI_TO_CCR.getOrDefault(routeProvider, routeProvider) : null;
         ArrayNode providers = buildProvidersForPool(pool, keys, routeModel);
 
-        String defaultRoute = "";
+        // ALLE Pools routen über llm-cascade → serverseitiges Failover + Pool×Area-
+        // Routing (inkl. Connection-Failover, wenn ein zugeordneter Server wegbricht).
+        // Der Provider ist pool-spezifisch: bei local kennt der ccr-Router nur
+        // *-local-Targets ⇒ fail-closed, kein Cloud-Ausweich. Zusätzlich enthält die
+        // ccr-Config für local KEINE Cloud-Keys (buildProvidersForPool → nur ollama).
+        providers.insert(0, buildLlmCascadeProvider(pool));
+        String cascadeModel = supermodelOn ? ("orchestrator-" + pool) : pool;
+        String defaultRoute = "llm-cascade," + cascadeModel;
+
+        // Direktroute als Debug-Fallback (kein aktiver ccr-Slot): das direkte
+        // Modell hinter der Cascade, falls man llm-cascade umgehen will.
+        String directRoute = "";
         if (mappedProvider != null && routeModel != null) {
-            defaultRoute = mappedProvider + "," + routeModel;
-        } else if (providers.size() > 0 && providers.get(0).path("models").size() > 0) {
-            String n = providers.get(0).get("name").asText();
-            String m = providers.get(0).get("models").get(0).asText();
-            defaultRoute = n + "," + m;
+            directRoute = mappedProvider + "," + routeModel;
+        } else if (providers.size() > 1 && providers.get(1).path("models").size() > 0) {
+            String n = providers.get(1).get("name").asText();
+            String m2 = providers.get(1).get("models").get(0).asText();
+            directRoute = n + "," + m2;
         }
 
         ObjectNode out = mapper.createObjectNode();
@@ -198,6 +277,10 @@ public class RouterService {
         router.put("background", defaultRoute);
         router.put("think", defaultRoute);
         router.put("longContext", defaultRoute);
+        // Direktroute als Kommentar-Feld fuer Debugging (kein aktiver ccr-Slot)
+        if (!directRoute.isBlank()) {
+            router.put("_directFallback", directRoute);
+        }
         out.set("Router", router);
 
         try {

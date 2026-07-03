@@ -19,7 +19,7 @@ export interface SwitcherStatus {
   localOrchestratorPending?: boolean;
   fallback_chain?: ChainEntry[];
   chain_position?: number;
-  activeRoute?: { model?: string };
+  activeRoute?: { model?: string; topModel?: string };
   hasAnthropicKey?: boolean;
   hasGoogleKey?: boolean;
   hasOpenrouterKey?: boolean;

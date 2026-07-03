@@ -82,11 +82,16 @@ class RouterServiceTest {
     }
 
     @Test
-    void buildOllamaProvider_openaiTransformer_modelListed() {
+    void buildOllamaProvider_reasoningTransformer_modelListed() {
         ObjectNode p = router.buildOllamaProvider("qwen2.5-coder:7b");
         assertThat(p.path("name").asText()).isEqualTo("ollama");
         assertThat(p.path("api_base_url").asText()).contains("11434");
-        assertThat(p.path("transformer").path("use").get(0).asText()).isEqualTo("openai");
+        // reasoning-Transformer mit enable:false löscht das thinking-Feld komplett
+        // (Ollama unterstützt kein thinking → würde sonst 400 werfen). Danach streamoptions.
+        var use = p.path("transformer").path("use");
+        assertThat(use.get(0).get(0).asText()).isEqualTo("reasoning");
+        assertThat(use.get(0).get(1).path("enable").asBoolean()).isFalse();
+        assertThat(use.get(1).asText()).isEqualTo("streamoptions");
         assertThat(p.path("models").get(0).asText()).isEqualTo("qwen2.5-coder:7b");
     }
 
@@ -109,7 +114,7 @@ class RouterServiceTest {
     }
 
     @Test
-    void writeRouterConfig_localPool_writesOnlyOllamaRoute(@TempDir Path tmp) throws Exception {
+    void writeRouterConfig_localPool_routesViaCascadeLocalOnly_failClosed(@TempDir Path tmp) throws Exception {
         Path cfgFile = tmp.resolve("router-config.json");
         when(configs.routerConfigPath()).thenReturn(cfgFile.toString());
         // Local-Pool + Route auf das lokale Modell, dazu vorhandene Cloud-Keys in der DB.
@@ -123,24 +128,39 @@ class RouterServiceTest {
         router.writeRouterConfig();
 
         JsonNode out = M.readTree(cfgFile.toFile());
-        // FAIL-CLOSED: genau ein Provider, und der ist Ollama — kein gemini/openrouter.
-        assertThat(out.path("Providers")).hasSize(1);
-        assertThat(out.path("Providers").get(0).path("name").asText()).isEqualTo("ollama");
-        assertThat(out.path("Router").path("default").asText()).isEqualTo("ollama,qwen2.5-coder:7b");
+        // Alle Pools routen über llm-cascade → serverseitiges Failover, auch local.
+        // Default = llm-cascade mit LOCAL-Target (supermodel aus → "local").
+        assertThat(out.path("Router").path("default").asText()).isEqualTo("llm-cascade,local");
+        // FAIL-CLOSED (Verteidigung in der Tiefe):
+        //  (a) KEIN Cloud-Provider im ccr-Config, egal ob Cloud-Keys da sind.
+        java.util.List<String> providerNames = new java.util.ArrayList<>();
+        out.path("Providers").forEach(p -> providerNames.add(p.path("name").asText()));
+        assertThat(providerNames).containsExactlyInAnyOrder("llm-cascade", "ollama");
+        assertThat(providerNames).doesNotContain("gemini", "openrouter", "deepseek");
+        //  (b) Der llm-cascade-Provider kennt bei local NUR *-local-Targets — der
+        //      ccr-Router kann keine Cloud-Kaskade ansprechen.
+        for (JsonNode p : out.path("Providers")) {
+            if ("llm-cascade".equals(p.path("name").asText())) {
+                for (JsonNode target : p.path("models")) {
+                    assertThat(target.asText()).endsWith("local");
+                }
+            }
+        }
+        // Direkt-Route (Debug) zeigt aufs lokale Modell.
+        assertThat(out.path("Router").path("_directFallback").asText()).isEqualTo("ollama,qwen2.5-coder:7b");
     }
 
     @Test
-    void writeRouterConfig_localPendingNoModel_ollamaOnly_emptyDefaultRoute_noNpe(@TempDir Path tmp) throws Exception {
-        // Fail-closed pending state: local pool, NO activeRoute, NO fallback_chain.
-        // buildOllamaProvider(null) → models array is EMPTY.
-        // Previously caused NPE: providers.get(0).get("models").get(0).asText() → get(0) == null.
+    void writeRouterConfig_localPendingNoModel_viaCascadeLocal_noNpe(@TempDir Path tmp) throws Exception {
+        // Fail-closed pending state: local pool, NO activeRoute, NO fallback_chain,
+        // kein aktiviertes Modell → ollama-Direktprovider hat leere models-Liste.
+        // Darf nicht in eine NPE laufen und muss trotzdem via llm-cascade (local) routen.
         Path cfgFile = tmp.resolve("router-config-pending.json");
         when(configs.routerConfigPath()).thenReturn(cfgFile.toString());
 
         ObjectNode sw = M.createObjectNode();
         sw.put("pool", "local");
         sw.put("localOrchestratorPending", true);
-        // NO activeRoute, NO fallback_chain → routeModel == null → buildOllamaProvider(null) → empty models
         when(configs.getSwitcher()).thenReturn(sw);
         // Cloud keys present in DB — must be ignored (fail-closed)
         when(modelSvc.getSettingRaw("geminiApiKey")).thenReturn("AIza-valid");
@@ -150,11 +170,11 @@ class RouterServiceTest {
         router.writeRouterConfig();
 
         JsonNode out = M.readTree(cfgFile.toFile());
-        // Exactly one provider: ollama with empty models array
-        assertThat(out.path("Providers")).hasSize(1);
-        assertThat(out.path("Providers").get(0).path("name").asText()).isEqualTo("ollama");
-        assertThat(out.path("Providers").get(0).path("models")).isEmpty();
-        // Default route must be empty (no model → no valid route → fail-closed dead-end)
-        assertThat(out.path("Router").path("default").asText()).isEmpty();
+        // Route bleibt auf llm-cascade,local — die Cascade findet lokal kein Modell
+        // und failt dort (fail-closed), NIE Cloud.
+        assertThat(out.path("Router").path("default").asText()).isEqualTo("llm-cascade,local");
+        java.util.List<String> providerNames = new java.util.ArrayList<>();
+        out.path("Providers").forEach(p -> providerNames.add(p.path("name").asText()));
+        assertThat(providerNames).doesNotContain("gemini", "openrouter", "deepseek");
     }
 }

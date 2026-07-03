@@ -51,6 +51,10 @@ class ApiControllerTest {
     @BeforeEach
     void setup() {
         when(configs.mapper()).thenReturn(M);
+        // Default: leerer Switcher-State (kein anthropic-Key → claude.ai-OAuth-Pfad).
+        // pinOrchestratorForPool() konsultiert getSwitcher() für den Key-Check;
+        // Tests mit spezifischem Bedarf überschreiben diesen Stub (LENIENT).
+        when(configs.getSwitcher()).thenReturn(M.createObjectNode());
     }
 
     // ── Helfer ────────────────────────────────────────────────────────────────
@@ -167,25 +171,14 @@ class ApiControllerTest {
     }
 
     @Test
-    void orchestratorChain_emptyCell_fallsBackToSafetyNet() {
+    void orchestratorChain_emptyCell_returnsEmpty() {
         when(modelSvc.listModels()).thenReturn(List.of()); // keine orchestrator-Modelle
         ArrayNode chain = controller.orchestratorFailoverChain("cloud");
 
-        // leere Zelle → supermodelFailoverChain() (Sicherheitsnetz: Opus nie ganz ohne Fallback)
-        assertThat(chain).hasSize(3);
-        assertThat(chain.get(0).get("provider").asText()).isEqualTo("anthropic");
-        assertThat(chain.get(0).get("model").asText()).isEqualTo("claude-sonnet-4-6");
-    }
-
-    @Test
-    void supermodelFailoverChain_hasSonnetNativeThenCloud() {
-        ArrayNode chain = controller.supermodelFailoverChain();
-
-        assertThat(chain).hasSize(3);
-        assertThat(chain.get(0).get("provider").asText()).isEqualTo("anthropic"); // Sonnet nativ zuerst
-        assertThat(chain.get(0).get("model").asText()).isEqualTo("claude-sonnet-4-6");
-        assertThat(chain.get(1).get("provider").asText()).isEqualTo("google");
-        assertThat(chain.get(2).get("provider").asText()).isEqualTo("google");
+        // Leere Kategorie → leere Chain (fail-explicit; keine hartcodierte
+        // Rückfall-Kette mehr, damit im UI immer sichtbar ist was konfiguriert
+        // wurde. Das alte supermodelFailoverChain() Sicherheitsnetz ist entfernt.)
+        assertThat(chain).isEmpty();
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -254,7 +247,7 @@ class ApiControllerTest {
     }
 
     @Test
-    void setMode_cloud_googleTop_pinsSessionViaRouter() {
+    void setMode_cloud_googleTop_pinsSessionViaCascade() {
         ObjectNode cfg = M.createObjectNode();
         when(configs.readConfig()).thenReturn(cfg);
         when(modelSvc.listModels()).thenReturn(List.of(
@@ -265,10 +258,14 @@ class ApiControllerTest {
         controller.setMode(req);
 
         ObjectNode sw = (ObjectNode) cfg.get("_switcher");
+        // Nicht-anthropic-Top → Session läuft über ccr→llm-cascade (Orchestrator-Zelle).
+        // Serverseitiges Failover + Pool×Area-Routing statt Pinning auf einen Provider.
         assertThat(cfg.path("env").path("ANTHROPIC_BASE_URL").asText()).isEqualTo("http://localhost:3456");
-        assertThat(sw.path("provider").asText()).isEqualTo("google");
-        assertThat(sw.path("activeRoute").path("provider").asText()).isEqualTo("google");
-        assertThat(sw.path("activeRoute").path("model").asText()).isEqualTo("gemini-2.5-pro");
+        assertThat(sw.path("provider").asText()).isEqualTo("llm-cascade");
+        assertThat(sw.path("activeRoute").path("provider").asText()).isEqualTo("llm-cascade");
+        assertThat(sw.path("activeRoute").path("model").asText()).isEqualTo("orchestrator-cloud");
+        // topModel für das UI-Highlight zeigt aufs konkrete Cascade-Top.
+        assertThat(sw.path("activeRoute").path("topModel").asText()).isEqualTo("gemini-2.5-pro");
     }
 
     @Test
@@ -476,20 +473,16 @@ class ApiControllerTest {
     // matchesModeAllPools — reine Anzeige-Filterung über ALLE Pools.
     @Test
     void matchesModeAllPools_off_barePoolsAndAreaCompounds() {
-        // bare Pools + Legacy free-only
         assertThat(ApiController.matchesModeAllPools("cloud", false)).isTrue();
         assertThat(ApiController.matchesModeAllPools("free", false)).isTrue();
         assertThat(ApiController.matchesModeAllPools("local", false)).isTrue();
         assertThat(ApiController.matchesModeAllPools("free-only", false)).isTrue();
-        // Area-Compounds aller Pools
         assertThat(ApiController.matchesModeAllPools("general-cloud", false)).isTrue();
         assertThat(ApiController.matchesModeAllPools("dev-cloud", false)).isTrue();
         assertThat(ApiController.matchesModeAllPools("utility-free", false)).isTrue();
         assertThat(ApiController.matchesModeAllPools("content-local", false)).isTrue();
-        // Rollen-Compounds sind im AUS-Modus NICHT sichtbar
         assertThat(ApiController.matchesModeAllPools("orchestrator-cloud", false)).isFalse();
         assertThat(ApiController.matchesModeAllPools("implement-cloud", false)).isFalse();
-        // Legacy bare "utility" (kein Dash → prefix/suffix null) fällt durch
         assertThat(ApiController.matchesModeAllPools("utility", false)).isFalse();
     }
 
@@ -498,7 +491,6 @@ class ApiControllerTest {
         assertThat(ApiController.matchesModeAllPools("orchestrator-cloud", true)).isTrue();
         assertThat(ApiController.matchesModeAllPools("implement-free", true)).isTrue();
         assertThat(ApiController.matchesModeAllPools("dispatch-local", true)).isTrue();
-        // bare Pools + Area-Compounds sind im AN-Modus NICHT sichtbar
         assertThat(ApiController.matchesModeAllPools("cloud", true)).isFalse();
         assertThat(ApiController.matchesModeAllPools("dev-cloud", true)).isFalse();
     }
