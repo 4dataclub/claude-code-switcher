@@ -16,6 +16,7 @@ import {
 } from '@4dataclub/ki-models-ui';
 
 export const MODELS_TABLE_LABELS_DE: Partial<ModelsTableLabels> = {
+  title: 'Konfigurierte Modelle',
   refresh: '↻ Aktualisieren',
   loading: 'Lade Modelle…',
   empty: 'Keine Modelle konfiguriert. Füge unten eines hinzu.',
