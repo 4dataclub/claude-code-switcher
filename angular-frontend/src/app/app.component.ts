@@ -51,7 +51,7 @@ import {
           Claude Code Switcher
         </h1>
         <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          API-Anbieter, Modell und Auto-Failover für Claude Code — gemeinsame Verwaltung mit EduPro.
+          API-Anbieter, Modell und Auto-Failover für Claude Code.
         </p>
       </header>
 
@@ -147,7 +147,7 @@ import {
       </p>
 
       <footer class="pt-6 pb-2 text-center text-xs text-slate-400 dark:text-slate-500">
-        Claude Code Switcher · gemeinsame Verwaltung mit EduPro
+        Claude Code Switcher
       </footer>
 
       <div
@@ -233,10 +233,12 @@ export class AppComponent implements OnDestroy {
   /** Die 3 Pools — der Bereich-Toggle zeigt NUR diese (nie Rollen, nie „Auto"). */
   readonly POOLS = ['cloud', 'free', 'local'];
 
+  // Kurze Pool-Namen — konsistent mit dem Bereich-Toggle (Cloud / Free / Lokal).
+  // Die beschreibenden Zusätze (Premium/OpenRouter/Ollama) leben in poolHints.
   readonly poolTitles: Record<string, string> = {
-    cloud: 'Cloud — Premium (bezahlt)',
-    free:  'Free — OpenRouter :free',
-    local: 'Lokal — Ollama (privat)',
+    cloud: 'Cloud',
+    free:  'Free',
+    local: 'Lokal',
   };
   readonly poolHints: Record<string, string> = {
     cloud: 'Beste Qualität (Anthropic/Google/DeepSeek), kostet.',
