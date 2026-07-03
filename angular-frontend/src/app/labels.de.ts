@@ -86,6 +86,7 @@ export const CASCADES_VIEW_LABELS_DE: Partial<CascadesViewLabels> = {
   statusCooldown: '🟡 Cooldown',
   sectionTitle: 'Cascade-Bereiche',
   refreshTooltip: 'Cascade-Liste neu laden',
+  filterPlaceholder: 'Bereich filtern…',
 };
 
 export const API_KEYS_SECTION_LABELS_DE: Partial<ApiKeysSectionLabels> = {
