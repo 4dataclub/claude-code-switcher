@@ -98,38 +98,21 @@ import {
             Anzeige · das Routing gilt immer dem aktiven Pool
           </p>
         </div>
-        <div
-          class="inline-flex self-start rounded-full bg-slate-100 dark:bg-slate-800 p-1 text-xs font-semibold sm:self-auto"
-          role="group"
-          aria-label="Anzeige-Bereich"
-        >
-          <button
-            type="button"
-            (click)="showAllPools.set(false)"
-            class="rounded-full px-3.5 py-1.5 transition"
-            [class.bg-white]="!showAllPools()"
-            [class.dark:bg-slate-950]="!showAllPools()"
-            [class.shadow-sm]="!showAllPools()"
-            [class.text-slate-900]="!showAllPools()"
-            [class.dark:text-slate-100]="!showAllPools()"
-            [class.text-slate-500]="showAllPools()"
+        <label class="flex items-center gap-2 self-start text-xs text-slate-500 dark:text-slate-400 sm:self-auto">
+          <span class="font-medium">Bereich:</span>
+          <select
+            [value]="displayFilter()"
+            (change)="setDisplayFilter($any($event.target).value)"
+            class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            aria-label="Anzeige-Bereich filtern"
           >
-            Nur {{ activePool() }}
-          </button>
-          <button
-            type="button"
-            (click)="showAllPools.set(true)"
-            class="rounded-full px-3.5 py-1.5 transition"
-            [class.bg-white]="showAllPools()"
-            [class.dark:bg-slate-950]="showAllPools()"
-            [class.shadow-sm]="showAllPools()"
-            [class.text-slate-900]="showAllPools()"
-            [class.dark:text-slate-100]="showAllPools()"
-            [class.text-slate-500]="!showAllPools()"
-          >
-            Alle Pools
-          </button>
-        </div>
+            <option value="active">Aktiver Pool ({{ activePool() }})</option>
+            <option value="cloud">Cloud</option>
+            <option value="free">Free</option>
+            <option value="local">Local</option>
+            <option value="all">Alle Pools</option>
+          </select>
+        </label>
       </div>
 
       <!-- Gemeinsame KI-Modell-Seite (Library) — alle Sektionen, identisch zu EduPro.
@@ -163,13 +146,8 @@ import {
         {{ error() }}
       </p>
 
-      <footer class="pt-6 pb-2 text-center text-xs text-slate-500 dark:text-slate-500">
-        Wrapper:
-        <code class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">cd wrapper && ./install.sh</code>
-        · dann
-        <code class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">claude-auto</code>
-        statt
-        <code class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">claude</code>.
+      <footer class="pt-6 pb-2 text-center text-xs text-slate-400 dark:text-slate-500">
+        Claude Code Switcher · gemeinsame Verwaltung mit EduPro
       </footer>
 
       <div
@@ -323,20 +301,24 @@ export class AppComponent implements OnDestroy {
   readonly localOrchestratorPending = signal<boolean>(false);
 
   /**
-   * Steuert, ob die Anzeige (Cascades-View + Models-Tabelle) NUR den aktiven Pool
-   * zeigt (Default) oder ALLE 3 Pools als Matrix. Das ROUTING ist davon unberührt
-   * — es gilt immer nur der aktive Pool (siehe RouterService.writeRouterConfig).
-   * Rein eine Sichtbarkeits-/Anzeige-Achse, per Button umschaltbar.
+   * Anzeige-Filter (reine Sichtbarkeit, NICHT das Routing): welcher Pool in
+   * Cascades-View + Models-Tabelle gezeigt wird.
+   *   'active' → folgt dem aktiven Pool (Default)
+   *   'cloud' | 'free' | 'local' → genau dieser Pool (ohne den aktiven zu wechseln)
+   *   'all' → alle 3 Pools als Matrix
+   * Das ROUTING gilt immer nur dem AKTIVEN Pool (siehe RouterService).
    */
-  readonly showAllPools = signal(false);
-  toggleShowAllPools(): void { this.showAllPools.update((v) => !v); }
+  readonly displayFilter = signal<'active' | 'cloud' | 'free' | 'local' | 'all'>('active');
+  setDisplayFilter(v: string): void {
+    this.displayFilter.set(v as 'active' | 'cloud' | 'free' | 'local' | 'all');
+  }
 
   /**
    * Whitelist der sichtbaren Kategorien/Cascaden — wird an `<ki-models-page>`
    * gereicht und dort an Tabelle + Cascades-View weiterverteilt.
    *
    * DEFAULT: nur der AKTIVE Pool (mit seinen Area- bzw. Rollen-Compounds). Über
-   * {@link showAllPools} auf die volle 3-Pool-Matrix umschaltbar.
+   * {@link displayFilter} auf einen anderen Pool oder die volle Matrix umschaltbar.
    *
    * Naming-Konvention pro Pool:
    *   AUS (supermodel=false): bare Pool-Name + {general,dev,utility,content}-{pool}
@@ -344,9 +326,10 @@ export class AppComponent implements OnDestroy {
    *   AN  (supermodel=true):  {orchestrator,implement,review,research,dispatch}-{pool}
    */
   readonly visibleCategories = computed<string[]>(() => {
-    const pools = this.showAllPools()
-      ? ['cloud', 'free', 'local']
-      : [this.activePool()];
+    const f = this.displayFilter();
+    const pools = f === 'all' ? ['cloud', 'free', 'local']
+      : f === 'active' ? [this.activePool()]
+      : [f];
     const out: string[] = [];
     if (!this.supermodel()) {
       const areas = ['general', 'dev', 'utility', 'content'];
