@@ -247,6 +247,57 @@ class ApiControllerTest {
     }
 
     @Test
+    void setMode_ausPoolSwitch_free_pinsFreeTopViaCascade() {
+        // Supermodell AUS, Wechsel cloud → free: das free-Top muss aktiv werden
+        // (kein "Pool gewechselt, aber nichts davon aktiv"). free-Top = openrouter →
+        // via ccr→llm-cascade, Routing-Target = "free", topModel fürs UI-Highlight.
+        ObjectNode cfg = M.createObjectNode();
+        cfg.putObject("_switcher").put("pool", "cloud"); // alter Pool
+        when(configs.readConfig()).thenReturn(cfg);
+        when(modelSvc.listModels()).thenReturn(List.of(
+                model("openrouter", "nousresearch/hermes-3-llama-3.1-405b:free", "free", true, 0),
+                model("openrouter", "meta-llama/llama-3.3-70b-instruct:free", "free", true, 1)
+        ));
+        ApiController.ModeRequest req = new ApiController.ModeRequest();
+        req.pool = "free"; req.supermodel = false;
+        var resp = controller.setMode(req);
+
+        ObjectNode sw = (ObjectNode) cfg.get("_switcher");
+        assertThat(sw.path("pool").asText()).isEqualTo("free");
+        assertThat(sw.path("provider").asText()).isEqualTo("llm-cascade");
+        assertThat(sw.path("activeRoute").path("provider").asText()).isEqualTo("llm-cascade");
+        assertThat(sw.path("activeRoute").path("model").asText()).isEqualTo("free");
+        assertThat(sw.path("activeRoute").path("topModel").asText())
+                .isEqualTo("nousresearch/hermes-3-llama-3.1-405b:free");
+        assertThat(cfg.path("env").path("ANTHROPIC_BASE_URL").asText()).isEqualTo("http://localhost:3456");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) resp.getBody();
+        assertThat(body.get("restart")).isEqualTo(true);
+    }
+
+    @Test
+    void setMode_ausPoolSwitch_cloudAnthropicTop_direct() {
+        // Supermodell AUS, Wechsel free → cloud: cloud-Top = anthropic ohne Key →
+        // anthropic-direkt (OAuth, kein ccr).
+        ObjectNode cfg = M.createObjectNode();
+        cfg.putObject("_switcher").put("pool", "free");
+        when(configs.readConfig()).thenReturn(cfg);
+        when(modelSvc.listModels()).thenReturn(List.of(
+                model("anthropic", "claude-opus-4-7", "cloud", true, 0)
+        ));
+        ApiController.ModeRequest req = new ApiController.ModeRequest();
+        req.pool = "cloud"; req.supermodel = false;
+        controller.setMode(req);
+
+        ObjectNode sw = (ObjectNode) cfg.get("_switcher");
+        assertThat(sw.path("pool").asText()).isEqualTo("cloud");
+        assertThat(cfg.path("model").asText()).isEqualTo("claude-opus-4-7");
+        assertThat(sw.path("provider").asText()).isEqualTo("anthropic");
+        assertThat(sw.has("activeRoute")).isFalse();
+        assertThat(cfg.path("env").has("ANTHROPIC_BASE_URL")).isFalse();
+    }
+
+    @Test
     void setMode_cloud_googleTop_pinsSessionViaCascade() {
         ObjectNode cfg = M.createObjectNode();
         when(configs.readConfig()).thenReturn(cfg);
