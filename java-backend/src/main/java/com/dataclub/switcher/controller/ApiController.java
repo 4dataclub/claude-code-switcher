@@ -1065,21 +1065,16 @@ public class ApiController {
      */
     @GetMapping("/categories")
     public com.fasterxml.jackson.databind.JsonNode categories() {
-        JsonNode all = cascade.getCategories();
-        if (all == null || !all.isArray()) return all;
-        // Spiegelt cascades(): das Add-Model-Dropdown bietet nur die zum aktiven
-        // 2-Achsen-Zustand passenden Kategorien an (AUS → Pool selbst, AN → die
-        // Rollen-Compounds {rolle}-{pool}). Die Library priorisiert dieses
-        // Backend-Resultat vor L.categoryOptions.
-        // Anzeige über ALLE Pools (getrennt nach Modus) — spiegelt cascades().
-        // Der aktive Pool filtert hier NICHT mehr.
-        ObjectNode sw = configs.getSwitcher();
-        boolean supermodel = sw.path("supermodel").asBoolean(false);
-        ArrayNode out = configs.mapper().createArrayNode();
-        for (JsonNode c : all) {
-            if (matchesModeAllPools(c.path("name").asText(""), supermodel)) out.add(c);
-        }
-        return out;
+        // UNGEFILTERT (Metadaten-Endpoint): liefert ALLE Kategorien inkl. der bare
+        // Areas (general/dev/utility/content), die die semantischen Routing-
+        // Beschreibungen tragen. Die Cascades-View nutzt das als Lookup-Tabelle
+        // (name → displayName/description) und LEITET die Beschreibung eines
+        // Pool-Compounds {area}-{pool} aus der bare Area ab — genau der Text, der
+        // das semantische Routing (Supermodell AUS) steuert. Würde man hier nach
+        // Modus/Pool filtern, fehlten die bare-Area-Descriptions und die Karten
+        // zeigten nur einen generischen Fallback. Die ANZEIGE-Filterung passiert
+        // ohnehin client-seitig über visibleCategories + /api/cascades.
+        return cascade.getCategories();
     }
 
     @PutMapping("/categories/{name}")
