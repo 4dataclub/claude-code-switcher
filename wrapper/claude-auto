@@ -235,11 +235,26 @@ except: print('unknown')
       unset ANTHROPIC_CODE_PROVIDER_MANAGED_BY_HOST
       unset CLAUDE_CODE_OAUTH_TOKEN
     else
-      # Anthropic-Modus → OAuth oder Long-Token (wenn vorhanden)
+      # Anthropic-Modus → DB-API-Key ODER OAuth ODER Long-Token
       unset ANTHROPIC_BASE_URL
       unset ANTHROPIC_API_KEY
 
+      # NEU: prüfe ob im Switcher-Backend (DB app_settings.anthropicApiKey) ein
+      # echter API-Key hinterlegt ist. DB-Key hat Vorrang vor OAuth — der User
+      # hat ihn explizit eingetragen, also will er DAS nutzen (per-Token statt Abo).
+      ANTHROPIC_DB_KEY=$(curl -sS --max-time 3 "$SWITCHER_URL/api/key/anthropic" 2>/dev/null | python3 -c "
+import json, sys
+try:
+    k = json.load(sys.stdin).get('key', '')
+    # Nur echte sk-ant-api03-Keys (Console-generierte API-Keys) — NICHT die
+    # OAuth-Tokens sk-ant-oat01-* (die bleiben in settings.json und werden
+    # unten separat als Long-Token-Fallback behandelt).
+    print(k if k.startswith('sk-ant-api03-') else '')
+except: print('')
+" 2>/dev/null)
+
       # Optional: Long-lived Token aus settings.json _switcher.keys.anthropic
+      # (OAuth-Fallback, wird nur genutzt wenn kein DB-Key und OAuth-Login weg)
       ANTHROPIC_LONG_TOKEN=$(python3 -c "
 import json,sys
 try:
@@ -249,11 +264,25 @@ try:
 except: print('')
 " 2>/dev/null)
 
-      # OAuth-Login hat Vorrang vor Long-Token (sonst kein Remote Control).
-      # Long-Token nur als Fallback wenn OAuth nicht (mehr) da ist — z.B. nach
-      # Provider-Switch der die Keychain geleert hat.
       unset CLAUDE_CODE_OAUTH_TOKEN
-      AUTH_LOGGED_IN=$("$CLAUDE_BIN" auth status 2>/dev/null | python3 -c "
+
+      # Priorität 1: DB-Key (User hat einen sk-ant-api03-Key eingetragen)
+      if [[ -n "$ANTHROPIC_DB_KEY" ]]; then
+        # OAuth ausschalten damit sie den API-Key nicht überschreibt.
+        AUTH_LOGGED_IN_PRE=$("$CLAUDE_BIN" auth status 2>/dev/null | python3 -c "
+import json, sys
+try: print('true' if json.load(sys.stdin).get('loggedIn') else 'false')
+except: print('false')
+" 2>/dev/null)
+        if [[ "$AUTH_LOGGED_IN_PRE" == "true" ]]; then
+          echo "↪ DB-Anthropic-Key gefunden → OAuth-Logout (Vorrang für API-Key)" >&2
+          "$CLAUDE_BIN" auth logout 2>&1 | head -1 | sed 's/^/  /' >&2
+        fi
+        export ANTHROPIC_API_KEY="$ANTHROPIC_DB_KEY"
+        echo "↪ Anthropic via API-Key (aus DB, per-Token-Abrechnung)" >&2
+      else
+        # Priorität 2: OAuth-Login (Abo)
+        AUTH_LOGGED_IN=$("$CLAUDE_BIN" auth status 2>/dev/null | python3 -c "
 import json, sys
 try: print('true' if json.load(sys.stdin).get('loggedIn') else 'false')
 except: print('false')
@@ -294,6 +323,7 @@ except: print('false')
           notify "Login nicht durch — claude startet ohne Auth"
         fi
       fi
+      fi  # Ende: DB-Key-Priorität-Block (if [[ -n "$ANTHROPIC_DB_KEY" ]])
     fi
   fi
 
