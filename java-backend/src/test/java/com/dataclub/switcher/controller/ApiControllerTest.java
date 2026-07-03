@@ -423,14 +423,19 @@ class ApiControllerTest {
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    //  cascades + ai-models — Endpoints filtern auf den aktiven Pool
+    //  cascades + ai-models — Endpoints liefern ALLE Pools (Matrix); der aktive
+    //  Pool filtert NICHT mehr. Nur der Modus (supermodel AN/AUS) entscheidet,
+    //  ob Rollen-Compounds oder Area-/Pool-Kategorien sichtbar sind.
     // ════════════════════════════════════════════════════════════════════════
 
     @Test
-    void listAiModels_filtersToActivePool() {
+    void listAiModels_returnsAllPools() {
+        // Aktiver Pool = local, aber die Matrix-Sicht ignoriert ihn: bei
+        // supermodel=AN matchen alle Rollen-Compounds {rolle}-{pool} über ALLE
+        // Pools — hier also implement-cloud, implement-local UND dispatch-free.
         ObjectNode sw = M.createObjectNode();
-        sw.put("pool", "local");
-        sw.put("supermodel", true); // Compound-Kategorien matchen nur bei Supermodell=AN
+        sw.put("pool", "local"); // pool-unabhängig — darf das Ergebnis NICHT beeinflussen
+        sw.put("supermodel", true); // AN → Rollen-Compounds aller Pools
         when(configs.getSwitcher()).thenReturn(sw);
         ArrayNode all = M.createArrayNode();
         all.add(node("category", "implement-cloud"));
@@ -441,15 +446,19 @@ class ApiControllerTest {
         JsonNode out = controller.listAiModels();
 
         assertThat(out.isArray()).isTrue();
-        assertThat(out).hasSize(1);
-        assertThat(out.get(0).get("category").asText()).isEqualTo("implement-local");
+        assertThat(out).hasSize(3);
+        assertThat(out).extracting(n -> n.get("category").asText())
+                .containsExactly("implement-cloud", "implement-local", "dispatch-free");
     }
 
     @Test
-    void cascades_filtersToActivePool() {
+    void cascades_returnsAllPools() {
+        // Aktiver Pool = free, aber die Matrix-Sicht ignoriert ihn: bei
+        // supermodel=AN matchen alle Rollen-Compounds {rolle}-{pool} über ALLE
+        // Pools — hier also implement-cloud, implement-free UND review-free.
         ObjectNode sw = M.createObjectNode();
-        sw.put("pool", "free");
-        sw.put("supermodel", true); // Compound-Kategorien matchen nur bei Supermodell=AN
+        sw.put("pool", "free"); // pool-unabhängig — darf das Ergebnis NICHT beeinflussen
+        sw.put("supermodel", true); // AN → Rollen-Compounds aller Pools
         when(configs.getSwitcher()).thenReturn(sw);
         ArrayNode all = M.createArrayNode();
         all.add(node("name", "implement-cloud"));
@@ -459,9 +468,45 @@ class ApiControllerTest {
 
         JsonNode out = controller.cascades();
 
-        assertThat(out).hasSize(2);
-        assertThat(out.get(0).get("name").asText()).isEqualTo("implement-free");
-        assertThat(out.get(1).get("name").asText()).isEqualTo("review-free");
+        assertThat(out).hasSize(3);
+        assertThat(out).extracting(n -> n.get("name").asText())
+                .containsExactly("implement-cloud", "implement-free", "review-free");
+    }
+
+    // matchesModeAllPools — reine Anzeige-Filterung über ALLE Pools.
+    @Test
+    void matchesModeAllPools_off_barePoolsAndAreaCompounds() {
+        // bare Pools + Legacy free-only
+        assertThat(ApiController.matchesModeAllPools("cloud", false)).isTrue();
+        assertThat(ApiController.matchesModeAllPools("free", false)).isTrue();
+        assertThat(ApiController.matchesModeAllPools("local", false)).isTrue();
+        assertThat(ApiController.matchesModeAllPools("free-only", false)).isTrue();
+        // Area-Compounds aller Pools
+        assertThat(ApiController.matchesModeAllPools("general-cloud", false)).isTrue();
+        assertThat(ApiController.matchesModeAllPools("dev-cloud", false)).isTrue();
+        assertThat(ApiController.matchesModeAllPools("utility-free", false)).isTrue();
+        assertThat(ApiController.matchesModeAllPools("content-local", false)).isTrue();
+        // Rollen-Compounds sind im AUS-Modus NICHT sichtbar
+        assertThat(ApiController.matchesModeAllPools("orchestrator-cloud", false)).isFalse();
+        assertThat(ApiController.matchesModeAllPools("implement-cloud", false)).isFalse();
+        // Legacy bare "utility" (kein Dash → prefix/suffix null) fällt durch
+        assertThat(ApiController.matchesModeAllPools("utility", false)).isFalse();
+    }
+
+    @Test
+    void matchesModeAllPools_on_roleCompoundsAllPools() {
+        assertThat(ApiController.matchesModeAllPools("orchestrator-cloud", true)).isTrue();
+        assertThat(ApiController.matchesModeAllPools("implement-free", true)).isTrue();
+        assertThat(ApiController.matchesModeAllPools("dispatch-local", true)).isTrue();
+        // bare Pools + Area-Compounds sind im AN-Modus NICHT sichtbar
+        assertThat(ApiController.matchesModeAllPools("cloud", true)).isFalse();
+        assertThat(ApiController.matchesModeAllPools("dev-cloud", true)).isFalse();
+    }
+
+    @Test
+    void matchesModeAllPools_blankOrNull_isFalse() {
+        assertThat(ApiController.matchesModeAllPools("", false)).isFalse();
+        assertThat(ApiController.matchesModeAllPools(null, true)).isFalse();
     }
 
     // ════════════════════════════════════════════════════════════════════════

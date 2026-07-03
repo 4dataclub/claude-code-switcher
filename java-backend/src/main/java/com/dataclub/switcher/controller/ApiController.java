@@ -879,16 +879,15 @@ public class ApiController {
     public com.fasterxml.jackson.databind.JsonNode cascades() {
         JsonNode all = cascade.getCascades();
         if (all == null || !all.isArray()) return all;
-        // Supermodell-bewusste Sicht (2-Achsen-Modus):
-        //   AUS → genau 1 Cascade = die Pool-Kategorie selbst (cloud|free|local) —
-        //         das Modell, das Claude Code direkt faehrt (mit Failover).
-        //   AN  → die Rollen-Compounds {rolle}-{pool} des aktiven Pools.
+        // Modus-bewusste Sicht über ALLE 3 Pools (Matrix) — der aktive Pool
+        // filtert NICHT mehr. Nur der Modus entscheidet:
+        //   AUS → bare Pool-Namen (cloud|free|local) + Area-Compounds {area}-{pool}.
+        //   AN  → die Rollen-Compounds {rolle}-{pool} aller Pools.
         ObjectNode sw = configs.getSwitcher();
-        String pool = sw.path("pool").asText("cloud");
         boolean supermodel = sw.path("supermodel").asBoolean(false);
         ArrayNode out = configs.mapper().createArrayNode();
         for (JsonNode c : all) {
-            if (matchesPoolMode(c.path("name").asText(""), pool, supermodel)) out.add(c);
+            if (matchesModeAllPools(c.path("name").asText(""), supermodel)) out.add(c);
         }
         return out;
     }
@@ -907,6 +906,37 @@ public class ApiController {
         return cat.equals(pool);
     }
 
+    /** Feste Kategorie-Taxonomie (aus der DB verifiziert). */
+    private static final java.util.Set<String> CASCADE_POOLS =
+        java.util.Set.of("cloud", "free", "local");
+    private static final java.util.Set<String> CASCADE_AREAS =
+        java.util.Set.of("general", "dev", "utility", "content");
+    private static final java.util.Set<String> CASCADE_ROLES =
+        java.util.Set.of("orchestrator", "implement", "review", "research", "dispatch");
+
+    /**
+     * Modus-bewusste Sicht über ALLE 3 Pools (reine Anzeige-Filterung für die
+     * LIST-Endpoints /api/cascades + /api/categories + /api/ai-models). Der aktive
+     * Pool spielt hier KEINE Rolle mehr — die UI zeigt die volle Matrix.
+     *   AUS → bare Pool-Namen (cloud|free|local, inkl. Legacy free-only) plus
+     *         Area-Compounds {area}-{pool}. Legacy bare "utility" (kein Dash)
+     *         fällt korrekt durch.
+     *   AN  → Rollen-Compounds {rolle}-{pool}.
+     */
+    static boolean matchesModeAllPools(String cat, boolean supermodel) {
+        if (cat == null || cat.isBlank()) return false;
+        int dash = cat.lastIndexOf('-');
+        String prefix = dash >= 0 ? cat.substring(0, dash) : null;
+        String suffix = dash >= 0 ? cat.substring(dash + 1) : null;
+        if (supermodel) {
+            return prefix != null && suffix != null
+                && CASCADE_ROLES.contains(prefix) && CASCADE_POOLS.contains(suffix);
+        }
+        if (CASCADE_POOLS.contains(cat) || cat.equals("free-only")) return true;
+        return prefix != null && suffix != null
+            && CASCADE_AREAS.contains(prefix) && CASCADE_POOLS.contains(suffix);
+    }
+
     /**
      * Proxy zu llm-cascade GET/PUT/DELETE /api/categories — Display-Metadaten
      * pro Kategorie (displayName, description, orderIdx). Wird vom Frontend
@@ -917,16 +947,14 @@ public class ApiController {
     public com.fasterxml.jackson.databind.JsonNode categories() {
         JsonNode all = cascade.getCategories();
         if (all == null || !all.isArray()) return all;
-        // Spiegelt cascades(): das Add-Model-Dropdown bietet nur die zum aktiven
-        // 2-Achsen-Zustand passenden Kategorien an (AUS → Pool selbst, AN → die
-        // Rollen-Compounds {rolle}-{pool}). Die Library priorisiert dieses
+        // Spiegelt cascades(): Anzeige über ALLE Pools (getrennt nach Modus).
+        // Der aktive Pool filtert hier NICHT mehr. Die Library priorisiert dieses
         // Backend-Resultat vor L.categoryOptions.
         ObjectNode sw = configs.getSwitcher();
-        String pool = sw.path("pool").asText("cloud");
         boolean supermodel = sw.path("supermodel").asBoolean(false);
         ArrayNode out = configs.mapper().createArrayNode();
         for (JsonNode c : all) {
-            if (matchesPoolMode(c.path("name").asText(""), pool, supermodel)) out.add(c);
+            if (matchesModeAllPools(c.path("name").asText(""), supermodel)) out.add(c);
         }
         return out;
     }
@@ -1237,17 +1265,15 @@ public class ApiController {
     public com.fasterxml.jackson.databind.JsonNode listAiModels() {
         JsonNode all = cascade.getModels();
         if (all == null || !all.isArray()) return all;
-        // Zustands-bewusst (2 Achsen), identisch zu /cascades + /categories:
-        //   AUS → nur die Plain-Pool-Kategorie (cloud|free|local) — die OFF-Chain.
-        //   AN  → nur die Rollen-Compounds {rolle}-{pool}; die Plain-Pool-Cascade
-        //         (OFF-Chain) wird ausgeblendet (Orchestrator-Modelle stehen in
-        //         orchestrator-{pool}). So zeigt die Tabelle nie modus-fremde Cascaden.
+        // Modus-bewusst über ALLE Pools (Matrix), identisch zu /cascades +
+        // /categories — der aktive Pool filtert NICHT mehr:
+        //   AUS → bare Pool-Kategorien + Area-Compounds {area}-{pool}.
+        //   AN  → Rollen-Compounds {rolle}-{pool}.
         ObjectNode sw = configs.getSwitcher();
-        String pool = sw.path("pool").asText("cloud");
         boolean supermodel = sw.path("supermodel").asBoolean(false);
         ArrayNode out = configs.mapper().createArrayNode();
         for (JsonNode m : all) {
-            if (matchesPoolMode(m.path("category").asText(""), pool, supermodel)) out.add(m);
+            if (matchesModeAllPools(m.path("category").asText(""), supermodel)) out.add(m);
         }
         return out;
     }
