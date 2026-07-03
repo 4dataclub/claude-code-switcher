@@ -43,6 +43,19 @@ export const MODELS_TABLE_LABELS_DE: Partial<ModelsTableLabels> = {
   btnSetActive: 'Als aktiv',
   activeBadge: 'AKTIV',
   confirmDelete: (id: string) => `Modell "${id}" wirklich löschen?`,
+  btnEdit: 'Bearbeiten',
+  editTitle: 'Modell bearbeiten',
+  editFieldProvider: 'Provider',
+  editFieldModelId: 'Modell-ID',
+  editFieldDisplayName: 'Anzeigename',
+  editFieldCategory: 'Kategorie',
+  editFieldApiKeySettingKey: 'API-Key-Setting',
+  editFieldCooldown: 'Cooldown 503 (Sek.)',
+  editFieldServer: 'Inferenz-Server',
+  btnSave: 'Speichern',
+  btnSaving: 'Speichere…',
+  btnCancel: 'Abbrechen',
+  editError: 'Aktualisieren fehlgeschlagen',
 };
 
 export const ADD_MODEL_FORM_LABELS_DE: Partial<AddModelFormLabels> = {
@@ -70,6 +83,8 @@ export const CASCADES_VIEW_LABELS_DE: Partial<CascadesViewLabels> = {
   cooldownTitle: 'Cooldown-Status',
   statusFree: '🟢 frei',
   statusCooldown: '🟡 Cooldown',
+  sectionTitle: 'Cascade-Bereiche',
+  refreshTooltip: 'Cascade-Liste neu laden',
 };
 
 export const API_KEYS_SECTION_LABELS_DE: Partial<ApiKeysSectionLabels> = {
