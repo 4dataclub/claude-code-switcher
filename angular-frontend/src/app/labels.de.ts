@@ -80,7 +80,7 @@ export const CASCADES_VIEW_LABELS_DE: Partial<CascadesViewLabels> = {
   loading: 'Lade Cascade-Bereiche…',
   empty: 'Noch keine Cascade-Bereiche konfiguriert.',
   emptyHint: 'Füge mindestens ein Modell mit einem category-Wert hinzu, damit es hier als Karte erscheint.',
-  defaultHint: 'Eigenständige Failover-Chain — eigener Cooldown-Timer + Sticky-Pointer.',
+  defaultHint: 'Routing-Bereich der Cascade — Modelle werden bei Fehler/Quota/Cooldown der Reihe nach durchprobiert.',
   cooldownTitle: 'Cooldown-Status',
   statusFree: '🟢 frei',
   statusCooldown: '🟡 Cooldown',
@@ -114,7 +114,7 @@ export const API_KEYS_SECTION_LABELS_DE: Partial<ApiKeysSectionLabels> = {
 
 export const FAILOVER_CHAIN_LABELS_DE: Partial<FailoverChainLabels> = {
   title: 'Failover-Chain',
-  description: 'bei Quota-Erreichung wird der Reihe nach durchgegangen.',
+  description: 'Bei Fehler, Quota oder Cooldown probiert die Cascade die Modelle der Reihe nach durch.',
   addRow: 'Stufe hinzufügen',
   removeRowTitle: 'Entfernen',
   moveUpTitle: 'Nach oben',
@@ -123,7 +123,7 @@ export const FAILOVER_CHAIN_LABELS_DE: Partial<FailoverChainLabels> = {
   positionLabel: (pos: number, provider: string, model: string) =>
     `Stufe ${pos + 1} (${provider} · ${model})`,
   promote: '↶ Zurück zu Stufe 1',
-  hint: 'Bei Quota-Erreichung wechselt der Wrapper automatisch zur nächsten Stufe und startet Claude Code mit --resume neu (Kontext bleibt erhalten). Voraussetzung: claude-auto als Wrapper.',
+  hint: 'Failover läuft serverseitig in der llm-cascade: bei Fehler, Quota, Timeout oder wenn ein zugewiesener Server nicht erreichbar ist, wird pro Request transparent das nächste Modell der Kette genutzt; ausgefallene Modelle bekommen einen Cooldown. Kein Session-Neustart nötig. (Der klassische Wrapper-Failover mit Session-Neustart greift nur auf dem Direkt-Anbieter-Pfad, der die Cascade umgeht.)',
   emptyState: 'Keine Stufen konfiguriert. Füge eine hinzu um zu starten.',
 };
 

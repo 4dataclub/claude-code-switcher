@@ -216,8 +216,10 @@ export class AppComponent implements OnDestroy {
    * Switcher nutzt „cloud" (bezahlte Tier-Modelle) + „free-only" (kostenfreie OR-Modelle).
    */
   readonly cascadeHints: Record<string, string> = {
-    cloud:       'Bezahlte Tier-Modelle (Anthropic / Google / OpenRouter) — eigener Cooldown.',
-    'free-only': 'Kostenfreie OpenRouter-Modelle — kein Cooldown, Rate-Limited.',
+    cloud:       'Bezahlte Tier-Modelle (Anthropic / Google / DeepSeek) — direktes Pool-Modell mit Failover.',
+    free:        'Kostenfreie OpenRouter-Modelle — rate-limited.',
+    'free-only': 'Kostenfreie OpenRouter-Modelle — rate-limited.',
+    local:       'Lokale Ollama-Modelle — fail-closed, kein Cloud-Ausweich.',
     general:     'Globaler Fallback — wird genutzt wenn kein Bereich passt.',
   };
 
@@ -237,7 +239,7 @@ export class AppComponent implements OnDestroy {
     local: 'Lokal — Ollama (privat)',
   };
   readonly poolHints: Record<string, string> = {
-    cloud: 'Beste Qualität (DeepSeek/GPT/Gemini), kostet.',
+    cloud: 'Beste Qualität (Anthropic/Google/DeepSeek), kostet.',
     free:  '€0, stark rate-limited, NICHT privat (Daten ggf. fürs Training).',
     local: 'Eigene Infra, privat, fail-closed — nichts verlässt den Rechner.',
   };
