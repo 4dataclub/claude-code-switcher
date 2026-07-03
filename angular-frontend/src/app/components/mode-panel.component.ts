@@ -25,33 +25,35 @@ import { CommonModule } from '@angular/common';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div>
+    <div class="space-y-5">
       <!-- Row 0: Supermodell (Orchestrierung an/aus) — die 2. Achse, gilt in JEDEM Bereich/Pool -->
-      <div class="flex items-center gap-3 flex-wrap mb-3">
-        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Supermodell</span>
-        <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
-          <button
-            type="button"
-            (click)="setSupermodel(false)"
-            class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
-            [class.bg-slate-950]="!supermodel"
-            [class.text-slate-50]="!supermodel"
-            [class.dark:bg-slate-50]="!supermodel"
-            [class.dark:text-slate-950]="!supermodel"
-            [class.text-slate-500]="supermodel"
-            [class.dark:text-slate-400]="supermodel"
-          >Aus</button>
-          <button
-            type="button"
-            (click)="setSupermodel(true)"
-            class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
-            [class.bg-indigo-600]="supermodel"
-            [class.text-white]="supermodel"
-            [class.text-slate-500]="!supermodel"
-            [class.dark:text-slate-400]="!supermodel"
-          >An</button>
+      <div>
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+          <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 sm:w-24 sm:shrink-0">Supermodell</span>
+          <div class="inline-flex self-start rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
+            <button
+              type="button"
+              (click)="setSupermodel(false)"
+              class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
+              [class.bg-slate-950]="!supermodel"
+              [class.text-slate-50]="!supermodel"
+              [class.dark:bg-slate-50]="!supermodel"
+              [class.dark:text-slate-950]="!supermodel"
+              [class.text-slate-500]="supermodel"
+              [class.dark:text-slate-400]="supermodel"
+            >Aus</button>
+            <button
+              type="button"
+              (click)="setSupermodel(true)"
+              class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
+              [class.bg-indigo-600]="supermodel"
+              [class.text-white]="supermodel"
+              [class.text-slate-500]="!supermodel"
+              [class.dark:text-slate-400]="!supermodel"
+            >An</button>
+          </div>
         </div>
-        <span *ngIf="supermodel" class="text-xs text-slate-500 dark:text-slate-400">Opus plant &amp; verteilt im gewählten Bereich, prüft am Ende.</span>
+        <p *ngIf="supermodel" class="mt-2 text-xs text-slate-500 dark:text-slate-400 sm:ml-28">Opus plant &amp; verteilt im gewählten Bereich, prüft am Ende.</p>
       </div>
 
       <!-- Row 1: Switching (Manuell / Auto-Failover) — NUR im klassischen Modus.
@@ -59,9 +61,9 @@ import { CommonModule } from '@angular/common';
            Rollen-Failover via Cooldown; ein Session-Auto-Failover würde Opus
            entpinnen → die Achse ist dann widersprüchlich + ausgeblendet
            (Backend erzwingt ohnehin mode=manual). -->
-      <div *ngIf="!supermodel" class="flex items-center gap-3 flex-wrap">
-        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Switching</span>
-        <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
+      <div *ngIf="!supermodel" class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 sm:w-24 sm:shrink-0">Switching</span>
+        <div class="inline-flex self-start rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
           <button
             type="button"
             (click)="setMode('manual')"
@@ -91,23 +93,25 @@ import { CommonModule } from '@angular/common';
            KEIN „Auto"/Off-Zustand: ein Pool ist immer gewählt (Default cloud).
            Eigene Pill-Reihe statt der Library-Component, die zwingend einen
            Off-Button rendert. -->
-      <div class="flex items-center gap-3 flex-wrap mt-3">
-        <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Bereich</span>
-        <div class="inline-flex rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
-          <button
-            *ngFor="let p of categories"
-            type="button"
-            (click)="setCategory(p)"
-            class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
-            [class.bg-slate-950]="activeCategory === p"
-            [class.text-slate-50]="activeCategory === p"
-            [class.dark:bg-slate-50]="activeCategory === p"
-            [class.dark:text-slate-950]="activeCategory === p"
-            [class.text-slate-500]="activeCategory !== p"
-            [class.dark:text-slate-400]="activeCategory !== p"
-          >{{ poolButtonLabel(p) }}</button>
+      <div>
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+          <span class="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 sm:w-24 sm:shrink-0">Bereich</span>
+          <div class="inline-flex self-start rounded-full bg-slate-100 dark:bg-slate-800 p-1 ring-1 ring-slate-200 dark:ring-slate-700">
+            <button
+              *ngFor="let p of categories"
+              type="button"
+              (click)="setCategory(p)"
+              class="px-4 py-1.5 text-xs font-bold tracking-wide rounded-full transition"
+              [class.bg-slate-950]="activeCategory === p"
+              [class.text-slate-50]="activeCategory === p"
+              [class.dark:bg-slate-50]="activeCategory === p"
+              [class.dark:text-slate-950]="activeCategory === p"
+              [class.text-slate-500]="activeCategory !== p"
+              [class.dark:text-slate-400]="activeCategory !== p"
+            >{{ poolButtonLabel(p) }}</button>
+          </div>
         </div>
-        <span class="text-xs text-slate-500 dark:text-slate-400">{{ categoryHintMap[activeCategory] || '' }}</span>
+        <p *ngIf="categoryHintMap[activeCategory]" class="mt-2 text-xs text-slate-500 dark:text-slate-400 sm:ml-28">{{ categoryHintMap[activeCategory] }}</p>
       </div>
 
       <!-- Manuell-Mode: Der Live-Wechsel auf ein konkretes Modell läuft über den
