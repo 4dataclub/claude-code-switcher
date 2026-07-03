@@ -123,6 +123,7 @@ export const FAILOVER_CHAIN_LABELS_DE: Partial<FailoverChainLabels> = {
   positionLabel: (pos: number, provider: string, model: string) =>
     `Stufe ${pos + 1} (${provider} · ${model})`,
   promote: '↶ Zurück zu Stufe 1',
+  hintToggle: 'Wie funktioniert das Failover?',
   hint: 'Failover läuft serverseitig in der llm-cascade: bei Fehler, Quota, Timeout oder wenn ein zugewiesener Server nicht erreichbar ist, wird pro Request transparent das nächste Modell der Kette genutzt; ausgefallene Modelle bekommen einen Cooldown. Kein Session-Neustart nötig. (Der klassische Wrapper-Failover mit Session-Neustart greift nur auf dem Direkt-Anbieter-Pfad, der die Cascade umgeht.)',
   emptyState: 'Keine Stufen konfiguriert. Füge eine hinzu um zu starten.',
 };
