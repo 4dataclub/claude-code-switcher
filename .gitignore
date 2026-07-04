@@ -46,3 +46,7 @@ angular-frontend/dist/
 # Container-Builds gebraucht (Dockerfile macht npm ci).
 !angular-frontend/package-lock.json
 docker-compose.override.yml
+
+# Python (scripts/)
+__pycache__/
+*.pyc

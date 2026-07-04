@@ -1084,6 +1084,24 @@ public class ApiController {
                   : ResponseEntity.status(502).body(Map.of("ok", false, "error", "llm-cascade upstream failed"));
     }
 
+    /**
+     * Reset auf Werkseinstellungen: proxy zu llm-cascade
+     * {@code POST /api/categories/reset-descriptions}. Setzt utility/content
+     * (aktuell) auf die kanonischen Descriptions zurueck und broadcastet
+     * pro geaenderter Kategorie ein SSE-Event, damit das Frontend die neuen
+     * Texte sofort zeigt.
+     */
+    @PostMapping("/categories/reset-descriptions")
+    public ResponseEntity<com.fasterxml.jackson.databind.JsonNode> categoryResetDescriptions() {
+        com.fasterxml.jackson.databind.JsonNode result = cascade.resetCategoryDescriptions();
+        if (result == null) {
+            return ResponseEntity.status(502).build();
+        }
+        // Broadcast damit UI die neuen Texte sofort zeigt (ohne Reload).
+        sse.broadcast("category-updated", Map.of("reset", true));
+        return ResponseEntity.ok(result);
+    }
+
     // ─── Provider-Server-Proxy (v0.8.0) ──────────────────────────────────────
     // Externe Inferenz-Server pro Modell. CRUD liegt in llm-cascade; hier nur
     // durchgereicht, damit <ki-provider-servers> (KI_MODELS_API_BASE='/api')
