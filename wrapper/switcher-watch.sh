@@ -313,6 +313,10 @@ for c in new:
     cat_s = f"\033[1;33m[{cat}]\033[0m"
     extra = f"{D}{chars} chars{X}" if chars else ""
     line = f"\033[36m[DELEG]\033[0m {D}{t}{X} {mark} {C}{prov}:{model}{X} {cat_s} {extra}".rstrip()
+    # Bei Klassifikator-Calls (__routing__): die gewaehlte Zielkategorie hervorheben.
+    out = c.get("output")
+    if out and svc == "__routing__":
+        line += f" {D}→{X} \033[1;35m{out}\033[0m"
     snip = c.get("promptSnippet")  # nur befuellt wenn Datenschutz-Schalter logPromptSnippet=AN
     if snip:
         s = snip if len(snip) <= 70 else snip[:70] + "…"

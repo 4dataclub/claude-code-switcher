@@ -53,12 +53,12 @@ import { CommonModule } from '@angular/common';
             >An</button>
           </div>
         </div>
-        <p *ngIf="supermodel" class="mt-2 text-xs text-slate-500 dark:text-slate-400 sm:ml-28">Opus plant &amp; verteilt im gewählten Bereich, prüft am Ende.</p>
+        <p *ngIf="supermodel" class="mt-2 text-xs text-slate-500 dark:text-slate-400 sm:ml-28">Der Orchestrator plant, verteilt die Schritte auf die Rollen des gewählten Bereichs und prüft am Ende.</p>
       </div>
 
       <!-- Row 1: Switching (Manuell / Auto-Failover) — NUR im klassischen Modus.
-           Bei Supermodell AN orchestriert Opus (gepinnt) + die Cascade macht das
-           Rollen-Failover via Cooldown; ein Session-Auto-Failover würde Opus
+           Bei Supermodell AN orchestriert der Orchestrator (gepinnt) + die Cascade macht das
+           Rollen-Failover via Cooldown; ein Session-Auto-Failover würde den Orchestrator
            entpinnen → die Achse ist dann widersprüchlich + ausgeblendet
            (Backend erzwingt ohnehin mode=manual). -->
       <div *ngIf="!supermodel" class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">

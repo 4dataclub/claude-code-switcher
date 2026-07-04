@@ -184,6 +184,21 @@ public class LlmCascadeClient {
     }
 
     /**
+     * Reset auf Werkseinstellungen — Proxy zu POST /api/categories/reset-descriptions.
+     * Liefert die Cascade-Antwort ({created, updated, unchanged, total}) durch,
+     * oder null bei Fehler. Der Aufrufer entscheidet dann ob 502 zurueck geht.
+     */
+    public JsonNode resetCategoryDescriptions() {
+        try {
+            String json = rest.postForObject(
+                cascadeUrl + "/api/categories/reset-descriptions", null, String.class);
+            return json == null ? null : mapper.readTree(json);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
      * Quality-Stats pro Modell — Proxy zu GET /api/stats/quality (llm-cascade
      * ≥ 0.7.2). Liefert pro Modell {@code QualityStatRow} mit Score, Tier
      * (★/◐/▽/✗/?), successRate, avgChars, callsLast30d.

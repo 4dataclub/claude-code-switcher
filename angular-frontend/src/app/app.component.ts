@@ -120,6 +120,7 @@ import {
       <ki-models-page
         [config]="pageConfig"
         [activePool]="activePool()"
+        [displayPool]="displayPool()"
         [supermodelOn]="supermodel()"
         [visibleCategories]="visibleCategories()"
         [localOrchestratorPending]="localOrchestratorPending()"
@@ -318,6 +319,19 @@ export class AppComponent implements OnDestroy {
   }
 
   /**
+   * Anzeige-Pool für die Supermodell-Matrix — folgt dem Bereich-Filter, damit
+   * die Matrix-Überschrift („Rollen im Pool …") konsistent mit Cascades-View
+   * und Modell-Tabelle wechselt. 'active' → aktiver Pool; ein konkreter Pool →
+   * dieser; 'all' → aktiver Pool (die Matrix ist single-pool, kann 'all' nicht
+   * darstellen).
+   */
+  readonly displayPool = computed<string>(() => {
+    const f = this.displayFilter();
+    if (f === 'active' || f === 'all') return this.activePool();
+    return f;
+  });
+
+  /**
    * Whitelist der sichtbaren Kategorien/Cascaden — wird an `<ki-models-page>`
    * gereicht und dort an Tabelle + Cascades-View weiterverteilt.
    *
@@ -502,9 +516,12 @@ export class AppComponent implements OnDestroy {
     this.es?.addEventListener('supermodel', () => {
       this.api.getSupermodel().subscribe({
         next: (r) => {
+          const changed = !!r?.enabled !== this.supermodel();
           this.supermodel.set(!!r?.enabled);
           if (r?.pool) this.activePool.set(r.pool);
           this.localOrchestratorPending.set(!!r?.localOrchestratorPending);
+          // Kategorie-Satz wechselt (Areas ↔ Rollen) → Kind neu laden.
+          if (changed) this.modelsPage?.reload();
         },
         error: () => {},
       });
@@ -517,7 +534,15 @@ export class AppComponent implements OnDestroy {
           this.activePool.set(d.pool);
           this.modelsPage?.reload(); // anderer Pool → Tabelle + Cascades + Matrix neu filtern
         }
-        if (typeof d.supermodel === 'boolean') this.supermodel.set(d.supermodel);
+        if (typeof d.supermodel === 'boolean' && d.supermodel !== this.supermodel()) {
+          this.supermodel.set(d.supermodel);
+          // Supermodell-Toggle wechselt den kompletten Kategorie-Satz
+          // (Areas ↔ Rollen). Das Backend hat hier bereits umgeschaltet
+          // (SSE kommt NACH dem echten Switch), daher liefert /api/cascades
+          // jetzt den korrekten Satz → Kind neu laden, sonst bleibt die
+          // Cascade-Liste stale bis zum manuellen Refresh.
+          this.modelsPage?.reload();
+        }
         this.localOrchestratorPending.set(!!d.localOrchestratorPending);
       } catch {}
     });
@@ -607,7 +632,7 @@ export class AppComponent implements OnDestroy {
         this.supermodel.set(!!r?.enabled);
         this.toast.set({
           msg: on
-            ? (localPool ? 'Supermodell AN — lokaler Orchestrator (fail-closed)' : 'Supermodell AN — Opus orchestriert')
+            ? (localPool ? 'Supermodell AN — lokaler Orchestrator (fail-closed)' : 'Supermodell AN — der Orchestrator übernimmt')
             : 'Supermodell AUS',
           type: 'ok',
         });
