@@ -1,5 +1,8 @@
 # Supermodell-Modus — Claude Code mit günstigen Kollegen-Modellen
 
+> ⚠️ **VERALTET in Teilen — kanonische Wahrheit: [docs/SWITCHER-WAHRHEIT.md](docs/SWITCHER-WAHRHEIT.md).**
+> Seit 2026-07 gilt: Delegation läuft **agentenlos** per curl an `:8091` — der **`@supermodel`-Agent wurde entfernt**. Die Policy wird vom Wrapper via `--append-system-prompt-file` zugestellt (nicht mehr per SessionStart-Hook). Alle Aussagen hier, die den `@supermodel`-Agenten/Hook beschreiben, sind überholt; bei Konflikt gilt SWITCHER-WAHRHEIT.md + der Code.
+
 > **Self-contained.** Diese Datei trägt das ganze Wissen im Repo — auf dem Ziel-Rechner
 > gibt es kein Brain/Plan/Memory. Wer das liest (Mensch oder Claude), versteht + bedient
 > den Supermodell-Modus ohne Vorwissen.
