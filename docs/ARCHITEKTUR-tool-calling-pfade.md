@@ -1,5 +1,7 @@
 # Architektur — Tool-Calling-Pfade (Switcher / CCR / llm-cascade)
 
+> ⚠️ **Historischer Debug-/Design-Record (30.06.2026).** Route A (Tool-Passthrough) ist inzwischen umgesetzt + live. Der `@supermodel`-Agent wurde **entfernt** — Delegation läuft **agentenlos** (Wrapper injiziert Policy, Orchestrator delegiert per curl an `:8091`). Aktueller, gültiger Stand: **[SWITCHER-WAHRHEIT.md](SWITCHER-WAHRHEIT.md)**. Erwähnungen von `@supermodel` unten sind der damalige Stand.
+
 > Stand: 2026-06-30. Ergebnis einer Debugging-Session zum Befund
 > "Supermodell-Delegation laeuft nur mit Opus, nicht mit free/local".
 > Quelle der Fakten: Live-Tests gegen die laufenden Container (siehe "Evidenz").
