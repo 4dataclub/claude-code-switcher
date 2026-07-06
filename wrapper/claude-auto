@@ -362,15 +362,16 @@ except: print('false')
     if [[ "$SM_ENABLED" == "true" ]]; then
       SM_WRITE="AN"
       cat > "$SM_POLICY_FILE" <<EOF
-[SUPERMODELL-MODUS: AN · Pool: ${SM_POOL}]
-Du bist der Orchestrator. Plane die Aufgabe und delegiere in sich abgeschlossene Teilaufgaben an guenstige Modelle; Planung/Architektur/finale Synthese behaeltst du selbst.
+[SUPERMODELL-MODUS: AN — STRIKTE DELEGATION · Pool: ${SM_POOL}]
+Du bist der Orchestrator. In DIESEM Modus delegierst du JEDE Aufgabe, die einer Rolle entspricht, an den Worker -- AUCH wenn du sie selbst koenntest. Das ist der Zweck von AN. (Willst du selbst arbeiten statt zu delegieren, ist AUS der richtige Modus, nicht AN.)
+Rollen (NUR diese als <KIND>): implement (Code/Backend/Boilerplate/CRUD) · review (Korrektheit/Sicherheit/Tests) · research (Docs/Recherche) · dispatch (Commit-Msgs/Summaries/Text/Triviales).
+Verboten als Kategorie: content/dev/general/utility (das sind AUS-Kategorien) und erfundene Namen.
 Delegieren = EIN direkter Aufruf (KEIN Agent, kein Subagent):
   curl -sS --max-time 180 -X POST http://localhost:8091/api/generate -H 'Content-Type: application/json' -d '{"category":"<KIND>-${SM_POOL}","service":"claude-orchestrator","prompt":"<VOLLSTAENDIGE self-contained Teilaufgabe>"}'
-<KIND> waehlst du semantisch, NUR aus diesen Rollen:
-  implement (Bulk-Code/Backend/Boilerplate/CRUD) · review (Korrektheit/Sicherheit/Tests) · research (Docs/Recherche) · dispatch (Commit-Msgs/Summaries/Triviales).
-Verboten: content/dev/general/utility (das sind AUS-Kategorien) oder erfundene Kategorien.
-Uebergib Teilaufgaben SELF-CONTAINED (Pfade/Signaturen/Kontext inline) -> dein Kontext bleibt schlank.
-Erfolg = Feld ".text" in der Antwort -> verwenden. Danach IMMER selbst einsammeln, gegen den Plan pruefen, integrieren (nie delegieren-und-vergessen).
+Erfolg = Feld ".text" -> verwenden.
+SELBST behaeltst du NUR: (1) Planung/Zerlegung/Architektur, (2) finale Synthese/Integration, (3) die tatsaechliche AUSFUEHRUNG mit Tools (Dateien schreiben, Bash, Dienste, Deploy -- der Worker KANN nicht ausfuehren, nur Text/Code generieren), (4) delegierte Ergebnisse einsammeln + billig pruefen (Tests/Compile).
+Regel: GENERIERUNG, die eine Rolle abdeckt -> IMMER delegieren (nicht selbst tippen). AUSFUEHRUNG -> du selbst.
+Teilaufgaben SELF-CONTAINED uebergeben (Pfade/Signaturen/Kontext inline) -> dein Kontext bleibt schlank.
 Fehler (kein ".text" / ".error"): Pool cloud/free -> mach die Teilaufgabe SELBST (fail-open). Pool local -> STOPP, melde "Delegation nicht moeglich (local fail-closed)", weiche NIE nach Cloud aus.
 EOF
     elif [[ -z "${ANTHROPIC_BASE_URL:-}" ]]; then
