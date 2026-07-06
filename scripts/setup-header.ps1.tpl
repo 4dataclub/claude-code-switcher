@@ -125,74 +125,10 @@ if (-not $NoUserConfig) {
     }
 }
 
-# ── Opt-in: Supermodell-Delegation (@supermodel-Agent + Policy + SessionStart-Hook) ──
-# Standardmäßig AUS — nur mit -WithSupermodel. Pendant zum Bash-Block.
-if ($WithSupermodel) {
-    $ClaudeDir = Join-Path $HOME '.claude'
-    $AgentsDir = Join-Path $ClaudeDir 'agents'
-    $HooksDir  = Join-Path $ClaudeDir 'hooks'
-    New-Item -Path $AgentsDir -ItemType Directory -Force | Out-Null
-    New-Item -Path $HooksDir  -ItemType Directory -Force | Out-Null
-
-    $AgentDest = Join-Path $AgentsDir 'supermodel.md'
-    Copy-Item 'agents\supermodel.md' $AgentDest -Force
-    Write-Host "▸ Supermodell: Agent -> $AgentDest" -ForegroundColor Cyan
-
-    $SmHookDest = Join-Path $HooksDir 'supermodel-sessionstart.ps1'
-    Copy-Item 'wrapper\supermodel-sessionstart.ps1' $SmHookDest -Force
-    Write-Host "▸ Supermodell: SessionStart-Hook -> $SmHookDest" -ForegroundColor Cyan
-
-    $ClaudeMd = Join-Path $ClaudeDir 'CLAUDE.md'
-    $smBeg = '<!-- BEGIN claude-switcher-supermodel -->'
-    $smEnd = '<!-- END claude-switcher-supermodel -->'
-    $tmpSm = New-TemporaryFile
-    Extract-Block $tmpSm.FullName 'supermodel_policy'
-    $smContent = [System.IO.File]::ReadAllText($tmpSm.FullName).TrimEnd() + "`n"
-    Write-Host "▸ Supermodell: Policy -> $ClaudeMd" -ForegroundColor Cyan
-    if ((Test-Path $ClaudeMd) -and ((Get-Content $ClaudeMd -Raw) -match [regex]::Escape($smBeg))) {
-        $existing = Get-Content $ClaudeMd -Raw
-        $newBlock = "$smBeg`n$smContent$smEnd`n"
-        $pattern  = [regex]::Escape($smBeg) + '.*?' + [regex]::Escape($smEnd) + "(`n)?"
-        $updated  = [regex]::Replace($existing, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $newBlock }, 'Singleline')
-        Set-Content -Path $ClaudeMd -Value $updated -NoNewline
-        Write-Host "  ✓ Supermodell-Policy aktualisiert" -ForegroundColor Green
-    } else {
-        $head = ''
-        if (Test-Path $ClaudeMd) { $head = (Get-Content $ClaudeMd -Raw) + "`n" }
-        $full = "$head$smBeg`n$smContent$smEnd`n"
-        Set-Content -Path $ClaudeMd -Value $full -NoNewline
-        Write-Host "  ✓ Supermodell-Policy angefügt" -ForegroundColor Green
-    }
-    Remove-Item $tmpSm -Force
-
-    $Settings = Join-Path $ClaudeDir 'settings.json'
-    Write-Host "▸ Supermodell: Registriere SessionStart-Hook in $Settings" -ForegroundColor Cyan
-    $data = @{}
-    if (Test-Path $Settings) {
-        try { $data = Get-Content $Settings -Raw | ConvertFrom-Json -AsHashtable } catch { $data = @{} }
-    }
-    if (-not $data.ContainsKey('hooks')) { $data['hooks'] = @{} }
-    if (-not $data['hooks'].ContainsKey('SessionStart')) { $data['hooks']['SessionStart'] = @() }
-    $already = $false
-    foreach ($entry in $data['hooks']['SessionStart']) {
-        foreach ($h in $entry.hooks) {
-            if ($h.command -and $h.command -like '*supermodel-sessionstart.ps1*') { $already = $true; break }
-        }
-    }
-    if (-not $already) {
-        $data['hooks']['SessionStart'] += @{
-            hooks = @(@{
-                type    = 'command'
-                command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$SmHookDest`""
-            })
-        }
-        ($data | ConvertTo-Json -Depth 10) | Set-Content -Path $Settings -NoNewline
-        Write-Host "  ✓ SessionStart-Hook registriert" -ForegroundColor Green
-    } else {
-        Write-Host "  ✓ SessionStart-Hook war schon registriert" -ForegroundColor Green
-    }
-    Write-Host "  ✓ Supermodell-Modus installiert — im UI (http://localhost:2000) einschalten + Keys (OpenRouter/Gemini) eintragen." -ForegroundColor Green
-}
+# ── Supermodell-Delegation ist INTEGRIERT (agentenlos) ──
+# Kein Opt-in / kein Agent / kein SessionStart-Hook mehr. Der Wrapper claude-auto
+# injiziert die Delegations-Policy zur Laufzeit via --append-system-prompt-file,
+# sobald im UI (http://localhost:2000) Supermodell=AN gesetzt ist.
 
 # Docker — detect-or-provision Ollama (Windows = Base/CPU, kein GPU-Override).
 $CascadeUrl     = 'http://localhost:8091'
