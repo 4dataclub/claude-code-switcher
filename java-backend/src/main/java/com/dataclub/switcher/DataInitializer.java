@@ -57,8 +57,8 @@ public class DataInitializer {
      * Default-Seed für frische DBs — die **2D-Supermodell-Matrix** (Rolle × Pool).
      *
      * Compound-Kategorien {@code {implement|review|research|dispatch}-{cloud|free|local}}
-     * sind die Routing-Ziele des Supermodell-Modus (Opus delegiert via
-     * {@code @supermodel} an {@code category={kind}-{pool}}). Ohne diesen Seed wären
+     * sind die Routing-Ziele des Supermodell-Modus (der Orchestrator delegiert
+     * agentenlos per curl an {@code category={kind}-{pool}}). Ohne diesen Seed wären
      * sie nur Laufzeit-DB-State und bei {@code docker compose down -v} weg
      * (Setup-Kanonik / feedback_fix_drives_setup_update).
      *

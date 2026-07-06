@@ -247,14 +247,33 @@ public class ApiController {
                     "error", "anthropic-Key hat falsches Format. Erwartet: " + KEY_PATTERNS.get("anthropic").pattern()));
             }
             keys.put("anthropic", aKey);
+            // Teil C: echten API-Key (api03) auch in die geteilte DB (app_settings),
+            // damit die llm-cascade Anthropic ueber den Router bedienen kann.
+            if (aKey.startsWith("sk-ant-api03-")) modelSvc.setSetting("anthropicApiKey", aKey);
         }
 
         boolean routerNeedsRestart = false;
         if ("anthropic".equals(req.provider)) {
-            env.remove("ANTHROPIC_API_KEY");
-            env.remove("ANTHROPIC_BASE_URL");
-            if (req.model != null) cfg.put("model", req.model); else cfg.remove("model");
-            sw.remove("activeRoute");
+            // Teil C: Liegt ein echter Anthropic-API-Key in der DB (den die Cascade lesen
+            // kann), laeuft Anthropic wie jeder Key UEBER den Router/Cascade. Nur ohne
+            // solchen Key (= OAuth/Abo) bleibt es direkt -- die einzige Direkt-Ausnahme.
+            String dbAnthropicKey = modelSvc.getSettingRaw("anthropicApiKey");
+            boolean cascadeCanUseAnthropic = dbAnthropicKey != null
+                && dbAnthropicKey.startsWith("sk-ant-api03-");
+            if (cascadeCanUseAnthropic) {
+                env.put("ANTHROPIC_API_KEY", "sk-ccr-anything");
+                env.put("ANTHROPIC_BASE_URL", HOST_ROUTER_URL);
+                cfg.put("model", "claude-sonnet-4-5-20250929"); // ccr-Platzhalter, Route entscheidet
+                ObjectNode ar = configs.mapper().createObjectNode();
+                ar.put("provider", "llm-cascade"); ar.put("model", "cloud");
+                sw.set("activeRoute", ar);
+                routerNeedsRestart = true;
+            } else {
+                env.remove("ANTHROPIC_API_KEY");
+                env.remove("ANTHROPIC_BASE_URL");
+                if (req.model != null) cfg.put("model", req.model); else cfg.remove("model");
+                sw.remove("activeRoute");
+            }
         } else if ("google".equals(req.provider)) {
             if (router.resolveKey("google").isBlank())
                 return ResponseEntity.badRequest().body(Map.of("error", "Google AI Studio API Key fehlt"));
@@ -435,7 +454,7 @@ public class ApiController {
 
     // ─── Supermodell-Modus — 2 Achsen: Pool (cloud|free|local) × Supermodell ──
     // Pool wählt das Modellset + Privacy-Lane; Supermodell schaltet die
-    // Opus-Orchestrierung (@supermodel-Delegation, siehe ~/.claude/CLAUDE.md)
+    // Opus-Orchestrierung (agentenlose curl-Delegation an die llm-cascade :8091)
     // darüber an/aus. KRITISCH: Pool=local ist FAIL-CLOSED — der Orchestrator
     // bleibt lokal, NIE wird automatisch auf Opus/Anthropic/Cloud gepinnt.
 
