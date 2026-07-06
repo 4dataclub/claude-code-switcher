@@ -435,7 +435,7 @@ public class ApiController {
 
     // ─── Supermodell-Modus — 2 Achsen: Pool (cloud|free|local) × Supermodell ──
     // Pool wählt das Modellset + Privacy-Lane; Supermodell schaltet die
-    // Opus-Orchestrierung (@supermodel-Delegation, siehe ~/.claude/CLAUDE.md)
+    // Opus-Orchestrierung (agentenlose curl-Delegation an die llm-cascade :8091)
     // darüber an/aus. KRITISCH: Pool=local ist FAIL-CLOSED — der Orchestrator
     // bleibt lokal, NIE wird automatisch auf Opus/Anthropic/Cloud gepinnt.
 
