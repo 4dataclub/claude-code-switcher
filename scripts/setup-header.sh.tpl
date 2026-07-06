@@ -12,11 +12,9 @@ set -euo pipefail
 
 TARGET="claude-switcher"
 WITH_USER_CONFIG=1
-WITH_SUPERMODEL=0
 for arg in "$@"; do
   case "$arg" in
     --no-user-config) WITH_USER_CONFIG=0 ;;
-    --with-supermodel) WITH_SUPERMODEL=1 ;;
     --*) echo "Unbekannte Option: $arg" >&2; exit 1 ;;
     *)   TARGET="$arg" ;;
   esac
@@ -211,23 +209,9 @@ else
   echo "  ⚠ docker nicht installiert"
 fi
 
-# ── Supermodell scharf stellen (nach Docker-Start): Cloud-Pool + Supermodell an ──
-# Opus (Abo) bleibt Orchestrator; Failover (Opus-Limit → Gemini) greift im Terminal.
-if (( WITH_SUPERMODEL )) && command -v curl >/dev/null 2>&1; then
-  echo "▸ Supermodell: warte aufs Backend + stelle Modus scharf (Cloud + Supermodell an)"
-  for _i in $(seq 1 30); do
-    if curl -sf --max-time 2 http://localhost:2000/api/supermodel >/dev/null 2>&1; then
-      if curl -sS --max-time 5 -X POST http://localhost:2000/api/mode \
-           -H 'Content-Type: application/json' -d '{"pool":"cloud","supermodel":true}' >/dev/null 2>&1; then
-        echo "  ✓ Supermodell=AN · Pool=Cloud · Failover aktiv · Opus bleibt Orchestrator"
-      else
-        echo "  ⚠ Auto-Scharfstellen fehlgeschlagen — im UI (http://localhost:2000) Supermodell manuell aktivieren"
-      fi
-      break
-    fi
-    sleep 2
-  done
-fi
+# ── Supermodell ──
+# Ist integriert (agentenlos, im Wrapper). Toggle zur Laufzeit im UI
+# (http://localhost:2000) oder per Chat ("supermodell an"/"aus"). Kein Install-Flag mehr.
 
 # Wrapper-Alias automatisch installieren (Bash/Zsh)
 # Damit ist NUR setup.sh nötig — kein zweiter Schritt mehr für den User.

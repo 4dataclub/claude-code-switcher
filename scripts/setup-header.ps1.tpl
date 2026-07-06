@@ -10,8 +10,7 @@
 [CmdletBinding()]
 param(
     [string]$Target = 'claude-switcher',
-    [switch]$NoUserConfig,
-    [switch]$WithSupermodel
+    [switch]$NoUserConfig
 )
 
 $ErrorActionPreference = 'Stop'
@@ -223,21 +222,9 @@ if ($dockerOk) {
     Write-Host "  ⚠ docker nicht installiert (Docker Desktop für Windows benötigt)" -ForegroundColor Yellow
 }
 
-# ── Supermodell scharf stellen (nach Docker-Start): Cloud-Pool + Supermodell an ──
-# Opus (Abo) bleibt Orchestrator; Failover (Opus-Limit -> Gemini) greift im Terminal.
-if ($WithSupermodel) {
-    Write-Host "▸ Supermodell: warte aufs Backend + stelle Modus scharf (Cloud + Supermodell an)" -ForegroundColor Cyan
-    for ($i = 0; $i -lt 30; $i++) {
-        try {
-            Invoke-RestMethod -Uri 'http://localhost:2000/api/supermodel' -TimeoutSec 2 -ErrorAction Stop | Out-Null
-            try {
-                Invoke-RestMethod -Uri 'http://localhost:2000/api/mode' -Method POST -ContentType 'application/json' -Body '{"pool":"cloud","supermodel":true}' -TimeoutSec 5 -ErrorAction Stop | Out-Null
-                Write-Host "  ✓ Supermodell=AN · Pool=Cloud · Failover aktiv · Opus bleibt Orchestrator" -ForegroundColor Green
-            } catch { Write-Host "  ⚠ Auto-Scharfstellen fehlgeschlagen — im UI (http://localhost:2000) manuell aktivieren" -ForegroundColor Yellow }
-            break
-        } catch { Start-Sleep -Seconds 2 }
-    }
-}
+# ── Supermodell ──
+# Ist integriert (agentenlos, im Wrapper). Toggle zur Laufzeit im UI
+# (http://localhost:2000) oder per Chat. Kein Install-Flag mehr.
 
 # Wrapper-Alias automatisch installieren (PowerShell-Profil)
 # Damit ist NUR setup.ps1 nötig — kein zweiter Schritt mehr für den User.
