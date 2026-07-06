@@ -131,6 +131,15 @@ find_latest_session_id() {
   return 1
 }
 
+# MIDOCO: seed the Lagebild prompt on a bare launch from a ticket branch dir.
+# Bash resolves `claude` via the alias to this script, so the legacy claude()
+# function in .bashrc never runs; inject the first prompt here instead so it
+# reaches `claude "$@"` below. Only on a fresh start with no args -- a
+# switcher-restart sets RESUME_ID and ignores "$@", so resume is unaffected.
+if [[ $# -eq 0 && "$PWD" =~ ^/work/[0-9]+\.[0-9]+-[0-9]+-.+$ ]]; then
+  set -- "Lies zuerst /home/dmammadov/Dokumente/brain/04 Ressourcen/Entwicklung/Entwicklungsregeln.md komplett, danach gib das Lagebild im Format Sektion 1.1 aus. Nutze svn nicht git. Werte svn log fuer committete Aenderungen aus."
+fi
+
 # Outer Loop: ein Durchlauf pro Claude-Code-Lebenszyklus.
 # Bei Quota-Failover wird ein Marker-File geschrieben → wir resumen mit --resume.
 RESUME_ID=""
@@ -337,6 +346,48 @@ except: print('false')
     CLAUDE_FLAGS+=(--bare)
     [[ -f "$HOME/.claude/CLAUDE.md" ]] && CLAUDE_FLAGS+=(--add-dir "$HOME/.claude")
     echo "↪ --bare aktiv + --add-dir ~/.claude (CLAUDE.md wird trotzdem gelesen)" >&2
+  fi
+
+  # ── Supermodell-Policy injizieren (agentenlos, ersetzt den SessionStart-Hook) ──
+  # --append-system-prompt-file lebt AUCH unter --bare (der Hook nicht). Fälle:
+  #   AN            → Delegations-Policy (Opus/Kopf delegiert kinds per curl :8091)
+  #   AUS + direkt  → Semantiker-Policy (Kopf routet PURPOSE selbst; Teil F)
+  #   AUS + Router  → nichts (die llm-cascade macht ③ selbst)
+  if command -v python3 >/dev/null 2>&1; then
+    SM_JSON=$(curl -sS --max-time 3 "$SWITCHER_URL/api/supermodel" 2>/dev/null)
+    SM_ENABLED=$(printf '%s' "$SM_JSON" | python3 -c "import sys,json;print(str(json.load(sys.stdin).get('enabled',False)).lower())" 2>/dev/null || echo false)
+    SM_POOL=$(printf '%s' "$SM_JSON" | python3 -c "import sys,json;print(json.load(sys.stdin).get('pool','cloud'))" 2>/dev/null || echo cloud)
+    SM_POLICY_FILE="$HOME/.claude/.supermodel-policy.txt"
+    SM_WRITE=""
+    if [[ "$SM_ENABLED" == "true" ]]; then
+      SM_WRITE="AN"
+      cat > "$SM_POLICY_FILE" <<EOF
+[SUPERMODELL-MODUS: AN · Pool: ${SM_POOL}]
+Du bist der Orchestrator. Plane die Aufgabe und delegiere in sich abgeschlossene Teilaufgaben an guenstige Modelle; Planung/Architektur/finale Synthese behaeltst du selbst.
+Delegieren = EIN direkter Aufruf (KEIN Agent, kein Subagent):
+  curl -sS --max-time 180 -X POST http://localhost:8091/api/generate -H 'Content-Type: application/json' -d '{"category":"<KIND>-${SM_POOL}","service":"claude-orchestrator","prompt":"<VOLLSTAENDIGE self-contained Teilaufgabe>"}'
+<KIND> waehlst du semantisch, NUR aus diesen Rollen:
+  implement (Bulk-Code/Backend/Boilerplate/CRUD) · review (Korrektheit/Sicherheit/Tests) · research (Docs/Recherche) · dispatch (Commit-Msgs/Summaries/Triviales).
+Verboten: content/dev/general/utility (das sind AUS-Kategorien) oder erfundene Kategorien.
+Uebergib Teilaufgaben SELF-CONTAINED (Pfade/Signaturen/Kontext inline) -> dein Kontext bleibt schlank.
+Erfolg = Feld ".text" in der Antwort -> verwenden. Danach IMMER selbst einsammeln, gegen den Plan pruefen, integrieren (nie delegieren-und-vergessen).
+Fehler (kein ".text" / ".error"): Pool cloud/free -> mach die Teilaufgabe SELBST (fail-open). Pool local -> STOPP, melde "Delegation nicht moeglich (local fail-closed)", weiche NIE nach Cloud aus.
+EOF
+    elif [[ -z "${ANTHROPIC_BASE_URL:-}" ]]; then
+      SM_WRITE="AUS-direkt"
+      cat > "$SM_POLICY_FILE" <<EOF
+[SUPERMODELL-MODUS: AUS · direkt · Pool: ${SM_POOL}]
+Kein Orchestrator-Prinzip, kein Planen-und-Verteilen. Ordne jede Anfrage semantisch EINER PURPOSE-Kategorie zu und lass sie vom passenden Modell erledigen -- via:
+  curl -sS --max-time 180 -X POST http://localhost:8091/api/generate -H 'Content-Type: application/json' -d '{"category":"<PURPOSE>-${SM_POOL}","service":"claude-semantiker","prompt":"<Anfrage>"}'
+<PURPOSE>, NUR aus: content (Text/Uebersetzung/Doku) · dev (Code/Refactor) · general (Allgemeines) · utility (Kurz/Trivial).
+Verboten: implement/review/research/dispatch (das sind AN-Rollen).
+Erfolg = ".text". Fehler: cloud/free -> selbst beantworten; local -> STOPP (fail-closed).
+EOF
+    fi
+    if [[ -n "$SM_WRITE" ]]; then
+      CLAUDE_FLAGS+=(--append-system-prompt-file "$SM_POLICY_FILE")
+      echo "↪ Supermodell-Policy injiziert (${SM_WRITE}, pool=${SM_POOL})" >&2
+    fi
   fi
 
   # ── Banner: aktives Backend ───────────────────────────────────────────────
