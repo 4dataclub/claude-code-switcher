@@ -240,6 +240,14 @@ try:
         if cm: model_to_cat[cm] = cas.get('name','')
 except: pass
 
+orch_cat = ''
+try:
+    data = json.loads(subprocess.run(['curl','-sS','--max-time','3','http://localhost:2000/api/status'],
+        capture_output=True, text=True).stdout)
+    if data.get('supermodel', False):
+        orch_cat = f'orchestrator-{data.get(\"pool\", \"cloud\")}'
+except: pass
+
 pending = {}
 for line in sys.stdin:
     try: d = json.loads(line)
@@ -254,9 +262,15 @@ for line in sys.stdin:
         pending[rid]['claude_model'] = body.get('model', '?')
         msgs = body.get('messages', [])
         if msgs:
-            last = msgs[-1].get('content', '')
+            last = None
+            for m in reversed(msgs):
+                if m.get('role') == 'user':
+                    last = m.get('content', '')
+                    break
+            if last is None:
+                last = msgs[-1].get('content', '?') if msgs else '?'
             if isinstance(last, list): last = last[0].get('text', '?') if last else '?'
-            pending[rid]['user_text'] = (str(last)[:60] + '…') if len(str(last)) > 60 else str(last)
+            pending[rid]['user_text'] = (str(last)[:80] + '…') if len(str(last)) > 80 else str(last)
     elif msg == 'final request' and rid in pending:
         pending[rid]['upstream_url'] = d.get('requestUrl', '?')
     elif msg == 'request completed' and rid in pending:
@@ -274,7 +288,8 @@ for line in sys.stdin:
         prov_key = ('anthropic' if 'anthropic.com' in url else
                     'openrouter' if 'openrouter.ai' in url else
                     'gemini' if 'googleapis.com' in url else '')
-        cat = model_to_cat.get(f'{prov_key}:{real_model}', '')
+        # Rolle nicht aus Modell geraten, sondern aus Supermodel-Status
+        cat = orch_cat if orch_cat else model_to_cat.get(f'{prov_key}:{real_model}', '')
         cat_s = f' {color(\"[\"+cat+\"]\",\"1;33\")}' if cat else ''
         ok = '✓' if status == 200 else '✗'; ok_c = '32' if status == 200 else '31'
         print(f\"{color('[ROUTER]','34')} {color(p['started'], '2')} {color(ok, ok_c)} \"
@@ -321,7 +336,7 @@ for c in new:
     if snip:
         s = snip if len(snip) <= 70 else snip[:70] + "…"
         line += f" {D}→{X} \"{s}\""
-    print(line)
+    print(line, flush=True)
 ' 2>/dev/null)
     if [ -n "$NEW" ]; then
       LAST_ID=$(printf '%s\n' "$NEW" | head -1)
