@@ -47,13 +47,17 @@ public class SwitcherModelService {
         if (provider == null || provider.isBlank() || modelId == null || modelId.isBlank()) {
             throw new IllegalArgumentException("provider und modelId sind Pflicht");
         }
-        // Uniqueness: pro (provider, modelId) darf nur EIN cascade-Modell existieren.
-        // Analog zu EduPros AppController.aiModelCreate — verhindert dass der
-        // Failover-Chain-Editor (oder ein anderer Konsument) doppelte Slots
-        // anlegt, die dieselbe externe API doppelt ansprechen würden.
-        if (modelRepo.findFirstByProviderAndModelId(provider, modelId).isPresent()) {
+        // Uniqueness pro (provider, modelId, CATEGORY): dasselbe Modell darf in
+        // MEHREREN Kategorien liegen (2D-Matrix + Failover-Ketten nutzen dieselbe
+        // modelId z.B. in implement-cloud UND cloud). Nur ein echtes Duplikat in
+        // DERSELBEN Kategorie wird abgelehnt. (Frueher (provider,modelId)-only →
+        // verhinderte faelschlich das Anlegen in einer zweiten Kategorie, z.B.
+        // nach dem Loeschen + Neuanlegen von utility-cloud.)
+        String category = (String) body.get("category");
+        if (modelRepo.findFirstByProviderAndModelIdAndCategory(provider, modelId, category).isPresent()) {
             throw new IllegalArgumentException(
-                "Modell mit provider='" + provider + "' und modelId='" + modelId + "' existiert bereits");
+                "Modell provider='" + provider + "' modelId='" + modelId
+                + "' existiert bereits in Kategorie '" + category + "'");
         }
         AiModelConfig m = new AiModelConfig();
         m.setProvider(provider);
