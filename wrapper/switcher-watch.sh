@@ -114,6 +114,15 @@ on_winch() {
 }
 trap 'on_winch' WINCH
 
+# ─── Auto-Reload: bei eigener Datei-Änderung neu starten ───────────────────────
+SELF_MTIME=$(stat -c%Y "$0" 2>/dev/null || echo 0)
+maybe_reload() {
+  local cur=$(stat -c%Y "$0" 2>/dev/null || echo 0)
+  if [ "$cur" -gt "$SELF_MTIME" ] 2>/dev/null; then
+    exec "$0" "$@"
+  fi
+}
+
 # ─── Banner ausgeben (vor Scroll-Region-Setup) ─────────────────────────────────
 printf '%s╔════════════════════════════════════════════════════════════════╗%s\n' "${C_BOLD}" "${C_RESET}"
 printf '%s║  Switcher Watch — UI-Events + Router-Routing + Delegator        ║%s\n' "${C_BOLD}" "${C_RESET}"
@@ -142,6 +151,7 @@ fi
 (
   curl -sS --no-buffer "$SWITCHER_URL/api/events" 2>/dev/null | \
   while IFS= read -r line; do
+    maybe_reload
     case "$line" in
       "event:switch"|"event: switch")
         read -r data_line
@@ -257,6 +267,22 @@ for line in sys.stdin:
         req = d.get('req', {})
         if '/health' not in req.get('url', '') and req.get('method') == 'POST':
             pending[rid] = {'started': datetime.now().strftime('%H:%M:%S')}
+            # Body direkt aus incoming request parsen (falls kein separater request-body-Event)
+            try:
+                rb = json.loads(req.get('body', '{}'))
+                pending[rid]['claude_model'] = rb.get('model', '?')
+                msgs = rb.get('messages', [])
+                if msgs:
+                    last = None
+                    for m in reversed(msgs):
+                        if m.get('role') == 'user':
+                            last = m.get('content', '')
+                            break
+                    if last is None:
+                        last = msgs[-1].get('content', '?') if msgs else '?'
+                    if isinstance(last, list): last = last[0].get('text', '?') if last else '?'
+                    pending[rid]['user_text'] = (str(last)[:80] + '…') if len(str(last)) > 80 else str(last)
+            except: pass
     elif d.get('type') == 'request body' and rid in pending:
         body = d.get('data', {})
         pending[rid]['claude_model'] = body.get('model', '?')
