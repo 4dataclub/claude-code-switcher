@@ -64,7 +64,9 @@ except Exception:
 }
 
 # ─── render_header: zeichnet die Status-Box in Zeilen 1-4 ───────────────────────
+# $1 = optionales Event-JSON (bei Switch/Mode-Event direkt nutzen, nicht /api/status pollen)
 render_header() {
+  local event_json="${1:-}"
   if [[ ! -t 1 ]]; then
     printf '%sStatus: %s' "${C_DIM}" "${C_RESET}"
     get_status_text
@@ -77,8 +79,11 @@ render_header() {
     cur_line=$(tput lines 2>/dev/null || echo 24)
     printf '\e7'
     printf '\e[r'
-    curl -sS --max-time 3 "$SWITCHER_URL/api/status" 2>/dev/null | python3 -c "
-import sys, json, re
+
+    if [[ -n "$event_json" ]]; then
+      # Live-Event: Header aus Event-JSON + Kaskade (nicht /api/status, da activeRoute dort veraltet sein kann)
+      echo "$event_json" | python3 -c "
+import sys, json, re, subprocess
 W = 64
 def plain(s): return re.sub(r'\033\[[0-9;]*m', '', s)
 def row(c):
@@ -88,8 +93,30 @@ try:
     d = json.load(sys.stdin)
     p = d.get('provider','?'); m = d.get('model','?')
     pool = d.get('pool','?'); sm = bool(d.get('supermodel')); mode = d.get('mode','?')
-    ar = d.get('activeRoute') if isinstance(d.get('activeRoute'), dict) else None
-    if ar: p, m = ar.get('provider', p), ar.get('model', m)
+    # Bei nicht-anthropic Provider: echtes Backend aus activeRoute oder direkt
+    if p != 'anthropic':
+        ar = d.get('activeRoute')
+        if isinstance(ar, dict):
+            p2 = ar.get('provider', p) or p
+            m2 = ar.get('model', m) or m
+            if p2: p, m = p2, m2
+    # Bei Supermodell-AN + anthropic: Kaskade als Wahrheit
+    if sm and p == 'anthropic':
+        try:
+            result = subprocess.run(
+                ['curl', '-sS', '--max-time', '2', 'http://localhost:8091/api/cascades'],
+                capture_output=True, text=True, timeout=3
+            )
+            cascades = json.loads(result.stdout)
+            target = f'orchestrator-{pool}'
+            for c in cascades:
+                if c.get('name') == target:
+                    cm = c.get('currentModel', '')
+                    if ':' in cm:
+                        p, m = cm.split(':', 1)
+                    break
+        except:
+            pass
     smtxt = '\033[1;32mAN\033[0m' if sm else '\033[1;31mAUS\033[0m'
     fotxt = '\033[1;32mAuto\033[0m' if mode=='auto' else '\033[1;33mManuell\033[0m'
     l1 = f'\033[1m{p}\033[0m / \033[36m{m}\033[0m   Pool: \033[1;36m{pool}\033[0m'
@@ -101,6 +128,50 @@ try:
     sys.stdout.flush()
 except: pass
 " 2>/dev/null
+    else
+      # Normal/Poll: Header aus /api/status + Kaskade
+      curl -sS --max-time 3 "$SWITCHER_URL/api/status" 2>/dev/null | python3 -c "
+import sys, json, re, subprocess
+W = 64
+def plain(s): return re.sub(r'\033\[[0-9;]*m', '', s)
+def row(c):
+    p = W - 1 - len(plain(c))
+    return f'\033[1m║\033[0m {c}{\" \" * max(0,p)}\033[1m║\033[0m'
+try:
+    d = json.load(sys.stdin)
+    p = d.get('provider','?'); m = d.get('model','?')
+    pool = d.get('pool','?'); sm = bool(d.get('supermodel')); mode = d.get('mode','?')
+    ar = d.get('activeRoute') if isinstance(d.get('activeRoute'), dict) else None
+    if ar and ar.get('provider'): p, m = ar.get('provider', p), ar.get('model', m)
+    if sm and not (ar and ar.get('provider')):
+        try:
+            result = subprocess.run(
+                ['curl', '-sS', '--max-time', '2', 'http://localhost:8091/api/cascades'],
+                capture_output=True, text=True, timeout=3
+            )
+            cascades = json.loads(result.stdout)
+            target = f'orchestrator-{pool}'
+            for c in cascades:
+                if c.get('name') == target:
+                    cm = c.get('currentModel', '')
+                    if ':' in cm:
+                        p, m = cm.split(':', 1)
+                    break
+        except:
+            pass
+    smtxt = '\033[1;32mAN\033[0m' if sm else '\033[1;31mAUS\033[0m'
+    fotxt = '\033[1;32mAuto\033[0m' if mode=='auto' else '\033[1;33mManuell\033[0m'
+    l1 = f'\033[1m{p}\033[0m / \033[36m{m}\033[0m   Pool: \033[1;36m{pool}\033[0m'
+    l2 = f'Supermodell: {smtxt}   Failover: {fotxt}'
+    sys.stdout.write('\033[1;1H\033[2K\033[1m╔' + '═'*W + '╗\033[0m')
+    sys.stdout.write('\033[2;1H\033[2K' + row(l1))
+    sys.stdout.write('\033[3;1H\033[2K' + row(l2))
+    sys.stdout.write('\033[4;1H\033[2K\033[1m╚' + '═'*W + '╝\033[0m')
+    sys.stdout.flush()
+except: pass
+" 2>/dev/null
+    fi
+
     printf '\e[5;%dr' "$cur_line"
     printf '\e8'
   ) 200>"${HEADER_LOCK}"
@@ -171,7 +242,7 @@ try:
     sys.stdout.write(out); sys.stdout.flush()
 except: pass
 " 2>/dev/null
-        render_header
+        render_header "$json"
         ;;
       "event:auto-switched"|"event: auto-switched")
         read -r data_line
@@ -184,10 +255,11 @@ try:
     print(f'\n\033[1;35m[UI]\033[0m \033[1;33m▼▼▼ AUTO-SWITCH (Failover) ▼▼▼ → \033[1;35m{t.get(\"provider\")}\033[0m \033[1;33m/ \033[1;36m{t.get(\"model\")}\033[0m\n')
 except: pass
 " 2>/dev/null
-        render_header
+        render_header "$json"
         ;;
       "event:mode"|"event: mode")
         read -r data_line
+        json="${data_line#data:}"; json="${json# }"
         curl -sS --max-time 2 "$SWITCHER_URL/api/status" 2>/dev/null | python3 -c "
 import sys, json
 try:
@@ -198,10 +270,11 @@ try:
     print(f'\033[2m[UI]\033[0m  Pool: \033[1;36m{pool}\033[0m   Supermodell: {smtxt}   Failover: {fotxt}')
 except: pass
 " 2>/dev/null
-        render_header
+        render_header "$json"
         ;;
       "event:auto-config"|"event: auto-config")
         read -r data_line
+        json="${data_line#data:}"; json="${json# }"
         curl -sS --max-time 2 "$SWITCHER_URL/api/status" 2>/dev/null | python3 -c "
 import sys, json
 try:
@@ -212,7 +285,7 @@ try:
     print(f'\033[2m[UI]\033[0m  Pool: \033[1;36m{pool}\033[0m   Supermodell: {smtxt}   Failover: {fotxt}')
 except: pass
 " 2>/dev/null
-        render_header
+        render_header "$json"
         ;;
       "event:warn"|"event: warn")
         read -r data_line
@@ -220,7 +293,7 @@ except: pass
         ;;
       "event:chain-promoted"|"event: chain-promoted")
         printf '%s[UI]%s %s↺ Zurück auf Anthropic%s\n' "${C_MAGENTA}" "${C_RESET}" "${C_GREEN}" "${C_RESET}"
-        render_header
+        render_header "$json"
         ;;
     esac
   done
@@ -229,13 +302,19 @@ SSE_PID=$!
 
 # ─── [ROUTER] Live-Log vom ccr-Container ───────────────────────────────────
 (
+  # Aeussere Schleife: reconnectet nach Router-Container-Restart
+  # (z.B. beim Switch auf einen Nicht-anthropic-Provider, der ccr neu startet).
+  # Ohne sie stirbt die docker-exec-Pipe beim Restart und ROUTER bleibt fuer immer stumm.
+  while true; do
   docker exec "$ROUTER_CONTAINER" sh -c '
     while true; do
       LATEST=$(ls -t /root/.claude-code-router/logs/*.log 2>/dev/null | head -1)
       [ -n "$LATEST" ] && tail -F "$LATEST" 2>/dev/null
       sleep 2
     done
-  ' 2>/dev/null | python3 -u -c "
+  ' 2>/dev/null
+  sleep 2
+  done | python3 -u -c "
 import sys, json, re, subprocess
 from datetime import datetime
 def color(s, c): return f'\033[{c}m{s}\033[0m'
@@ -320,8 +399,8 @@ for line in sys.stdin:
         ok = '✓' if status == 200 else '✗'; ok_c = '32' if status == 200 else '31'
         print(f\"{color('[ROUTER]','34')} {color(p['started'], '2')} {color(ok, ok_c)} \"
               f\"{color(real, cc)} {color(real_model, '36;1')}{cat_s} {color(f'({int(rt_ms)}ms)', '2')}\", flush=True)
-        if 'user_text' in p:
-            print(f\"          {color('→', '2')} {color(p['user_text'], '37')}\", flush=True)
+        ut = p.get('user_text', '')
+        print(f\"          {color('→', '2')} {color(ut if ut else '<screenshot 785>', '37')}\", flush=True)
 " 2>/dev/null
 ) &
 LOG_PID=$!
@@ -334,9 +413,10 @@ try: print(max((c.get("id", 0) for c in json.load(sys.stdin)), default=0))
 except Exception: print(0)
 ' 2>/dev/null)
   LAST_ID="${LAST_ID:-0}"
+  HDR_TICK=0
   while true; do
     NEW=$(curl -fsS --max-time 5 "${CASCADE_URL}/api/stats/calls" 2>/dev/null | LAST_ID="$LAST_ID" python3 -c '
-import sys, os, json
+import sys, os, json, datetime
 last = int(os.environ.get("LAST_ID", "0"))
 try: d = json.load(sys.stdin)
 except Exception: sys.exit(0)
@@ -346,7 +426,14 @@ print(new[-1]["id"])
 G="\033[32m"; R="\033[31m"; C="\033[36m"; D="\033[2m"; X="\033[0m"
 for c in new:
     mark = f"{G}✓{X}" if c.get("success") else f"{R}✗{X}"
-    t = (c.get("calledAt") or "")[11:19]
+    t_raw = c.get("calledAt") or ""
+    try:
+        dt = datetime.datetime.fromisoformat(t_raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        t = dt.astimezone().strftime("%H:%M:%S")
+    except Exception:
+        t = t_raw[11:19] if len(t_raw) >= 19 else ""
     prov = c.get("provider") or "?"; model = c.get("model") or "?"
     svc = c.get("service") or ""; chars = c.get("outputChars")
     cat = c.get("category") or ""
@@ -368,6 +455,8 @@ for c in new:
       LAST_ID=$(printf '%s\n' "$NEW" | head -1)
       printf '%s\n' "$NEW" | tail -n +2
     fi
+    HDR_TICK=$((HDR_TICK+1))
+    if [ "$HDR_TICK" -ge 5 ]; then HDR_TICK=0; render_header; fi
     sleep "$POLL_SECONDS"
   done
 ) &

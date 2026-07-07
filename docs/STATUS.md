@@ -3,7 +3,9 @@
 > Aktueller Arbeitsstand für den nächsten Entwickler. Kurz halten, bei jedem
 > größeren Meilenstein aktualisieren.
 
-**Stand: 2026-07-03** — alles auf `main` und deployed, alle 3 Repos clean.
+**Stand: 2026-07-07** — Watcher-Fix (`wrapper/switcher-watch.sh`): läuft jetzt im
+**cloud-Pool mit Supermodell AN**. Noch **ungetestet**: `local`-Pool und Supermodell
+**AUS**.
 
 ## Architektur-Kern (aktuell)
 
@@ -39,6 +41,12 @@
   `[opus-4-8 → gemini-2.5-pro]`. ✓
 - Backend-Tests grün (42: ApiControllerTest + RouterServiceTest).
 - llm-cascade: `OpenAiCompatProviderTest` (Connection-Failover) grün.
+
+## Verifiziert (live, 2026-07-07)
+
+- **Watcher (`wrapper/switcher-watch.sh`) läuft im cloud-Pool mit Supermodell AN.** ✓
+- **Noch ungetestet:** `local`-Pool und Supermodell **AUS**. `local` wird getestet,
+  sobald **Config B+** verfügbar ist.
 
 ## Offen / To-Do
 
