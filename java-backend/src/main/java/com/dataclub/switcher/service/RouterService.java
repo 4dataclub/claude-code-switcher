@@ -211,6 +211,15 @@ public class RouterService {
         return buildProviders(keys);
     }
 
+    /** Steht ein ccr-Provider mit diesem Namen in der Provider-Liste? (Fix B-Guard) */
+    private static boolean providerPresent(ArrayNode providers, String name) {
+        if (name == null) return false;
+        for (com.fasterxml.jackson.databind.JsonNode p : providers) {
+            if (name.equals(p.path("name").asText(""))) return true;
+        }
+        return false;
+    }
+
     /** Schreibt router-config.json basierend auf _switcher in der Switcher-Config. */
     public synchronized void writeRouterConfig() {
         ObjectNode sw = configs.getSwitcher();
@@ -255,15 +264,34 @@ public class RouterService {
         String cascadeModel = supermodelOn ? ("orchestrator-" + pool) : pool;
         String defaultRoute = "llm-cascade," + cascadeModel;
 
-        // Direktroute als Debug-Fallback (kein aktiver ccr-Slot): das direkte
-        // Modell hinter der Cascade, falls man llm-cascade umgehen will.
+        // Direktroute: das direkte Modell hinter der Cascade.
+        // explicitModel = der User hat im UI ein KONKRETES Provider-Modell gewaehlt
+        // (google/openrouter) — nicht bloss die llm-cascade als Route.
         String directRoute = "";
-        if (mappedProvider != null && routeModel != null) {
+        boolean explicitModel = mappedProvider != null && routeModel != null
+                && !"llm-cascade".equals(mappedProvider);
+        if (explicitModel) {
             directRoute = mappedProvider + "," + routeModel;
         } else if (providers.size() > 1 && providers.get(1).path("models").size() > 0) {
             String n = providers.get(1).get("name").asText();
             String m2 = providers.get(1).get("models").get(0).asText();
             directRoute = n + "," + m2;
+        }
+
+        // ── Fix B (Modell-Treue) ──────────────────────────────────────────────
+        // Wurde ein konkretes Provider-Modell explizit gewaehlt, route den
+        // Haupt-Loop DIREKT auf genau dieses Modell statt auf die orchestrator-
+        // Kaskade. Sonst waehlt die Cascade ihr eigenes Top-Modell der Kategorie
+        // (aktuell gemini-2.5-pro) und der UI-Pick bleibt wirkungslos — genau der
+        // Grund fuer "ich waehle Opus, es kommt Gemini".
+        // Bedingungen: pool != local (fail-closed, dort nur ollama) UND der Provider
+        // steht real in der Provider-Liste (sonst kann ccr nicht routen).
+        // Trade-off: der Haupt-Loop verliert das Cascade-Failover fuer diese Route —
+        // dafuer bekommt der User deterministisch das gewaehlte Modell.
+        // Die Supermodell-Delegationen (implement-/review-/… -{pool}) laufen weiter
+        // unabhaengig ueber die Cascade, sind davon also nicht betroffen.
+        if (explicitModel && !"local".equals(pool) && providerPresent(providers, mappedProvider)) {
+            defaultRoute = directRoute;
         }
 
         ObjectNode out = mapper.createObjectNode();

@@ -90,6 +90,35 @@ public class ApiController {
     }};
     private static String pretty(String id) { return id == null ? "?" : PRETTY_NAMES.getOrDefault(id, id); }
 
+    /**
+     * Fragt die llm-cascade nach dem Modell, das fuer eine Kategorie (z.B.
+     * {@code orchestrator-cloud}) TATSAECHLICH serviert wuerde: das erste nach
+     * {@code orderIdx} sortierte Modell, das enabled, nicht auto-disabled und
+     * mit Key (oder keyless) nutzbar ist. Null wenn Cascade nicht erreichbar
+     * oder die Kategorie leer ist — dann faellt whoami auf den gespeicherten
+     * Namen zurueck.
+     */
+    private String resolveCascadeModel(String category) {
+        JsonNode models = cascade.getModels();
+        if (models == null || !models.isArray()) return null;
+        String best = null;
+        int bestOrder = Integer.MAX_VALUE;
+        for (JsonNode m : models) {
+            if (!category.equals(m.path("category").asText(""))) continue;
+            if (!m.path("enabled").asBoolean(false)) continue;
+            if (m.path("autoDisabled").asBoolean(false)) continue;
+            boolean usable = m.path("keyConfigured").asBoolean(false)
+                          || m.path("keyless").asBoolean(false);
+            if (!usable) continue;
+            int order = m.path("orderIdx").asInt(Integer.MAX_VALUE);
+            if (order < bestOrder) {
+                bestOrder = order;
+                best = m.path("modelId").asText(null);
+            }
+        }
+        return best;
+    }
+
     // ─── Status ──────────────────────────────────────────────────────────────
 
     @GetMapping("/status")
@@ -141,6 +170,22 @@ public class ApiController {
         ObjectNode cfg = configs.readConfig();
         String provider = configs.deriveProvider(cfg);
         JsonNode ar = cfg.path("_switcher").path("activeRoute");
+
+        // ── Fix A (ehrliche Anzeige) ──────────────────────────────────────────
+        // Laeuft der Haupt-Loop ueber die Kaskade (activeRoute.provider ==
+        // llm-cascade), sagt der gespeicherte Name NICHT, was real serviert wird —
+        // die Cascade waehlt das Top-Modell der Kategorie selbst. Wir fragen sie.
+        if (ar.isObject() && "llm-cascade".equals(ar.path("provider").asText(""))) {
+            String pool = cfg.path("_switcher").path("pool").asText("cloud");
+            boolean sm = cfg.path("_switcher").path("supermodel").asBoolean(false);
+            String category = sm ? "orchestrator-" + pool : pool;
+            String real = resolveCascadeModel(category);
+            if (real != null) {
+                return pretty(real) + " via llm-cascade (" + category
+                     + ") — real serviertes Modell";
+            }
+        }
+
         if (ar.isObject() && ("google".equals(provider) || "openrouter".equals(provider))) {
             String model = ar.path("model").asText("?");
             if ("google".equals(provider)) {

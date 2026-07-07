@@ -177,4 +177,53 @@ class RouterServiceTest {
         out.path("Providers").forEach(p -> providerNames.add(p.path("name").asText()));
         assertThat(providerNames).doesNotContain("gemini", "openrouter", "deepseek");
     }
+
+    // ── Fix B (Modell-Treue) ──────────────────────────────────────────────────
+
+    @Test
+    void writeRouterConfig_explicitGoogleModel_pinsDirectRoute(@TempDir Path tmp) throws Exception {
+        // User waehlt konkret google/gemini-2.5-pro. Der Haupt-Loop MUSS direkt auf
+        // "gemini,gemini-2.5-pro" routen — nicht auf die orchestrator-Kaskade, die
+        // sonst ihr eigenes Top-Modell serviert (der fruehere "waehle Opus, kriege
+        // Gemini"-Bug in umgekehrter Richtung).
+        Path cfgFile = tmp.resolve("router-config-pin.json");
+        when(configs.routerConfigPath()).thenReturn(cfgFile.toString());
+        when(modelSvc.getSettingRaw("geminiApiKey")).thenReturn("AIza-valid");
+
+        ObjectNode sw = M.createObjectNode();
+        sw.put("pool", "cloud");
+        sw.put("supermodel", true);
+        ObjectNode ar = sw.putObject("activeRoute");
+        ar.put("provider", "google");
+        ar.put("model", "gemini-2.5-pro");
+        when(configs.getSwitcher()).thenReturn(sw);
+
+        router.writeRouterConfig();
+
+        JsonNode out = M.readTree(cfgFile.toFile());
+        assertThat(out.path("Router").path("default").asText()).isEqualTo("gemini,gemini-2.5-pro");
+        assertThat(out.path("Router").path("think").asText()).isEqualTo("gemini,gemini-2.5-pro");
+    }
+
+    @Test
+    void writeRouterConfig_noExplicitModel_keepsOrchestratorCascade(@TempDir Path tmp) throws Exception {
+        // Kein konkretes Provider-Modell (activeRoute==llm-cascade, z.B. Anthropic-
+        // mit-DB-Key): der Haupt-Loop bleibt auf der orchestrator-Kaskade.
+        Path cfgFile = tmp.resolve("router-config-cascade.json");
+        when(configs.routerConfigPath()).thenReturn(cfgFile.toString());
+        when(modelSvc.getSettingRaw("geminiApiKey")).thenReturn("AIza-valid");
+
+        ObjectNode sw = M.createObjectNode();
+        sw.put("pool", "cloud");
+        sw.put("supermodel", true);
+        ObjectNode ar = sw.putObject("activeRoute");
+        ar.put("provider", "llm-cascade");
+        ar.put("model", "cloud");
+        when(configs.getSwitcher()).thenReturn(sw);
+
+        router.writeRouterConfig();
+
+        JsonNode out = M.readTree(cfgFile.toFile());
+        assertThat(out.path("Router").path("default").asText()).isEqualTo("llm-cascade,orchestrator-cloud");
+    }
 }
