@@ -45,8 +45,38 @@
 ## Verifiziert (live, 2026-07-07)
 
 - **Watcher (`wrapper/switcher-watch.sh`) läuft im cloud-Pool mit Supermodell AN.** ✓
-- **Noch ungetestet:** `local`-Pool und Supermodell **AUS**. `local` wird getestet,
-  sobald **Config B+** verfügbar ist.
+
+### Teststand Verhaltens-Matrix (7 Zeilen)
+
+| # | Zeile | Code | Live | Anker |
+|---|---|:--:|:--:|---|
+| 1 | AN·OAuth | ✅ | ✅ **live** | `ApiController:318`, `RouterService:265` |
+| 2 | AN·Anthropic-Key | ✅ | ❌ offen (kein `sk-ant`) | `ApiController:305-310` |
+| 3 | AN·Nicht-Anthropic-Key (deepseek/OR) | ✅ | ✅ **live** | `RouterService:104-111` |
+| 4 | AN·local | ✅ | ⏳ bis Config B+ | `RouterService:206-208`, `DataInitializer` |
+| 5 | AUS·OAuth | ✅ | ❌ offen | `RouterService:265` |
+| 6 | AUS·Key | ✅ | ❌ offen ⟨?⟩ | Cascade-③-Scoping |
+| 7 | AUS·local | ⚠️ | ⏳ bis Config B+ | `general/utility-local` nicht geseedet |
+
+- **Live bewiesen: Zeile 1 + 3** (beide Supermodell AN, cloud). Rest code-konform, aber
+  noch nicht durchgeklickt.
+- **Haken Z.7:** `content-local`/`dev-local` existieren, `general-local`/`utility-local`
+  bewusst NICHT geseedet (fail-closed).
+- **Noch ungetestet:** `local`-Pool (Z.4/7) + Supermodell **AUS** (Z.5/6). `local` wird
+  getestet, sobald **Config B+** verfügbar ist.
+
+### Nächste Tests (offene Matrix-Zeilen — Reihenfolge egal)
+
+1. **Z.5 AUS·OAuth** — Supermodell AUS im cloud-Pool: prüfen, dass 1 Modell pro Anfrage
+   semantisch ins PURPOSE-Fach geht (content/dev/general/utility), Loop ungeloggt.
+2. **Z.6 AUS·Key** — cloud-Key + Supermodell AUS: Cascade-③ klassifiziert auf PURPOSE,
+   NICHT auf AN-Rollen. `⟨?⟩` explizit gegenprüfen.
+3. **Z.2 AN·Anthropic-Key** — echten `sk-ant-api03`-Key in DB `app_settings.anthropicApiKey`
+   legen → Opus läuft über Router, Loop wird geloggt (`[ROUTER]`).
+4. **Z.4 AN·local** — sobald **Config B+** + Ollama-Modelle: lokaler Kopf delegiert an
+   `*-local`, alles geloggt, kein Cloud-Ausweich (fail-closed).
+5. **Z.7 AUS·local** — mit Config B+: PURPOSE-local. Vorher klären, ob `general-local`/
+   `utility-local` geseedet werden sollen oder bewusst fail-closed bleiben.
 
 ## Offen / To-Do
 
