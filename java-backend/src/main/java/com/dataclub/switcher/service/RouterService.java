@@ -205,7 +205,8 @@ public class RouterService {
     ArrayNode buildProvidersForPool(String pool, ObjectNode keys, String localModel) {
         if ("local".equals(pool)) {
             ArrayNode out = mapper.createArrayNode();
-            out.add(buildOllamaProvider(localModel));
+            out.add(buildLlmCascadeProvider(pool));   // ccr → llm-cascade → Ollama (damit [ROUTER] loggt)
+            out.add(buildOllamaProvider(localModel)); // Direkt-Fallback falls llm-cascade nicht erreichbar
             return out;
         }
         return buildProviders(keys);
