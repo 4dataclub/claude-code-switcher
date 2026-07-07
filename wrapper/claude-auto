@@ -66,6 +66,37 @@ post_json() {
     -H 'Content-Type: application/json' -d "$data" 2>/dev/null
 }
 
+# ── OAuth-Stash statt destruktivem Logout ─────────────────────────────────
+# 'claude auth logout' invalidiert den OAuth-Token server-seitig (siehe alter
+# Kommentar unten: "logout invalidiert ihn jedes Mal"). Jeder Router-Switch
+# erzwang so beim Zurueckwechseln auf Anthropic einen frischen Browser-Login —
+# schlug der fehl/kam zu spaet, startete claude ohne Auth → "API error".
+# Loesung: die Credentials-Datei nur ZUR SEITE LEGEN (OAuth ist damit fuer den
+# Router "aus", weil claude sie nicht mehr findet) und beim Rueckweg auf
+# Anthropic wiederherstellen. Der Token bleibt gueltig, kein Re-Login noetig.
+CRED_FILE="$HOME/.claude/.credentials.json"
+CRED_STASH="$HOME/.claude/.credentials.json.switcher-bak"
+
+stash_oauth() {
+  if [[ -f "$CRED_FILE" ]]; then
+    mv -f "$CRED_FILE" "$CRED_STASH" 2>/dev/null \
+      && echo "↪ OAuth-Session geparkt (Token bleibt gueltig, kein Logout)" >&2
+  fi
+}
+
+restore_oauth() {
+  # Nur wiederherstellen wenn keine aktive Session existiert; sonst Stash verwerfen
+  # (eine frisch erzeugte credentials.json hat Vorrang vor dem alten Stash).
+  if [[ -f "$CRED_STASH" ]]; then
+    if [[ ! -f "$CRED_FILE" ]]; then
+      mv -f "$CRED_STASH" "$CRED_FILE" 2>/dev/null \
+        && echo "↪ OAuth-Session wiederhergestellt (kein Browser-Login noetig)" >&2
+    else
+      rm -f "$CRED_STASH" 2>/dev/null || true
+    fi
+  fi
+}
+
 # Säubert alle 'thinking' content-blocks aus einer Session-JSONL.
 # Hintergrund: Cross-Provider-Switch (z.B. Gemini Pro → Anthropic Opus) führt zu
 # 400 "Invalid signature in thinking block" weil Anthropic die Signaturen prüft.
@@ -235,8 +266,8 @@ try: print('true' if json.load(sys.stdin).get('loggedIn') else 'false')
 except: print('unknown')
 " 2>/dev/null)
       if [[ "$AUTH_LOGGED_IN" == "true" ]]; then
-        echo "↪ Auto-Logout (Keychain leeren — sonst überschreibt OAuth den Router)" >&2
-        "$CLAUDE_BIN" auth logout 2>&1 | head -1 | sed 's/^/  /' >&2
+        echo "↪ Router-Modus: OAuth-Session parken (sonst ueberschreibt sie BASE_URL)" >&2
+        stash_oauth
       fi
       echo "↪ Provider via Router: $BASE_URL_FROM_SETTINGS" >&2
       export ANTHROPIC_BASE_URL="$BASE_URL_FROM_SETTINGS"
@@ -284,13 +315,16 @@ try: print('true' if json.load(sys.stdin).get('loggedIn') else 'false')
 except: print('false')
 " 2>/dev/null)
         if [[ "$AUTH_LOGGED_IN_PRE" == "true" ]]; then
-          echo "↪ DB-Anthropic-Key gefunden → OAuth-Logout (Vorrang für API-Key)" >&2
-          "$CLAUDE_BIN" auth logout 2>&1 | head -1 | sed 's/^/  /' >&2
+          echo "↪ DB-Anthropic-Key gefunden → OAuth-Session parken (Vorrang fuer API-Key)" >&2
+          stash_oauth
         fi
         export ANTHROPIC_API_KEY="$ANTHROPIC_DB_KEY"
         echo "↪ Anthropic via API-Key (aus DB, per-Token-Abrechnung)" >&2
       else
         # Priorität 2: OAuth-Login (Abo)
+        # Zuerst eine ggf. geparkte Session zurueckholen — dann ist loggedIn=true
+        # ohne Browser-Flow (Kernfix gegen den wiederkehrenden "API error").
+        restore_oauth
         AUTH_LOGGED_IN=$("$CLAUDE_BIN" auth status 2>/dev/null | python3 -c "
 import json, sys
 try: print('true' if json.load(sys.stdin).get('loggedIn') else 'false')
